@@ -32,20 +32,20 @@ export async function getFinancialSummary(req: Request, res: Response) {
       },
     });
 
-    const totalRevenue = jobs.reduce((sum, job) => sum + calculateJobRevenue(job), 0);
-    const totalCost = jobs.reduce((sum, job) => sum + calculateJobCost(job), 0);
+    const totalRevenue = jobs.reduce((sum: number, job: any) => sum + calculateJobRevenue(job), 0);
+    const totalCost = jobs.reduce((sum: number, job: any) => sum + calculateJobCost(job), 0);
     const totalProfit = totalRevenue - totalCost;
     const averageMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 
     // Outstanding invoices (INVOICED but not PAID)
-    const outstandingJobs = jobs.filter(job => job.status === 'INVOICED');
-    const outstandingRevenue = outstandingJobs.reduce((sum, job) => sum + calculateJobRevenue(job), 0);
+    const outstandingJobs = jobs.filter((job: any) => job.status === 'INVOICED');
+    const outstandingRevenue = outstandingJobs.reduce((sum: number, job: any) => sum + calculateJobRevenue(job), 0);
 
     // Unpaid vendor costs (not yet PAID)
-    const unpaidJobs = jobs.filter(job =>
+    const unpaidJobs = jobs.filter((job: any) =>
       ['APPROVED', 'PO_ISSUED', 'IN_PRODUCTION', 'SHIPPED', 'INVOICED'].includes(job.status)
     );
-    const unpaidCost = unpaidJobs.reduce((sum, job) => sum + calculateJobCost(job), 0);
+    const unpaidCost = unpaidJobs.reduce((sum: number, job: any) => sum + calculateJobCost(job), 0);
 
     res.json({
       totalRevenue,
@@ -80,7 +80,7 @@ export async function getFinancialsByCustomer(req: Request, res: Response) {
 
     const customerMap = new Map<string, any>();
 
-    jobs.forEach(job => {
+    jobs.forEach((job: any) => {
       if (!job.customer) return;
 
       const customerId = job.customer.id;
@@ -164,7 +164,7 @@ export async function getFinancialsByVendor(req: Request, res: Response) {
 
     const vendorMap = new Map<string, any>();
 
-    jobs.forEach(job => {
+    jobs.forEach((job: any) => {
       if (!job.vendor) return;
 
       const vendorId = job.vendor.id;

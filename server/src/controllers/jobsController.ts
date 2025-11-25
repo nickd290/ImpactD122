@@ -391,6 +391,12 @@ export const importBatchJobs = async (req: Request, res: Response) => {
         jobNumber = `J-${(lastNumber + 1 + createdJobs.length).toString().padStart(4, '0')}`;
       }
 
+      // Skip jobs without required customer and vendor
+      if (!customerId || !vendorId) {
+        console.warn(`Skipping job "${jobData.title}" - missing customer or vendor`);
+        continue;
+      }
+
       // Create job
       const job = await prisma.job.create({
         data: {
@@ -471,7 +477,7 @@ export const batchDeleteJobs = async (req: Request, res: Response) => {
     if (lockedJobs.length > 0) {
       return res.status(403).json({
         error: 'Cannot delete locked jobs',
-        lockedJobs: lockedJobs.map(j => ({ id: j.id, number: j.number, title: j.title })),
+        lockedJobs: lockedJobs.map((j: any) => ({ id: j.id, number: j.number, title: j.title })),
       });
     }
 
@@ -535,7 +541,7 @@ export const detectDuplicates = async (req: Request, res: Response) => {
     const duplicateGroups: { [key: string]: any[] } = {};
 
     // Group by title + customer + PO number (if available)
-    allJobs.forEach(job => {
+    allJobs.forEach((job: any) => {
       const key = `${job.title.toLowerCase().trim()}-${job.customerId}-${job.customerPONumber || 'no-po'}`;
       if (!duplicateGroups[key]) {
         duplicateGroups[key] = [];
