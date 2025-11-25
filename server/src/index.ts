@@ -7,6 +7,7 @@ import entitiesRouter from './routes/entities';
 import aiRouter from './routes/ai';
 import pdfRouter from './routes/pdf';
 import financialsRouter from './routes/financials';
+import exportRouter from './routes/export';
 
 // Load environment variables
 dotenv.config();
@@ -38,6 +39,7 @@ app.use('/api/entities', entitiesRouter);
 app.use('/api/ai', aiRouter);
 app.use('/api/pdf', pdfRouter);
 app.use('/api/financials', financialsRouter);
+app.use('/api/export', exportRouter);
 
 // Serve frontend in production
 if (process.env.NODE_ENV === 'production') {
