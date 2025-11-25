@@ -1,0 +1,216 @@
+// This is your Prisma schema file
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Entity Types (Customers & Vendors)
+enum EntityType {
+  CUSTOMER
+  VENDOR
+}
+
+// Job Status Workflow
+enum JobStatus {
+  DRAFT
+  QUOTED
+  APPROVED
+  PO_ISSUED
+  IN_PRODUCTION
+  SHIPPED
+  INVOICED
+  PAID
+  CANCELLED
+}
+
+// Product Types
+enum ProductType {
+  BOOK
+  FLAT
+  FOLDED
+  OTHER
+}
+
+// Cover Types (for books)
+enum CoverType {
+  SELF
+  PLUS
+}
+
+// Entities (Customers & Vendors)
+model Entity {
+  id                  String    @id @default(cuid())
+  name                String
+  type                EntityType
+  uniqueCode          String?   @unique // 3-digit code for document numbering (e.g., "ABC", "XYZ")
+  email               String
+  phone               String
+  address             String
+  contactPerson       String
+  isPartner           Boolean   @default(false) // For Bradford partner vendor
+  notes               String?
+
+  // Document counters
+  lastInvoiceNumber   Int       @default(0) // For customers
+  lastPONumber        Int       @default(0) // For vendors
+
+  // Relations
+  contacts            Contact[]
+  jobsAsCustomer      Job[]     @relation("CustomerJobs")
+  jobsAsVendor        Job[]     @relation("VendorJobs")
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([type])
+  @@index([name])
+  @@index([uniqueCode])
+}
+
+// Additional Contacts for Entities
+model Contact {
+  id                  String    @id @default(cuid())
+  entityId            String
+  name                String
+  email               String
+  phone               String?
+  isPrimary           Boolean   @default(false)
+
+  entity              Entity    @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([entityId])
+}
+
+// Jobs
+model Job {
+  id                  String      @id @default(cuid())
+  number              String      @unique // e.g., "J-1001"
+  title               String
+  customerId          String
+  vendorId            String
+  bradfordRefNumber   String?     // PO to JD Graphic
+
+  // Documents
+  customerPONumber    String?
+  originalPOUrl       String?     // File path or base64
+  vendorPONumber      String?
+  invoiceNumber       String?
+  quoteNumber         String?
+
+  // Document tracking
+  generatedDocuments  Json        @default("[]") // Array of {type, number, generatedAt, generatedBy, downloadUrl}
+
+  // Logistics
+  artworkUrl          String?
+  artworkFilename     String?
+
+  status              JobStatus   @default(DRAFT)
+  locked              Boolean     @default(false)
+  isDuplicate         Boolean     @default(false) // Flag to mark suspected duplicates
+
+  dateCreated         DateTime    @default(now())
+  dueDate             DateTime?
+  notes               String      @default("")
+
+  // Relations
+  customer            Entity      @relation("CustomerJobs", fields: [customerId], references: [id])
+  vendor              Entity      @relation("VendorJobs", fields: [vendorId], references: [id])
+  lineItems           LineItem[]
+  specs               JobSpecs?
+  financials          JobFinancials?
+
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  @@index([customerId])
+  @@index([vendorId])
+  @@index([status])
+  @@index([number])
+}
+
+// Job Specifications
+model JobSpecs {
+  id                  String      @id @default(cuid())
+  jobId               String      @unique
+
+  productType         ProductType @default(OTHER)
+
+  // Common specs
+  colors              String?     // "4/4", "4/1", "PMS"
+  coating             String?
+  finishing           String?
+
+  // Sizes
+  flatSize            String?
+  finishedSize        String?
+
+  // Paper
+  paperType           String?     // Text/main stock
+
+  // Book-specific
+  pageCount           Int?
+  bindingStyle        String?     // Saddle Stitch, Perfect
+  coverType           CoverType?
+  coverPaperType      String?
+
+  job                 Job         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+}
+
+// Job Financials (Partner vs Standard models)
+model JobFinancials {
+  id                  String      @id @default(cuid())
+  jobId               String      @unique
+
+  // Partner (Bradford) model - Legacy CPM fields
+  paperCostCPM        Float?      // Cost per thousand
+  paperSellCPM        Float?      // Sell price per thousand
+  paperUsage          String?     // e.g., "12,000 sheets 25x38"
+  manufacturingCPM    Float?      // Manufacturing cost
+
+  // Partner (Bradford) model - New total-based pricing
+  jdServicesTotal     Float?      // Total JD Graphic charges Bradford
+  bradfordPaperCost   Float?      // What Bradford paid for paper
+  paperMarkupAmount   Float?      // Dollar markup on paper to Impact
+  impactCustomerTotal Float?      // Total customer pays Impact
+  calculatedSpread    Float?      // Spread = Customer - (Paper+Markup+JD)
+  bradfordShareAmount Float?      // Bradford's 50% of spread
+  impactCostFromBradford Float?   // Total Impact pays Bradford
+
+  // Standard model
+  consultantFee       Float?      // Flat fee for Bradford
+
+  job                 Job         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+}
+
+// Line Items
+model LineItem {
+  id                  String      @id @default(cuid())
+  jobId               String
+  description         String
+  quantity            Int
+  unitCost            Float       // Vendor cost
+  markupPercent       Float
+  unitPrice           Float       // Customer price
+  sortOrder           Int         @default(0)
+
+  job                 Job         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  @@index([jobId])
+}

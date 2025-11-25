@@ -1,0 +1,10 @@
+<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background square with border -->
+  <rect x="5" y="5" width="90" height="90" fill="white" stroke="#333" stroke-width="2"/>
+
+  <!-- "IDP" Text in bold black -->
+  <text x="50" y="60" font-family="Arial, sans-serif" font-size="40" font-weight="bold" text-anchor="middle" fill="#000000">IDP</text>
+
+  <!-- Orange dot accent (bottom right) -->
+  <circle cx="75" cy="75" r="8" fill="#D4722E"/>
+</svg>
