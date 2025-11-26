@@ -42,6 +42,16 @@ export const getBradfordStats = async (req: Request, res: Response) => {
       averageJobValue: 0,
       totalLineItems: 0,
 
+      // Paid/Unpaid breakdown
+      paidRevenue: 0,
+      unpaidRevenue: 0,
+      paidBradfordProfit: 0,
+      unpaidBradfordProfit: 0,
+      paidImpactProfit: 0,
+      unpaidImpactProfit: 0,
+      paidJDCosts: 0,
+      unpaidJDCosts: 0,
+
       // Paper usage metrics
       totalPaperSheets: 0,
       totalPaperPounds: 0,
@@ -88,6 +98,16 @@ export const getBradfordStats = async (req: Request, res: Response) => {
       stats.totalRevenue += jobRevenue;
       stats.totalLineItems += job.lineItems.length;
 
+      // Track if job is paid
+      const isPaid = job.status === 'PAID';
+
+      // Track revenue by paid/unpaid
+      if (isPaid) {
+        stats.paidRevenue += jobRevenue;
+      } else {
+        stats.unpaidRevenue += jobRevenue;
+      }
+
       // Process financials if available
       if (job.financials) {
         const fin = job.financials;
@@ -105,7 +125,19 @@ export const getBradfordStats = async (req: Request, res: Response) => {
         stats.totalImpactProfit += impactProfit;
 
         // JD costs
-        stats.totalJDCosts += fin.jdServicesTotal || 0;
+        const jdCosts = fin.jdServicesTotal || 0;
+        stats.totalJDCosts += jdCosts;
+
+        // Track by paid/unpaid status
+        if (isPaid) {
+          stats.paidBradfordProfit += bradfordProfit;
+          stats.paidImpactProfit += impactProfit;
+          stats.paidJDCosts += jdCosts;
+        } else {
+          stats.unpaidBradfordProfit += bradfordProfit;
+          stats.unpaidImpactProfit += impactProfit;
+          stats.unpaidJDCosts += jdCosts;
+        }
 
         // Check for warnings
         if (spread < 0) {

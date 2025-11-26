@@ -113,7 +113,9 @@ export function BradfordStatsView({
                 ${stats.totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                Avg: ${stats.averageJobValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} per job
+                <span className="text-green-700">Paid: ${(stats.paidRevenue || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span className="mx-2">|</span>
+                <span className="text-amber-600">Unpaid: ${(stats.unpaidRevenue || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </td>
             </tr>
             <tr className="hover:bg-gray-50">
@@ -121,14 +123,22 @@ export function BradfordStatsView({
               <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-600 font-bold">
                 ${stats.totalImpactProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">50% of spread</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <span className="text-green-700">Paid: ${(stats.paidImpactProfit || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span className="mx-2">|</span>
+                <span className="text-amber-600">Unpaid: ${(stats.unpaidImpactProfit || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </td>
             </tr>
             <tr className="hover:bg-gray-50">
               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Bradford Profit</td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-orange-600 font-bold">
                 ${stats.totalBradfordProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Paper markup + 50% spread</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <span className="text-green-700">Paid: ${(stats.paidBradfordProfit || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span className="mx-2">|</span>
+                <span className="text-amber-600">Unpaid: ${(stats.unpaidBradfordProfit || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </td>
             </tr>
             <tr className="hover:bg-gray-50">
               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Paper Usage</td>
@@ -171,7 +181,9 @@ export function BradfordStatsView({
                     ${stats.totalJDCosts.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
                   <td className="py-3 text-sm text-gray-500">
-                    Avg: ${stats.averageJDCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <span className="text-green-700">Paid: ${(stats.paidJDCosts || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="mx-2">|</span>
+                    <span className="text-amber-600">Unpaid: ${(stats.unpaidJDCosts || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </td>
                 </tr>
                 <tr>

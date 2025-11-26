@@ -30,6 +30,16 @@ export interface BradfordStats {
   averageJobValue: number;
   totalLineItems: number;
 
+  // Paid/Unpaid breakdown
+  paidRevenue: number;
+  unpaidRevenue: number;
+  paidBradfordProfit: number;
+  unpaidBradfordProfit: number;
+  paidImpactProfit: number;
+  unpaidImpactProfit: number;
+  paidJDCosts: number;
+  unpaidJDCosts: number;
+
   // Paper usage metrics
   totalPaperSheets: number;
   totalPaperPounds: number;
