@@ -125,7 +125,7 @@ export function JobsView({
 
     // Sort by customer name
     return Array.from(grouped.values()).sort((a, b) =>
-      a.customer.name.localeCompare(b.customer.name)
+      (a.customer.name || '').localeCompare(b.customer.name || '')
     );
   }, [filteredJobs]);
 

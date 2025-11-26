@@ -481,7 +481,7 @@ export const JobDrawer: React.FC<JobDrawerProps> = ({
               <button
                 onClick={onDownloadPO}
                 className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium flex items-center gap-2"
-                title={`Download Purchase Order for ${job.vendor.name}`}
+                title={`Download Purchase Order for ${job.vendor?.name || 'Vendor'}`}
               >
                 <FileText className="w-4 h-4" />
                 PO PDF
@@ -491,7 +491,7 @@ export const JobDrawer: React.FC<JobDrawerProps> = ({
               <button
                 onClick={onDownloadInvoice}
                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium flex items-center gap-2"
-                title={`Download Invoice for ${job.customer.name}`}
+                title={`Download Invoice for ${job.customer?.name || 'Customer'}`}
               >
                 <FileText className="w-4 h-4" />
                 Invoice PDF
@@ -501,7 +501,7 @@ export const JobDrawer: React.FC<JobDrawerProps> = ({
               <button
                 onClick={onDownloadQuote}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center gap-2"
-                title={`Download Quote for ${job.customer.name}`}
+                title={`Download Quote for ${job.customer?.name || 'Customer'}`}
               >
                 <FileText className="w-4 h-4" />
                 Quote PDF
