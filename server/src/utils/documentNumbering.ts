@@ -7,9 +7,7 @@
  * - Quotes: Q-{jobNumber}-{version} (e.g., "Q-1001-01")
  */
 
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from './prisma';
 
 /**
  * Generates a unique 3-character code for an entity

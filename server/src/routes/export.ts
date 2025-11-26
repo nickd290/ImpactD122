@@ -1,8 +1,7 @@
 import express from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../utils/prisma';
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 // Temporary export endpoint - fetch all data as JSON
 router.get('/all', async (req, res) => {

@@ -5,22 +5,24 @@ import { BRADFORD_SIZE_PRICING } from '../utils/bradfordPricing';
 // Get comprehensive Bradford statistics
 export const getBradfordStats = async (req: Request, res: Response) => {
   try {
-    // Fetch all Bradford jobs (where vendor is Bradford - check vendorCode or name)
-    const bradfordJobs = await prisma.job.findMany({
+    // Fetch all jobs with vendors first, then filter for Bradford in memory
+    // (Prisma nested WHERE fails when vendorId is null)
+    const allJobsWithVendors = await prisma.job.findMany({
       where: {
         deletedAt: null,
-        Vendor: {
-          OR: [
-            { vendorCode: 'BRADFORD' },
-            { name: { contains: 'Bradford', mode: 'insensitive' } },
-          ],
-        },
+        vendorId: { not: null },
       },
       include: {
         Company: true,
         Vendor: true,
       },
     });
+
+    // Filter for Bradford vendor in memory (case-insensitive)
+    const bradfordJobs = allJobsWithVendors.filter(job =>
+      job.Vendor?.vendorCode?.toUpperCase() === 'BRADFORD' ||
+      job.Vendor?.name?.toLowerCase().includes('bradford')
+    );
 
     // Initialize stats object
     const stats = {

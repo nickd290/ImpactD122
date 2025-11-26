@@ -12,6 +12,9 @@ function transformJob(job: any) {
 
   return {
     ...job,
+    // Preserve IDs explicitly for filtering
+    customerId: job.customerId,
+    vendorId: job.vendorId,
     // Map jobNo to number for frontend compatibility
     number: job.jobNo,
     // Map deliveryDate to dueDate for frontend
