@@ -98,8 +98,8 @@ export function JobsView({
   }, [isActionsOpen]);
 
   const filteredJobs = jobs.filter((job: Job) =>
-    job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    job.number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    job.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    job.number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     job.customerPONumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     job.customer?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     job.vendor?.name?.toLowerCase().includes(searchTerm.toLowerCase())
