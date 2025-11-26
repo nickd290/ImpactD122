@@ -21,7 +21,7 @@ export const getAllEntities = async (req: Request, res: Response) => {
         phone: v.phone || '',
         address: `${v.streetAddress || ''}, ${v.city || ''}, ${v.state || ''} ${v.zip || ''}`.trim(),
         contactPerson: '',
-        isPartner: false, // Could check vendor code for Bradford
+        isPartner: v.vendorCode === 'BRADFORD' || v.name?.toLowerCase().includes('bradford'),
         notes: '',
         contacts: [],
         createdAt: v.createdAt,
@@ -29,8 +29,13 @@ export const getAllEntities = async (req: Request, res: Response) => {
       }));
       return res.json(entities);
     } else if (type === 'CUSTOMER') {
-      // Get companies (customers)
+      // Get companies (customers only - exclude partners/brokers/manufacturers)
       const companies = await prisma.company.findMany({
+        where: {
+          type: {
+            notIn: ['PARTNER', 'broker', 'manufacturer'],
+          },
+        },
         include: { Employee: true },
         orderBy: { name: 'asc' },
       });
@@ -60,6 +65,11 @@ export const getAllEntities = async (req: Request, res: Response) => {
       // Get both - return companies as customers and vendors
       const [companies, vendors] = await Promise.all([
         prisma.company.findMany({
+          where: {
+            type: {
+              notIn: ['PARTNER', 'broker', 'manufacturer'],
+            },
+          },
           include: { Employee: true },
           orderBy: { name: 'asc' },
         }),
@@ -98,7 +108,7 @@ export const getAllEntities = async (req: Request, res: Response) => {
         phone: v.phone || '',
         address: `${v.streetAddress || ''}, ${v.city || ''}, ${v.state || ''} ${v.zip || ''}`.trim(),
         contactPerson: '',
-        isPartner: v.vendorCode === 'BRADFORD' || v.name.toLowerCase().includes('bradford'),
+        isPartner: v.vendorCode === 'BRADFORD' || v.name?.toLowerCase().includes('bradford'),
         notes: '',
         contacts: [],
         createdAt: v.createdAt,
