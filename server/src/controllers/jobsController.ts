@@ -72,11 +72,12 @@ function transformJob(job: any) {
                               (job.bradfordTotalMargin ? Number(job.bradfordTotalMargin) : 0),
     },
     // Create lineItems from quantity for frontend compatibility
+    // Note: paperCostCPM is "per thousand" so divide by 1000 to get per-unit cost
     lineItems: quantity > 0 ? [{
       id: 'main',
       description: job.title || 'Main Item',
       quantity: quantity,
-      unitCost: job.paperCostCPM ? Number(job.paperCostCPM) : 0,
+      unitCost: job.paperCostCPM ? Number(job.paperCostCPM) / 1000 : 0,
       markupPercent: 0,
       unitPrice: unitPrice,
     }] : [],
