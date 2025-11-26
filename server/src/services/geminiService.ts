@@ -64,29 +64,36 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
 
     **Extraction Rules:**
     1. **Customer**: Identify the company sending the PO.
-    2. **Pricing**:
+    2. **Quantity (CRITICAL)**:
+       - ALWAYS extract the exact quantity from the PO.
+       - Look for "Qty:", "Quantity:", "QTY", or numeric values near item descriptions.
+       - Common quantities: 1000, 2500, 5000, 10000, etc.
+       - NEVER default to 1 - if unclear, look harder at the document.
+       - The quantity is a separate field from the price - do not confuse them.
+    3. **Pricing**:
        - The price on the PO is the **Revenue** (Customer Price).
        - Set 'unitPrice' to this value.
        - IMPORTANT: If the unitPrice looks like a Total (e.g. > $100 for a quantity > 100), assume it is the 'Line Total'.
        - In your JSON, provide 'unitPrice' (per piece) and 'lineTotal' (total amount). Calculate unitPrice if only total is present.
-    3. **Product Type**:
+    4. **Product Type**:
        - If "Book", "Catalog", "Magazine", "Booklet" is mentioned -> "BOOK".
        - If "Fold", "Brochure" -> "FOLDED".
        - Otherwise "FLAT".
-    4. **Sizes**:
+    5. **Sizes**:
        - Extract "Flat Size" (unfolded/uncut size) -> map to 'flatSize'.
        - Extract "Finished Size" or "Final Size" or "Folded Size" -> map to 'finishedSize'.
        - Format as "Width x Height" (e.g., "8.5 x 11", "11 x 17").
-    5. **Book Details**:
+    6. **Book Details**:
        - Look for "Page Count".
        - "Cover Type": "Plus Cover" vs "Self Cover".
        - "Stock" or "Cover Stock" -> map to 'coverPaperType'.
        - "Text" or "Text Weight" -> map to 'paperType'.
        - "Binding": Saddle Stitch, Perfect Bound, etc.
-    6. **Line Items**:
-       - Extract description, quantity, and the total price.
+    7. **Line Items**:
+       - Extract description, quantity (REQUIRED - look carefully!), and the total price.
+       - Each item MUST have a quantity - it's one of the most important fields.
 
-    Return clean JSON with: customerName, poNumber, title, specs (productType, flatSize, finishedSize, paperType, coverPaperType, colors, coating, finishing, pageCount, bindingStyle, coverType), items`;
+    Return clean JSON with: customerName, poNumber, title, specs (productType, flatSize, finishedSize, paperType, coverPaperType, colors, coating, finishing, pageCount, bindingStyle, coverType), items (EACH item must have: description, quantity, unitPrice or lineTotal)`;
 
     const result = await model.generateContent([
       {
@@ -107,6 +114,9 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
     const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
     const parsed = JSON.parse(jsonMatch ? jsonMatch[1] : text);
 
+    // Log the full parsed data for debugging
+    console.log('📋 PO Parser - Full AI Response:', JSON.stringify(parsed, null, 2));
+
     return {
       title: parsed.title || "PO Import",
       customerPONumber: parsed.poNumber,
@@ -115,14 +125,23 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
         productType: parsed.specs?.productType || 'FLAT',
         ...parsed.specs
       },
-      lineItems: parsed.items?.map((i: any) => {
+      lineItems: parsed.items?.map((i: any, index: number) => {
         // Smart Price Logic: If unitPrice seems way too high, it might be a total
         let finalUnitPrice = i.unitPrice || 0;
-        const qty = i.quantity || 1;
+        const qty = i.quantity || 0; // Changed from 1 to 0 to make missing quantities more obvious
+
+        // Log warning if quantity is missing or suspicious
+        if (!i.quantity || i.quantity === 0 || i.quantity === 1) {
+          console.warn(`⚠️ PO Parser Warning: Item ${index + 1} has suspicious quantity:`, {
+            description: i.description,
+            extractedQuantity: i.quantity,
+            rawItem: i
+          });
+        }
 
         // Heuristic: If UnitPrice > 100 and Qty > 100, it's likely a total disguised as a unit price
         // Or if lineTotal is explicitly provided
-        if (i.lineTotal && i.lineTotal > 0) {
+        if (i.lineTotal && i.lineTotal > 0 && qty > 0) {
           finalUnitPrice = i.lineTotal / qty;
         } else if (finalUnitPrice > 50 && qty > 50) {
           // Fallback heuristic

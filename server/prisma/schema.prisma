@@ -63,6 +63,9 @@ model Entity {
   contacts            Contact[]
   jobsAsCustomer      Job[]     @relation("CustomerJobs")
   jobsAsVendor        Job[]     @relation("VendorJobs")
+  capability          VendorCapability?
+  vendorQuotes        VendorQuote[]     @relation("VendorQuotes")
+  jobVendors          JobVendor[]       @relation("JobVendorAssignments")
 
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
@@ -126,6 +129,8 @@ model Job {
   lineItems           LineItem[]
   specs               JobSpecs?
   financials          JobFinancials?
+  quoteRequests       QuoteRequest[]
+  jobVendors          JobVendor[]       @relation("JobVendors")
 
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
@@ -213,4 +218,149 @@ model LineItem {
   updatedAt           DateTime    @updatedAt
 
   @@index([jobId])
+}
+
+// Vendor Capabilities
+model VendorCapability {
+  id                  String      @id @default(cuid())
+  vendorId            String      @unique
+
+  // Service capabilities (boolean flags)
+  printing            Boolean     @default(true)   // Base printing service
+  binding             Boolean     @default(false)
+  foilStamping        Boolean     @default(false)
+  embossing           Boolean     @default(false)
+  dieCutting          Boolean     @default(false)
+  uvCoating           Boolean     @default(false)
+  lamination          Boolean     @default(false)
+  scoring             Boolean     @default(false)
+  folding             Boolean     @default(false)
+
+  // Detailed capabilities (arrays for flexibility)
+  bindingTypes        String[]    // ["Perfect Bound", "Saddle Stitch", "Coil", "Case Binding"]
+  foilColors          String[]    // ["Gold", "Silver", "Copper", "Red", "Blue"]
+  coatingTypes        String[]    // ["UV", "Aqueous", "Soft Touch", "Gloss"]
+
+  // Equipment & capacity
+  maxSheetSize        String?     // "25x38", "28x40"
+  minQuantity         Int?        // Minimum order quantity
+  maxQuantity         Int?        // Maximum capacity per job
+
+  // Business details
+  avgLeadTimeDays     Int?        // Typical turnaround time
+  notes               String?     // Free-form notes about capabilities
+
+  // Relations
+  vendor              Entity      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  @@index([vendorId])
+}
+
+// Quote Request Status
+enum QuoteRequestStatus {
+  DRAFT               // Being prepared
+  SENT                // Sent to vendors
+  RESPONSES_RECEIVED  // At least one quote received
+  AWARDED             // Vendor(s) selected
+  CANCELLED           // Cancelled
+}
+
+// Quote Requests
+model QuoteRequest {
+  id                  String                @id @default(cuid())
+  jobId               String
+  requestNumber       String                @unique  // QR-1001, QR-1002, etc.
+
+  // Request details
+  specs               Json                  // Snapshot of JobSpecs at time of request
+  requiredServices    String[]              // ["printing", "binding", "foilStamping"]
+  dueDate             DateTime?
+  notes               String?
+
+  // Status tracking
+  status              QuoteRequestStatus    @default(DRAFT)
+  sentAt              DateTime?
+
+  // Relations
+  job                 Job                   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  vendorQuotes        VendorQuote[]
+
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  @@index([jobId])
+  @@index([status])
+  @@index([requestNumber])
+}
+
+// Vendor Quote Status
+enum VendorQuoteStatus {
+  PENDING       // Awaiting response from vendor
+  RECEIVED      // Quote received
+  ACCEPTED      // Vendor selected for this job
+  DECLINED      // Vendor declined to quote
+  REJECTED      // Quote rejected by Impact
+}
+
+// Vendor Quotes (responses to quote requests)
+model VendorQuote {
+  id                  String              @id @default(cuid())
+  quoteRequestId      String
+  vendorId            String
+
+  // Quote details
+  quoteNumber         String?             // Vendor's quote/estimate number
+  totalCost           Float?
+  leadTimeDays        Int?
+  notes               String?
+
+  // Line items breakdown (JSON for flexibility)
+  lineItems           Json?               // Array of {service, description, quantity, unitCost, total}
+
+  // Status & tracking
+  status              VendorQuoteStatus   @default(PENDING)
+  sentEmailAt         DateTime?           // When RFQ email was sent
+  receivedAt          DateTime?           // When quote was received
+  acceptedAt          DateTime?           // When quote was accepted
+  declinedAt          DateTime?           // When vendor declined
+  declineReason       String?
+
+  // Relations
+  quoteRequest        QuoteRequest        @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
+  vendor              Entity              @relation("VendorQuotes", fields: [vendorId], references: [id], onDelete: Cascade)
+
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@index([quoteRequestId])
+  @@index([vendorId])
+  @@index([status])
+}
+
+// Job-Vendor Junction (for multi-vendor jobs)
+model JobVendor {
+  id                  String      @id @default(cuid())
+  jobId               String
+  vendorId            String
+
+  // Assignment details
+  services            String[]    // Which services this vendor provides ["printing", "binding"]
+  poNumber            String?     // PO number for this vendor
+  cost                Float?      // Cost from this vendor
+  status              String?     // Status of work with this vendor
+  notes               String?
+
+  // Relations
+  job                 Job         @relation("JobVendors", fields: [jobId], references: [id], onDelete: Cascade)
+  vendor              Entity      @relation("JobVendorAssignments", fields: [vendorId], references: [id], onDelete: Cascade)
+
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  @@unique([jobId, vendorId])
+  @@index([jobId])
+  @@index([vendorId])
 }

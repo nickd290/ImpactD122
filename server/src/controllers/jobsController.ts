@@ -76,7 +76,15 @@ export const createJob = async (req: Request, res: Response) => {
             sortOrder: index,
           })),
         } : undefined,
-        specs: specs ? { create: specs } : undefined,
+        specs: specs ? {
+          create: {
+            ...specs,
+            // Convert string types to proper types
+            pageCount: specs.pageCount ? parseInt(specs.pageCount) : null,
+            coverType: specs.coverType || null,
+            bindingStyle: specs.bindingStyle || null,
+          }
+        } : undefined,
         financials: financials ? { create: financials } : undefined,
       },
       include: {

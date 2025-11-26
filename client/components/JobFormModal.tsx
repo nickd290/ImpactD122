@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
+import { getBradfordSizes, getBradfordPricing, isBradfordSize } from '../utils/bradfordPricing';
 
 interface JobFormModalProps {
   isOpen: boolean;
@@ -52,6 +53,59 @@ export function JobFormModal({
       unitPrice: 0,
     }
   ]);
+
+  const [bradfordFinancials, setBradfordFinancials] = useState({
+    impactCustomerTotal: initialData?.financials?.impactCustomerTotal || 0,
+    jdServicesTotal: initialData?.financials?.jdServicesTotal || 0,
+    bradfordPaperCost: initialData?.financials?.bradfordPaperCost || 0,
+    paperMarkupAmount: initialData?.financials?.paperMarkupAmount || 0,
+  });
+
+  // CPM (Cost Per Thousand) values for Bradford pricing
+  const [bradfordCPM, setBradfordCPM] = useState({
+    customerCPM: 0,
+    jdServicesCPM: 0,
+    bradfordPaperCostCPM: 0,
+    paperMarkupCPM: 0,
+    printCPM: 0, // Added Print CPM
+  });
+
+  // Track if using custom size (not Bradford size)
+  const [useCustomSize, setUseCustomSize] = useState(false);
+  const [customSizeValue, setCustomSizeValue] = useState('');
+
+  // Calculate total quantity from all line items
+  const totalQuantity = lineItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
+
+  // Auto-calculate Bradford financials from CPM values
+  const calculateFromCPM = (cpm: number) => {
+    return (cpm * totalQuantity) / 1000;
+  };
+
+  // Get selected Bradford vendor
+  const selectedVendor = vendors.find(v => v.id === formData.vendorId);
+  const isBradfordVendor = selectedVendor?.isPartner === true;
+
+  // Auto-calculate Print CPM when Bradford vendor + Bradford size is selected
+  useEffect(() => {
+    if (isBradfordVendor && specs.finishedSize && !useCustomSize) {
+      const pricing = getBradfordPricing(specs.finishedSize);
+      if (pricing) {
+        setBradfordCPM(prev => ({
+          ...prev,
+          printCPM: pricing.printCPM,
+          jdServicesCPM: pricing.printCPM, // JD Services CPM = Print CPM
+          bradfordPaperCostCPM: pricing.costCPMPaper,
+          paperMarkupCPM: pricing.sellCPMPaper - pricing.costCPMPaper,
+        }));
+        // Also update the financials total
+        setBradfordFinancials(prev => ({
+          ...prev,
+          jdServicesTotal: calculateFromCPM(pricing.printCPM),
+        }));
+      }
+    }
+  }, [formData.vendorId, specs.finishedSize, useCustomSize, isBradfordVendor]);
 
   if (!isOpen) return null;
 
@@ -107,6 +161,20 @@ export function JobFormModal({
       return;
     }
 
+    // Validate line items
+    const validLineItems = lineItems.filter(item => item.description.trim());
+    if (validLineItems.length === 0) {
+      alert('Please add at least one line item with a description');
+      return;
+    }
+
+    // Check if any line item has negative pricing
+    const hasInvalidPricing = validLineItems.some(item => item.unitPrice < 0 || item.unitCost < 0);
+    if (hasInvalidPricing) {
+      alert('Pricing cannot be negative (Price >= $0, Cost >= $0)');
+      return;
+    }
+
     // Prepare specs object (only include if at least one field is filled)
     const hasSpecs = specs.productType !== 'OTHER' ||
       specs.paperType || specs.colors || specs.coating ||
@@ -117,10 +185,19 @@ export function JobFormModal({
       pageCount: specs.pageCount ? parseInt(specs.pageCount as any) : null,
     } : null;
 
+    // Prepare Bradford financials (optional - only include if at least one field has value)
+    const hasFinancials = bradfordFinancials.impactCustomerTotal > 0 ||
+      bradfordFinancials.jdServicesTotal > 0 ||
+      bradfordFinancials.bradfordPaperCost > 0 ||
+      bradfordFinancials.paperMarkupAmount > 0;
+
+    const financialsData = hasFinancials ? bradfordFinancials : null;
+
     onSubmit({
       ...formData,
       specs: specsData,
-      lineItems: lineItems.filter(item => item.description.trim()),
+      lineItems: validLineItems,
+      financials: financialsData,
     });
     onClose();
   };
@@ -367,18 +444,60 @@ export function JobFormModal({
                   />
                 </div>
 
-                {/* Finished Size */}
+                {/* Finished Size - Dropdown with Bradford sizes */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Finished Size
                   </label>
-                  <input
-                    type="text"
-                    value={specs.finishedSize}
-                    onChange={(e) => setSpecs({ ...specs, finishedSize: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="e.g., 8.5x11"
-                  />
+                  {useCustomSize ? (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={customSizeValue}
+                        onChange={(e) => {
+                          setCustomSizeValue(e.target.value);
+                          setSpecs({ ...specs, finishedSize: e.target.value });
+                        }}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="e.g., 8.5 x 11"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUseCustomSize(false);
+                          setCustomSizeValue('');
+                          setSpecs({ ...specs, finishedSize: '' });
+                        }}
+                        className="px-3 py-2 text-sm bg-gray-200 hover:bg-gray-300 rounded-lg"
+                      >
+                        Use Dropdown
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <select
+                        value={specs.finishedSize}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value === 'CUSTOM') {
+                            setUseCustomSize(true);
+                            setSpecs({ ...specs, finishedSize: '' });
+                          } else {
+                            setSpecs({ ...specs, finishedSize: value });
+                          }
+                        }}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="">Select Size</option>
+                        {getBradfordSizes().map(size => (
+                          <option key={size} value={size}>
+                            {size} {isBradfordVendor ? '(Bradford)' : ''}
+                          </option>
+                        ))}
+                        <option value="CUSTOM">Custom Size...</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -479,8 +598,16 @@ export function JobFormModal({
               </div>
 
               <div className="space-y-3">
-                {lineItems.map((item, index) => (
-                  <div key={index} className="border border-gray-200 rounded-lg p-4">
+                {lineItems.map((item, index) => {
+                  const isBelowCost = item.unitPrice > 0 && item.unitCost > 0 && item.unitPrice < item.unitCost;
+                  return <div key={index} className={`border rounded-lg p-4 ${isBelowCost ? 'border-red-400 bg-red-50' : 'border-gray-200'}`}>
+                    {isBelowCost && (
+                      <div className="mb-2 flex items-center gap-2 text-red-700 text-xs font-medium">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded bg-red-200">
+                          ⚠️ Selling below cost!
+                        </span>
+                      </div>
+                    )}
                     <div className="grid grid-cols-6 gap-3">
                       <div className="col-span-2">
                         <label className="block text-xs font-medium text-gray-700 mb-1">
@@ -545,7 +672,7 @@ export function JobFormModal({
                             type="number"
                             value={item.unitPrice.toFixed(2)}
                             onChange={(e) => handleLineItemChange(index, 'unitPrice', e.target.value)}
-                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm bg-gray-50"
+                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm bg-white"
                             step="0.01"
                             min="0"
                           />
@@ -563,7 +690,138 @@ export function JobFormModal({
                       </div>
                     </div>
                   </div>
-                ))}
+                })}
+              </div>
+
+              {/* Bradford Partner Financials (Optional) - CPM Based */}
+              <div className="mt-6 border border-gray-300 rounded-lg p-4 bg-gray-50">
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                  Bradford Partner Financials (Optional)
+                </h3>
+                <p className="text-sm text-gray-600 mb-2">
+                  Only fill out these fields if this is a Bradford partner job. Leave blank for standard jobs.
+                </p>
+                <p className="text-xs text-blue-600 mb-4">
+                  Enter CPM (Cost Per Thousand) values. Totals will auto-calculate based on quantity: <strong>{totalQuantity.toLocaleString()}</strong>
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Customer CPM
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={bradfordCPM.customerCPM}
+                      onChange={(e) => {
+                        const cpm = parseFloat(e.target.value) || 0;
+                        setBradfordCPM({ ...bradfordCPM, customerCPM: cpm });
+                        setBradfordFinancials({
+                          ...bradfordFinancials,
+                          impactCustomerTotal: calculateFromCPM(cpm)
+                        });
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="0.00"
+                    />
+                    <p className="text-xs text-gray-600 mt-1">
+                      Total: <strong>${calculateFromCPM(bradfordCPM.customerCPM).toFixed(2)}</strong>
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      JD Services CPM
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={bradfordCPM.jdServicesCPM}
+                      onChange={(e) => {
+                        const cpm = parseFloat(e.target.value) || 0;
+                        setBradfordCPM({ ...bradfordCPM, jdServicesCPM: cpm });
+                        setBradfordFinancials({
+                          ...bradfordFinancials,
+                          jdServicesTotal: calculateFromCPM(cpm)
+                        });
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="0.00"
+                    />
+                    <p className="text-xs text-gray-600 mt-1">
+                      Total: <strong>${calculateFromCPM(bradfordCPM.jdServicesCPM).toFixed(2)}</strong>
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Bradford Paper Cost CPM
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={bradfordCPM.bradfordPaperCostCPM}
+                      onChange={(e) => {
+                        const cpm = parseFloat(e.target.value) || 0;
+                        setBradfordCPM({ ...bradfordCPM, bradfordPaperCostCPM: cpm });
+                        setBradfordFinancials({
+                          ...bradfordFinancials,
+                          bradfordPaperCost: calculateFromCPM(cpm)
+                        });
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="0.00"
+                    />
+                    <p className="text-xs text-gray-600 mt-1">
+                      Total: <strong>${calculateFromCPM(bradfordCPM.bradfordPaperCostCPM).toFixed(2)}</strong>
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Paper Markup CPM
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={bradfordCPM.paperMarkupCPM}
+                      onChange={(e) => {
+                        const cpm = parseFloat(e.target.value) || 0;
+                        setBradfordCPM({ ...bradfordCPM, paperMarkupCPM: cpm });
+                        setBradfordFinancials({
+                          ...bradfordFinancials,
+                          paperMarkupAmount: calculateFromCPM(cpm)
+                        });
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="0.00"
+                    />
+                    <p className="text-xs text-gray-600 mt-1">
+                      Total: <strong>${calculateFromCPM(bradfordCPM.paperMarkupCPM).toFixed(2)}</strong>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Print CPM - Auto-calculated for Bradford sizes */}
+                {isBradfordVendor && bradfordCPM.printCPM > 0 && (
+                  <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <label className="block text-sm font-semibold text-blue-900 mb-1">
+                          Print CPM (Auto-calculated)
+                        </label>
+                        <p className="text-xs text-blue-700">
+                          Based on selected size: <strong>{specs.finishedSize}</strong>
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-blue-900">
+                          ${bradfordCPM.printCPM.toFixed(2)}
+                        </p>
+                        <p className="text-xs text-blue-700">
+                          Total: <strong>${calculateFromCPM(bradfordCPM.printCPM).toFixed(2)}</strong>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Totals */}

@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Plus, Search, Sparkles, Upload, FileText, Edit, Trash2, FileSpreadsheet, CheckSquare, Square, Copy, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Plus, Search, Sparkles, Upload, FileText, Edit, Trash2, FileSpreadsheet, CheckSquare, Square, Copy, AlertTriangle, ChevronDown, ChevronRight, MoreVertical } from 'lucide-react';
 import { Button } from './ui';
 import { Input } from './ui';
 import { Badge } from './ui';
@@ -41,27 +41,19 @@ interface JobsViewProps {
   onCloseDrawer?: () => void;
 }
 
-function getStatusColor(status: string): string {
-  const statusMap: Record<string, string> = {
-    'DRAFT': 'bg-gray-100 text-gray-700 border-gray-200',
-    'QUOTED': 'bg-blue-100 text-blue-700 border-blue-200',
-    'APPROVED': 'bg-green-100 text-green-700 border-green-200',
-    'IN_PRODUCTION': 'bg-purple-100 text-purple-700 border-purple-200',
-    'SHIPPED': 'bg-indigo-100 text-indigo-700 border-indigo-200',
-    'DELIVERED': 'bg-emerald-100 text-emerald-700 border-emerald-200',
-    'PAID': 'bg-teal-100 text-teal-700 border-teal-200',
-    'CANCELLED': 'bg-red-100 text-red-700 border-red-200',
-  };
-  return statusMap[status] || 'bg-gray-100 text-gray-700 border-gray-200';
-}
-
 function StatusBadge({ status }: { status: string }) {
+  const isPaid = status === 'PAID';
+  const displayText = isPaid ? 'PAID' : 'UNPAID';
+  const colorClasses = isPaid
+    ? 'bg-green-100 text-green-700 border-green-300'
+    : 'bg-red-100 text-red-700 border-red-300';
+
   return (
     <span className={cn(
       'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border',
-      getStatusColor(status)
+      colorClasses
     )}>
-      {status.replace(/_/g, ' ')}
+      {displayText}
     </span>
   );
 }
@@ -88,6 +80,22 @@ export function JobsView({
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const [collapsedCustomers, setCollapsedCustomers] = useState<Set<string>>(new Set());
+  const [isActionsOpen, setIsActionsOpen] = useState(false);
+  const actionsRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (actionsRef.current && !actionsRef.current.contains(event.target as Node)) {
+        setIsActionsOpen(false);
+      }
+    };
+
+    if (isActionsOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isActionsOpen]);
 
   const filteredJobs = jobs.filter((job: Job) =>
     job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -261,40 +269,69 @@ export function JobsView({
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button
-            onClick={handleFindDuplicates}
-            variant="outline"
-            className="bg-yellow-600 text-white hover:bg-yellow-700 border-yellow-600"
-          >
-            <Copy className="w-4 h-4 mr-2" />
-            Find Duplicates
-          </Button>
-          <Button
-            onClick={onShowSpecParser}
-            variant="outline"
-            className="bg-purple-600 text-white hover:bg-purple-700 border-purple-600"
-          >
-            <Sparkles className="w-4 h-4 mr-2" />
-            Parse Specs
-          </Button>
-          <Button
-            onClick={onShowPOUploader}
-            variant="outline"
-            className="bg-blue-600 text-white hover:bg-blue-700 border-blue-600"
-          >
-            <Upload className="w-4 h-4 mr-2" />
-            Upload PO
-          </Button>
-          {onShowExcelImporter && (
+          {/* Actions Dropdown */}
+          <div className="relative" ref={actionsRef}>
             <Button
-              onClick={onShowExcelImporter}
+              onClick={() => setIsActionsOpen(!isActionsOpen)}
               variant="outline"
-              className="bg-green-600 text-white hover:bg-green-700 border-green-600"
             >
-              <FileSpreadsheet className="w-4 h-4 mr-2" />
-              Import Excel
+              <MoreVertical className="w-4 h-4 mr-2" />
+              Actions
+              <ChevronDown className="w-4 h-4 ml-2" />
             </Button>
-          )}
+
+            {isActionsOpen && (
+              <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                <button
+                  onClick={() => {
+                    handleFindDuplicates();
+                    setIsActionsOpen(false);
+                  }}
+                  className="w-full px-4 py-2 text-left flex items-center gap-3 hover:bg-gray-100 transition-colors"
+                >
+                  <Copy className="w-4 h-4 text-yellow-600" />
+                  <span className="text-sm font-medium">Find Duplicates</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    onShowSpecParser();
+                    setIsActionsOpen(false);
+                  }}
+                  className="w-full px-4 py-2 text-left flex items-center gap-3 hover:bg-gray-100 transition-colors"
+                >
+                  <Sparkles className="w-4 h-4 text-purple-600" />
+                  <span className="text-sm font-medium">Parse Specs</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    onShowPOUploader();
+                    setIsActionsOpen(false);
+                  }}
+                  className="w-full px-4 py-2 text-left flex items-center gap-3 hover:bg-gray-100 transition-colors"
+                >
+                  <Upload className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm font-medium">Upload PO</span>
+                </button>
+
+                {onShowExcelImporter && (
+                  <button
+                    onClick={() => {
+                      onShowExcelImporter();
+                      setIsActionsOpen(false);
+                    }}
+                    className="w-full px-4 py-2 text-left flex items-center gap-3 hover:bg-gray-100 transition-colors"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-green-600" />
+                    <span className="text-sm font-medium">Import Excel</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Primary New Job Button */}
           <Button onClick={onCreateJob}>
             <Plus className="w-4 h-4 mr-2" />
             New Job
@@ -399,6 +436,12 @@ export function JobsView({
                           Vendor
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Quantity
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Due Date
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                           Status
                         </th>
                         <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -463,6 +506,26 @@ export function JobsView({
                           >
                             <span className="text-sm text-foreground">
                               {job.vendor?.name || '-'}
+                            </span>
+                          </td>
+                          <td
+                            onClick={() => handleRowClick(job)}
+                            className="px-6 py-4 whitespace-nowrap cursor-pointer"
+                          >
+                            <span className="text-sm text-foreground">
+                              {job.lineItems && job.lineItems.length > 0
+                                ? job.lineItems.reduce((sum, item) => sum + (item.quantity || 0), 0).toLocaleString()
+                                : '-'}
+                            </span>
+                          </td>
+                          <td
+                            onClick={() => handleRowClick(job)}
+                            className="px-6 py-4 whitespace-nowrap cursor-pointer"
+                          >
+                            <span className="text-sm text-foreground">
+                              {job.dueDate
+                                ? new Date(job.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                : '-'}
                             </span>
                           </td>
                           <td

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FileText, X, AlertCircle, Plus, Trash2, UserPlus } from 'lucide-react';
 import { entitiesApi } from '../lib/api';
+import { getBradfordSizes, getBradfordPricing, isBradfordSize } from '../utils/bradfordPricing';
 
 interface ParsedJobReviewModalProps {
   parsedData: any;
@@ -67,6 +68,11 @@ export function ParsedJobReviewModal({
       : [{ description: '', quantity: 0, unitCost: 0, unitPrice: 0, markupPercent: 30 }]
   );
 
+  // Bradford Size & Pricing
+  const [useCustomSize, setUseCustomSize] = useState(false);
+  const [customSizeValue, setCustomSizeValue] = useState('');
+  const [bradfordPrintCPM, setBradfordPrintCPM] = useState(0);
+
   // Check for unmatched customer on mount
   useEffect(() => {
     if (parsedData.customerName) {
@@ -83,6 +89,24 @@ export function ParsedJobReviewModal({
       }
     }
   }, []);
+
+  // Get selected Bradford vendor
+  const selectedVendor = vendors.find(v => v.id === vendorId);
+  const isBradfordVendor = selectedVendor?.isPartner === true;
+
+  // Auto-calculate Bradford pricing when vendor and size change
+  useEffect(() => {
+    if (isBradfordVendor && finishedSize && !useCustomSize) {
+      const pricing = getBradfordPricing(finishedSize);
+      if (pricing) {
+        setBradfordPrintCPM(pricing.printCPM);
+      } else {
+        setBradfordPrintCPM(0);
+      }
+    } else {
+      setBradfordPrintCPM(0);
+    }
+  }, [vendorId, finishedSize, useCustomSize, isBradfordVendor]);
 
   const handleAddLineItem = () => {
     setLineItems([...lineItems, { description: '', quantity: 0, unitCost: 0, unitPrice: 0, markupPercent: 30 }]);
@@ -218,7 +242,7 @@ export function ParsedJobReviewModal({
     onSaveDraft(jobData);
   };
 
-  const hasWarnings = !customerId || !vendorId || lineItems.some((item: any) => !item.description || item.quantity <= 0);
+  const hasWarnings = !customerId || !vendorId || lineItems.some((item: any) => !item.description || !item.quantity || item.quantity <= 0);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -609,13 +633,55 @@ export function ParsedJobReviewModal({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Finished Size</label>
-                <input
-                  type="text"
-                  value={finishedSize}
-                  onChange={(e) => setFinishedSize(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  placeholder="e.g., 8.5x11"
-                />
+                {useCustomSize ? (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={customSizeValue}
+                      onChange={(e) => {
+                        setCustomSizeValue(e.target.value);
+                        setFinishedSize(e.target.value);
+                      }}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                      placeholder="e.g., 8.5 x 11"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUseCustomSize(false);
+                        setCustomSizeValue('');
+                        setFinishedSize('');
+                      }}
+                      className="px-3 py-2 text-sm bg-gray-200 hover:bg-gray-300 rounded-lg"
+                    >
+                      Use Dropdown
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <select
+                      value={finishedSize}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value === 'CUSTOM') {
+                          setUseCustomSize(true);
+                          setFinishedSize('');
+                        } else {
+                          setFinishedSize(value);
+                        }
+                      }}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                    >
+                      <option value="">Select Size</option>
+                      {getBradfordSizes().map(size => (
+                        <option key={size} value={size}>
+                          {size} {isBradfordVendor ? '(Bradford)' : ''}
+                        </option>
+                      ))}
+                      <option value="CUSTOM">Custom Size...</option>
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -668,6 +734,28 @@ export function ParsedJobReviewModal({
                     className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
                     placeholder="e.g., 100# Gloss Cover"
                   />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Bradford Print CPM Display */}
+          {isBradfordVendor && bradfordPrintCPM > 0 && (
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="block text-sm font-semibold text-blue-900 mb-1">
+                    Bradford Print CPM (Auto-calculated)
+                  </label>
+                  <p className="text-xs text-blue-700">
+                    Based on size: <strong>{finishedSize}</strong>
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-2xl font-bold text-blue-900">
+                    ${bradfordPrintCPM.toFixed(2)}
+                  </p>
+                  <p className="text-xs text-blue-700">per thousand</p>
                 </div>
               </div>
             </div>

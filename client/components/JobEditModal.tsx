@@ -466,9 +466,17 @@ export default function JobEditModal({
               </div>
 
               <div className="space-y-3">
-                {lineItems.map((item, index) => (
-                  <div key={index} className="bg-gray-50 p-4 rounded-lg">
-                    <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                {lineItems.map((item, index) => {
+                  const isBelowCost = item.unitPrice > 0 && item.unitCost > 0 && item.unitPrice < item.unitCost;
+                  return <div key={index} className={`p-4 rounded-lg ${isBelowCost ? 'bg-red-50 border border-red-300' : 'bg-gray-50'}`}>
+                    {isBelowCost && (
+                      <div className="mb-2 flex items-center gap-2 text-red-700 text-xs font-medium">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded bg-red-200">
+                          ⚠️ Selling below cost!
+                        </span>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
                       <div className="md:col-span-2">
                         <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
                         <input
@@ -504,6 +512,18 @@ export default function JobEditModal({
                       </div>
 
                       <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Markup %</label>
+                        <input
+                          type="number"
+                          step="1"
+                          value={item.markupPercent}
+                          onChange={(e) => handleLineItemChange(index, 'markupPercent', Number(e.target.value))}
+                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          disabled={isSaving}
+                        />
+                      </div>
+
+                      <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">Unit Price</label>
                         <input
                           type="number"
@@ -528,7 +548,7 @@ export default function JobEditModal({
                       </div>
                     </div>
                   </div>
-                ))}
+                })}
 
                 {lineItems.length === 0 && (
                   <div className="text-center py-8 bg-gray-50 rounded-lg">

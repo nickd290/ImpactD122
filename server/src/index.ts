@@ -8,6 +8,7 @@ import aiRouter from './routes/ai';
 import pdfRouter from './routes/pdf';
 import financialsRouter from './routes/financials';
 import exportRouter from './routes/export';
+import bradfordRouter from './routes/bradford';
 
 // Load environment variables
 dotenv.config();
@@ -40,6 +41,7 @@ app.use('/api/ai', aiRouter);
 app.use('/api/pdf', pdfRouter);
 app.use('/api/financials', financialsRouter);
 app.use('/api/export', exportRouter);
+app.use('/api/bradford', bradfordRouter);
 
 // Serve frontend in production
 if (process.env.NODE_ENV === 'production') {
