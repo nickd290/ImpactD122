@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
-import { getBradfordSizes, getBradfordPricing, isBradfordSize } from '../utils/bradfordPricing';
+import { getBradfordSizes, getBradfordPricing, isBradfordSize, BRADFORD_SIZE_PRICING } from '../utils/bradfordPricing';
 
 interface JobFormModalProps {
   isOpen: boolean;
@@ -42,6 +42,7 @@ export function JobFormModal({
     bindingStyle: initialData?.specs?.bindingStyle || '',
     coverType: initialData?.specs?.coverType || 'SELF',
     coverPaperType: initialData?.specs?.coverPaperType || '',
+    paperLbs: initialData?.specs?.paperLbs || '',
   });
 
   const [lineItems, setLineItems] = useState(initialData?.lineItems || [
@@ -86,7 +87,7 @@ export function JobFormModal({
   const selectedVendor = vendors.find(v => v.id === formData.vendorId);
   const isBradfordVendor = selectedVendor?.isPartner === true;
 
-  // Auto-calculate Print CPM when Bradford vendor + Bradford size is selected
+  // Auto-calculate Print CPM and Paper Lbs when Bradford vendor + Bradford size is selected
   useEffect(() => {
     if (isBradfordVendor && specs.finishedSize && !useCustomSize) {
       const pricing = getBradfordPricing(specs.finishedSize);
@@ -108,6 +109,13 @@ export function JobFormModal({
           jdServicesTotal: calcFromCPM(pricing.printCPM),
           bradfordPaperCost: calcFromCPM(pricing.costCPMPaper),
           paperMarkupAmount: calcFromCPM(pricing.sellCPMPaper - pricing.costCPMPaper),
+        }));
+
+        // Auto-calculate paper lbs based on paperLbsPerM and quantity
+        const calculatedPaperLbs = (pricing.paperLbsPerM * qty) / 1000;
+        setSpecs(prev => ({
+          ...prev,
+          paperLbs: calculatedPaperLbs.toFixed(2),
         }));
       }
     }
@@ -184,11 +192,12 @@ export function JobFormModal({
     // Prepare specs object (only include if at least one field is filled)
     const hasSpecs = specs.productType !== 'OTHER' ||
       specs.paperType || specs.colors || specs.coating ||
-      specs.finishing || specs.flatSize || specs.finishedSize;
+      specs.finishing || specs.flatSize || specs.finishedSize || specs.paperLbs;
 
     const specsData = hasSpecs ? {
       ...specs,
       pageCount: specs.pageCount ? parseInt(specs.pageCount as any) : null,
+      paperLbs: specs.paperLbs ? parseFloat(specs.paperLbs as any) : null,
     } : null;
 
     // Prepare Bradford financials (optional - only include if at least one field has value)
@@ -825,6 +834,41 @@ export function JobFormModal({
                           Total: <strong>${calculateFromCPM(bradfordCPM.printCPM).toFixed(2)}</strong>
                         </p>
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Paper Usage (lbs) - For Bradford jobs */}
+                {isBradfordVendor && (
+                  <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <label className="block text-sm font-semibold text-orange-900 mb-1">
+                          Paper Usage (lbs)
+                        </label>
+                        <p className="text-xs text-orange-700 mb-2">
+                          {specs.finishedSize && !useCustomSize ? (
+                            <>Auto-calculated from size. Override if needed.</>
+                          ) : (
+                            <>Enter paper weight in pounds</>
+                          )}
+                        </p>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={specs.paperLbs}
+                          onChange={(e) => setSpecs({ ...specs, paperLbs: e.target.value })}
+                          className="w-32 px-3 py-2 border border-orange-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+                          placeholder="0.00"
+                        />
+                      </div>
+                      {specs.paperLbs && (
+                        <div className="text-right ml-4">
+                          <p className="text-2xl font-bold text-orange-900">
+                            {parseFloat(specs.paperLbs as any).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} lbs
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

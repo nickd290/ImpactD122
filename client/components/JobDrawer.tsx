@@ -888,6 +888,12 @@ export const JobDrawer: React.FC<JobDrawerProps> = ({
                     <p className="font-medium text-gray-900">{job.specs.paperType}</p>
                   </div>
                 )}
+                {job.specs.paperLbs && (
+                  <div>
+                    <span className="text-gray-600">Paper Usage:</span>
+                    <p className="font-medium text-orange-700">{parseFloat(job.specs.paperLbs).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} lbs</p>
+                  </div>
+                )}
                 {job.specs.coating && (
                   <div>
                     <span className="text-gray-600">Coating:</span>

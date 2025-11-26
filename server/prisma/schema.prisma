@@ -159,6 +159,7 @@ model JobSpecs {
 
   // Paper
   paperType           String?     // Text/main stock
+  paperLbs            Float?      // Paper usage in pounds (for Bradford jobs)
 
   // Book-specific
   pageCount           Int?
