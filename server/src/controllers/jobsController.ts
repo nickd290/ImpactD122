@@ -21,8 +21,8 @@ function transformJob(job: any) {
     dueDate: job.deliveryDate,
     // Map createdAt to dateCreated for frontend
     dateCreated: job.createdAt,
-    // Bradford ref number (using customerPONumber as workaround)
-    bradfordRefNumber: job.customerPONumber || '',
+    // Bradford ref number (now using dedicated partnerPONumber field)
+    bradfordRefNumber: job.partnerPONumber || '',
     // Transform customer (Company) to Entity-like structure
     customer: job.Company ? {
       id: job.Company.id,
@@ -341,17 +341,17 @@ export const toggleJobLock = async (req: Request, res: Response) => {
   }
 };
 
-// Update Bradford reference number - maps to customerPONumber or similar field
+// Update Bradford reference number - uses dedicated partnerPONumber field
 export const updateBradfordRef = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { bradfordRefNumber } = req.body;
 
-    // Production schema doesn't have bradfordRefNumber, use customerPONumber as workaround
+    // Use dedicated partnerPONumber field for Bradford/Partner PO
     const job = await prisma.job.update({
       where: { id },
       data: {
-        customerPONumber: bradfordRefNumber,
+        partnerPONumber: bradfordRefNumber,
         updatedAt: new Date(),
       },
       include: {

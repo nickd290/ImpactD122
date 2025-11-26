@@ -162,6 +162,7 @@ model Job {
   packingSlipNotes          String?
   customerPONumber          String?
   customerPOFile            String?
+  partnerPONumber           String?          // Bradford/Partner PO number
   requiresApproval          Boolean          @default(false)
   approvedBy                String?
   approvedAt                DateTime?
