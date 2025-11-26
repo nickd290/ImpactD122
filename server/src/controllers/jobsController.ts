@@ -31,7 +31,14 @@ function transformJob(job: any) {
       email: job.Company.email || '',
       phone: job.Company.phone || '',
       address: job.Company.address || '',
-    } : null,
+    } : {
+      id: '',
+      name: 'Unknown Customer',
+      type: 'CUSTOMER',
+      email: '',
+      phone: '',
+      address: '',
+    },
     // Transform vendor to Entity-like structure
     vendor: job.Vendor ? {
       id: job.Vendor.id,
@@ -40,7 +47,14 @@ function transformJob(job: any) {
       email: job.Vendor.email || '',
       phone: job.Vendor.phone || '',
       isPartner: job.Vendor.vendorCode === 'BRADFORD' || job.Vendor.name?.toLowerCase().includes('bradford'),
-    } : null,
+    } : {
+      id: '',
+      name: 'No Vendor Assigned',
+      type: 'VENDOR',
+      email: '',
+      phone: '',
+      isPartner: false,
+    },
     // Specs is already JSON
     specs: job.specs,
     // Transform flat financial fields to financials object for frontend

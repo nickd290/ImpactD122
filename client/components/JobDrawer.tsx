@@ -628,7 +628,7 @@ export const JobDrawer: React.FC<JobDrawerProps> = ({
                       </button>
                     </div>
                   </div>
-                ) : (
+                ) : job.customer ? (
                   <>
                     <p className="font-medium text-gray-900">{job.customer.name}</p>
                     {job.customer.contactPerson && <p className="text-sm text-gray-600">{job.customer.contactPerson}</p>}
@@ -636,6 +636,8 @@ export const JobDrawer: React.FC<JobDrawerProps> = ({
                     {job.customer.phone && <p className="text-sm text-gray-600">{job.customer.phone}</p>}
                     {job.customer.address && <p className="text-xs text-gray-500 mt-1">{job.customer.address}</p>}
                   </>
+                ) : (
+                  <p className="text-sm text-gray-500 italic">No customer assigned</p>
                 )}
               </div>
               <div className="bg-impact-cream p-4 rounded-lg">
@@ -723,7 +725,7 @@ export const JobDrawer: React.FC<JobDrawerProps> = ({
                       </button>
                     </div>
                   </div>
-                ) : (
+                ) : job.vendor ? (
                   <>
                     <p className="font-medium text-gray-900">{job.vendor.name}</p>
                     {job.vendor.contactPerson && <p className="text-sm text-gray-600">{job.vendor.contactPerson}</p>}
@@ -731,6 +733,8 @@ export const JobDrawer: React.FC<JobDrawerProps> = ({
                     {job.vendor.phone && <p className="text-sm text-gray-600">{job.vendor.phone}</p>}
                     {job.vendor.address && <p className="text-xs text-gray-500 mt-1">{job.vendor.address}</p>}
                   </>
+                ) : (
+                  <p className="text-sm text-gray-500 italic">No vendor assigned</p>
                 )}
               </div>
             </div>

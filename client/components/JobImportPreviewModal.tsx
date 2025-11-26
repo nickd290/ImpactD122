@@ -41,14 +41,14 @@ export function JobImportPreviewModal({
       // Try to auto-match by name (case-insensitive)
       uniqueCustomers.forEach((name) => {
         const match = existingCustomers.find(
-          (c) => c.name.toLowerCase() === name.toLowerCase()
+          (c) => c.name?.toLowerCase() === name.toLowerCase()
         );
         mappings.customers[name] = match ? { action: 'match', entityId: match.id } : { action: 'create' };
       });
 
       uniqueVendors.forEach((name) => {
         const match = existingVendors.find(
-          (v) => v.name.toLowerCase() === name.toLowerCase()
+          (v) => v.name?.toLowerCase() === name.toLowerCase()
         );
         mappings.vendors[name] = match ? { action: 'match', entityId: match.id } : { action: 'create' };
       });

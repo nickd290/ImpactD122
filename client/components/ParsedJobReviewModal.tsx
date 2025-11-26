@@ -77,8 +77,8 @@ export function ParsedJobReviewModal({
   useEffect(() => {
     if (parsedData.customerName) {
       const matchingCustomer = customers.find(c =>
-        c.name.toLowerCase().includes(parsedData.customerName.toLowerCase()) ||
-        parsedData.customerName.toLowerCase().includes(c.name.toLowerCase())
+        c.name?.toLowerCase().includes(parsedData.customerName.toLowerCase()) ||
+        parsedData.customerName.toLowerCase().includes(c.name?.toLowerCase() ?? '')
       );
 
       if (matchingCustomer) {

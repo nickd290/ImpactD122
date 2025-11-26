@@ -33,8 +33,11 @@ export const generatePDF = (type: 'QUOTE' | 'PO' | 'INVOICE', job: Job, fromEnti
 
   const normalizedToEntity = {
     ...toEntity,
+    name: toEntity.name || 'Unknown',
     address: toEntity.address || 'No address provided',
     contactPerson: toEntity.contactPerson || 'No contact',
+    email: toEntity.email || '',
+    phone: toEntity.phone || '',
   };
 
   // Brand Colors
