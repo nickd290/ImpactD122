@@ -73,6 +73,7 @@ function transformJob(job: any) {
     },
     // Create lineItems from quantity for frontend compatibility
     // Note: paperCostCPM is "per thousand" so divide by 1000 to get per-unit cost
+    // If quantity is null but revenue exists, create a line item with qty=1 and revenue as unit price
     lineItems: quantity > 0 ? [{
       id: 'main',
       description: job.title || 'Main Item',
@@ -80,7 +81,14 @@ function transformJob(job: any) {
       unitCost: job.paperCostCPM ? Number(job.paperCostCPM) / 1000 : 0,
       markupPercent: 0,
       unitPrice: unitPrice,
-    }] : [],
+    }] : (revenue > 0 ? [{
+      id: 'main',
+      description: job.title || 'Main Item',
+      quantity: 1,
+      unitCost: 0,
+      markupPercent: 0,
+      unitPrice: revenue,
+    }] : []),
   };
 }
 
