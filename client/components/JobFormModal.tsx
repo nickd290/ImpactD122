@@ -91,6 +91,10 @@ export function JobFormModal({
     if (isBradfordVendor && specs.finishedSize && !useCustomSize) {
       const pricing = getBradfordPricing(specs.finishedSize);
       if (pricing) {
+        // Use current quantity or default to 1000 for CPM calculations
+        const qty = totalQuantity > 0 ? totalQuantity : 1000;
+        const calcFromCPM = (cpm: number) => (cpm * qty) / 1000;
+
         setBradfordCPM(prev => ({
           ...prev,
           printCPM: pricing.printCPM,
@@ -98,14 +102,16 @@ export function JobFormModal({
           bradfordPaperCostCPM: pricing.costCPMPaper,
           paperMarkupCPM: pricing.sellCPMPaper - pricing.costCPMPaper,
         }));
-        // Also update the financials total
+        // Update ALL financial totals when size is selected
         setBradfordFinancials(prev => ({
           ...prev,
-          jdServicesTotal: calculateFromCPM(pricing.printCPM),
+          jdServicesTotal: calcFromCPM(pricing.printCPM),
+          bradfordPaperCost: calcFromCPM(pricing.costCPMPaper),
+          paperMarkupAmount: calcFromCPM(pricing.sellCPMPaper - pricing.costCPMPaper),
         }));
       }
     }
-  }, [formData.vendorId, specs.finishedSize, useCustomSize, isBradfordVendor]);
+  }, [formData.vendorId, specs.finishedSize, useCustomSize, isBradfordVendor, totalQuantity]);
 
   if (!isOpen) return null;
 

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Plus, Search, Sparkles, Upload, FileText, Edit, Trash2, FileSpreadsheet, CheckSquare, Square, Copy, AlertTriangle, ChevronDown, ChevronRight, MoreVertical } from 'lucide-react';
+import { Plus, Search, Sparkles, Upload, FileText, Edit, Trash2, FileSpreadsheet, CheckSquare, Square, ChevronDown, ChevronRight, MoreVertical } from 'lucide-react';
 import { Button } from './ui';
 import { Input } from './ui';
 import { Badge } from './ui';
@@ -209,54 +209,6 @@ export function JobsView({
     }
   };
 
-  const handleFindDuplicates = async () => {
-    try {
-      const response = await fetch('/api/jobs/detect-duplicates');
-      const result = await response.json();
-
-      if (result.count === 0) {
-        alert('No potential duplicates found!');
-        return;
-      }
-
-      const confirmed = window.confirm(
-        `Found ${result.count} potential duplicate job${result.count > 1 ? 's' : ''}. Mark them as duplicates?`
-      );
-
-      if (!confirmed) return;
-
-      // Mark all detected duplicates
-      await Promise.all(
-        result.potentialDuplicates.map((jobId: string) =>
-          fetch(`/api/jobs/${jobId}/duplicate`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ isDuplicate: true }),
-          })
-        )
-      );
-
-      alert(`Marked ${result.count} job${result.count > 1 ? 's' : ''} as duplicate${result.count > 1 ? 's' : ''}`);
-      await onRefresh();
-    } catch (error) {
-      console.error('Failed to find duplicates:', error);
-      alert('Failed to detect duplicates. Please try again.');
-    }
-  };
-
-  const handleToggleDuplicate = async (jobId: string, isDuplicate: boolean) => {
-    try {
-      await fetch(`/api/jobs/${jobId}/duplicate`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isDuplicate: !isDuplicate }),
-      });
-      await onRefresh();
-    } catch (error) {
-      console.error('Failed to toggle duplicate flag:', error);
-      alert('Failed to update duplicate flag. Please try again.');
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -282,17 +234,6 @@ export function JobsView({
 
             {isActionsOpen && (
               <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
-                <button
-                  onClick={() => {
-                    handleFindDuplicates();
-                    setIsActionsOpen(false);
-                  }}
-                  className="w-full px-4 py-2 text-left flex items-center gap-3 hover:bg-gray-100 transition-colors"
-                >
-                  <Copy className="w-4 h-4 text-yellow-600" />
-                  <span className="text-sm font-medium">Find Duplicates</span>
-                </button>
-
                 <button
                   onClick={() => {
                     onShowSpecParser();
@@ -484,12 +425,6 @@ export function JobsView({
                                   {job.number} - {job.title}
                                 </span>
                               </div>
-                              {job.isDuplicate && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 border border-yellow-200">
-                                  <AlertTriangle className="w-3 h-3 mr-1" />
-                                  Duplicate
-                                </span>
-                              )}
                             </div>
                           </td>
                           <td
@@ -536,21 +471,6 @@ export function JobsView({
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-right">
                             <div className="flex items-center justify-end gap-2">
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleToggleDuplicate(job.id, job.isDuplicate || false);
-                                }}
-                                variant="ghost"
-                                size="icon"
-                                className={cn(
-                                  "h-8 w-8",
-                                  job.isDuplicate && "text-yellow-600 hover:text-yellow-700"
-                                )}
-                                title={job.isDuplicate ? "Unmark as Duplicate" : "Mark as Duplicate"}
-                              >
-                                <Copy className="w-4 h-4" />
-                              </Button>
                               <Button
                                 onClick={(e) => {
                                   e.stopPropagation();
