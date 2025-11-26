@@ -363,8 +363,11 @@ export function BradfordStatsView({
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {jobs.map((job: any) => {
-                  const jobRevenue = job.lineItems?.reduce((sum: number, item: any) =>
-                    sum + (item.quantity * item.unitPrice), 0) || 0;
+                  // Calculate revenue from financials or lineItems
+                  const jobRevenue = job.financials?.impactCustomerTotal ||
+                    job.customerTotal ||
+                    (job.lineItems?.reduce((sum: number, item: any) =>
+                      sum + (item.quantity * item.unitPrice), 0) || 0);
 
                   return (
                     <tr

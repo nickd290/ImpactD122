@@ -448,9 +448,11 @@ export function JobsView({
                             className="px-6 py-4 whitespace-nowrap cursor-pointer"
                           >
                             <span className="text-sm text-foreground">
-                              {job.lineItems && job.lineItems.length > 0
-                                ? job.lineItems.reduce((sum, item) => sum + (item.quantity || 0), 0).toLocaleString()
-                                : '-'}
+                              {job.quantity
+                                ? job.quantity.toLocaleString()
+                                : job.lineItems && job.lineItems.length > 0
+                                  ? job.lineItems.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0).toLocaleString()
+                                  : '-'}
                             </span>
                           </td>
                           <td

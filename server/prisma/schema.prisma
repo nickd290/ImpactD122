@@ -1,5 +1,3 @@
-// This is your Prisma schema file
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,359 +7,607 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Entity Types (Customers & Vendors)
-enum EntityType {
-  CUSTOMER
-  VENDOR
+model Account {
+  id                String  @id
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  User              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
 }
 
-// Job Status Workflow
+model Company {
+  id                                                   String              @id
+  name                                                 String
+  type                                                 String
+  email                                                String?
+  phone                                                String?
+  address                                              String?
+  createdAt                                            DateTime            @default(now())
+  updatedAt                                            DateTime
+  Employee                                             Employee[]
+  Invoice_Invoice_fromCompanyIdToCompany               Invoice[]           @relation("Invoice_fromCompanyIdToCompany")
+  Invoice_Invoice_toCompanyIdToCompany                 Invoice[]           @relation("Invoice_toCompanyIdToCompany")
+  Job                                                  Job[]
+  PurchaseOrder_PurchaseOrder_originCompanyIdToCompany PurchaseOrder[]     @relation("PurchaseOrder_originCompanyIdToCompany")
+  PurchaseOrder_PurchaseOrder_targetCompanyIdToCompany PurchaseOrder[]     @relation("PurchaseOrder_targetCompanyIdToCompany")
+  QuoteRequest                                         QuoteRequest[]
+  ShipmentRecipient                                    ShipmentRecipient[]
+  User                                                 User[]
+}
+
+model Employee {
+  id        String   @id
+  companyId String
+  name      String
+  email     String
+  phone     String?
+  position  String?
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  Company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  Job       Job[]
+
+  @@index([companyId])
+}
+
+model File {
+  id            String          @id
+  kind          FileKind
+  jobId         String?
+  objectKey     String
+  fileName      String
+  mimeType      String
+  size          Int
+  checksum      String
+  uploadedBy    String?
+  createdAt     DateTime        @default(now())
+  Job           Job?            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  FileShare     FileShare[]
+  Invoice       Invoice[]
+  Proof         Proof[]
+  PurchaseOrder PurchaseOrder[]
+
+  @@index([jobId])
+  @@index([kind])
+}
+
+model FileShare {
+  id          String    @id
+  fileId      String
+  shareToken  String    @unique
+  expiresAt   DateTime
+  accessedAt  DateTime?
+  accessCount Int       @default(0)
+  createdFor  String?
+  createdBy   String?
+  createdAt   DateTime  @default(now())
+  File        File      @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@index([fileId])
+  @@index([shareToken])
+}
+
+model Invoice {
+  id                                     String    @id
+  jobId                                  String?
+  toCompanyId                            String
+  fromCompanyId                          String
+  invoiceNo                              String    @unique
+  amount                                 Decimal
+  pdfFileId                              String?
+  issuedAt                               DateTime?
+  dueAt                                  DateTime?
+  paidAt                                 DateTime?
+  createdAt                              DateTime  @default(now())
+  updatedAt                              DateTime
+  Company_Invoice_fromCompanyIdToCompany Company   @relation("Invoice_fromCompanyIdToCompany", fields: [fromCompanyId], references: [id])
+  Job                                    Job?      @relation(fields: [jobId], references: [id])
+  File                                   File?     @relation(fields: [pdfFileId], references: [id])
+  Company_Invoice_toCompanyIdToCompany   Company   @relation("Invoice_toCompanyIdToCompany", fields: [toCompanyId], references: [id])
+
+  @@index([fromCompanyId])
+  @@index([jobId])
+  @@index([toCompanyId])
+}
+
+model Job {
+  id                        String           @id
+  jobNo                     String           @unique
+  quoteId                   String?
+  customerId                String
+  status                    JobStatus        @default(PENDING)
+  title                     String?
+  description               String?
+  specs                     Json
+  sizeId                    String?
+  sizeName                  String?
+  quantity                  Int?
+  customerCPM               Decimal?
+  impactMarginCPM           Decimal?
+  bradfordTotalCPM          Decimal?
+  bradfordPrintMarginCPM    Decimal?
+  bradfordPaperMarginCPM    Decimal?
+  bradfordTotalMarginCPM    Decimal?
+  printCPM                  Decimal?
+  paperCostCPM              Decimal?
+  paperChargedCPM           Decimal?
+  customerTotal             Decimal
+  impactMargin              Decimal?
+  bradfordTotal             Decimal?
+  bradfordPrintMargin       Decimal?
+  bradfordPaperMargin       Decimal?
+  bradfordTotalMargin       Decimal?
+  jdTotal                   Decimal?
+  paperCostTotal            Decimal?
+  paperChargedTotal         Decimal?
+  paperType                 String?
+  paperWeightTotal          Decimal?
+  paperWeightPer1000        Decimal?
+  deliveryDate              DateTime?
+  mailDate                  DateTime?
+  inHomesDate               DateTime?
+  packingSlipNotes          String?
+  customerPONumber          String?
+  customerPOFile            String?
+  requiresApproval          Boolean          @default(false)
+  approvedBy                String?
+  approvedAt                DateTime?
+  requiredArtworkCount      Int?
+  requiredDataFileCount     Int?
+  isReadyForProduction      Boolean          @default(false)
+  submittedForProductionAt  DateTime?
+  createdAt                 DateTime         @default(now())
+  updatedAt                 DateTime
+  completedAt               DateTime?
+  artworkSectionComplete    Boolean          @default(false)
+  dataFilesSectionComplete  Boolean          @default(false)
+  bradfordWaivesPaperMargin Boolean          @default(false)
+  jdSuppliesPaper           Boolean          @default(false)
+  bradfordCut               Decimal?
+  impactCustomerTotal       Decimal?
+  routingType               RoutingType      @default(BRADFORD_JD)
+  vendorAmount              Decimal?
+  vendorId                  String?
+  deletedAt                 DateTime?
+  deletedBy                 String?
+  employeeId                String?
+  jobType                   JobType?
+  vendorPaymentTerms        String?
+  vendorShipToAddress       String?
+  vendorShipToCity          String?
+  vendorShipToName          String?
+  vendorShipToPhone         String?
+  vendorShipToState         String?
+  vendorShipToZip           String?
+  vendorSpecialInstructions String?
+  File                      File[]
+  Invoice                   Invoice[]
+  Company                   Company          @relation(fields: [customerId], references: [id])
+  Employee                  Employee?        @relation(fields: [employeeId], references: [id])
+  Quote                     Quote?           @relation(fields: [quoteId], references: [id])
+  Vendor                    Vendor?          @relation(fields: [vendorId], references: [id])
+  JobActivity               JobActivity[]
+  Notification              Notification[]
+  Proof                     Proof[]
+  PurchaseOrder             PurchaseOrder[]
+  SampleShipment            SampleShipment[]
+  Shipment                  Shipment[]
+
+  @@index([customerId])
+  @@index([deletedAt])
+  @@index([jobNo])
+  @@index([jobType])
+  @@index([routingType])
+  @@index([status])
+  @@index([vendorId])
+}
+
+model JobActivity {
+  id            String   @id
+  jobId         String
+  action        String
+  field         String?
+  oldValue      String?
+  newValue      String?
+  changedBy     String
+  changedByRole Role
+  createdAt     DateTime @default(now())
+  Job           Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([jobId])
+}
+
+model Notification {
+  id        String           @id
+  type      NotificationType
+  jobId     String?
+  recipient String
+  subject   String
+  body      String
+  sentAt    DateTime?
+  createdAt DateTime         @default(now())
+  Job       Job?             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([recipient])
+}
+
+model PaperInventory {
+  id               String             @id
+  rollType         String
+  rollWidth        Int
+  paperPoint       Int
+  paperType        String
+  quantity         Int
+  weightPerRoll    Decimal?
+  reorderPoint     Int?
+  companyId        String
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime
+  PaperTransaction PaperTransaction[]
+
+  @@index([companyId])
+  @@index([rollType])
+}
+
+model PaperTransaction {
+  id             String         @id
+  inventoryId    String
+  type           String
+  quantity       Int
+  jobId          String?
+  notes          String?
+  userId         String?
+  createdAt      DateTime       @default(now())
+  PaperInventory PaperInventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([inventoryId])
+  @@index([jobId])
+}
+
+model PricingRule {
+  id                  String   @id
+  sizeName            String   @unique
+  baseCPM             Decimal
+  printCPM            Decimal
+  paperWeightPer1000  Decimal?
+  paperCostPerLb      Decimal?
+  paperCPM            Decimal?
+  paperChargedCPM     Decimal?
+  rollSize            Int?
+  isActive            Boolean  @default(true)
+  notes               String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime
+  bradfordInvoicePerM Decimal?
+  impactInvoicePerM   Decimal?
+  jdInvoicePerM       Decimal?
+  paperMarkupPercent  Decimal?
+
+  @@index([isActive])
+  @@index([sizeName])
+}
+
+model Proof {
+  id             String          @id
+  jobId          String
+  version        Int
+  status         ProofStatus     @default(PENDING)
+  fileId         String
+  adminNotes     String?
+  adminComments  String?
+  shareToken     String?         @unique
+  shareExpiresAt DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime
+  File           File            @relation(fields: [fileId], references: [id])
+  Job            Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  ProofApproval  ProofApproval[]
+
+  @@unique([jobId, version])
+  @@index([jobId])
+  @@index([shareToken])
+}
+
+model ProofApproval {
+  id         String   @id
+  proofId    String
+  approved   Boolean
+  comments   String?
+  approvedBy String?
+  createdAt  DateTime @default(now())
+  Proof      Proof    @relation(fields: [proofId], references: [id], onDelete: Cascade)
+
+  @@index([proofId])
+}
+
+model PurchaseOrder {
+  id                                             String    @id
+  originCompanyId                                String
+  targetCompanyId                                String?
+  jobId                                          String?
+  originalAmount                                 Decimal
+  vendorAmount                                   Decimal
+  marginAmount                                   Decimal
+  poNumber                                       String?
+  referencePONumber                              String?
+  externalRef                                    String?
+  pdfFileId                                      String?
+  status                                         POStatus  @default(PENDING)
+  createdAt                                      DateTime  @default(now())
+  updatedAt                                      DateTime
+  vendorCPM                                      Decimal?
+  targetVendorId                                 String?
+  bradfordCutPaid                                Boolean?  @default(false)
+  bradfordCutPaidDate                            DateTime?
+  bradfordPaymentNotes                           String?
+  acceptedAt                                     DateTime?
+  rejectedAt                                     DateTime?
+  rejectionReason                                String?
+  Job                                            Job?      @relation(fields: [jobId], references: [id])
+  Company_PurchaseOrder_originCompanyIdToCompany Company   @relation("PurchaseOrder_originCompanyIdToCompany", fields: [originCompanyId], references: [id])
+  File                                           File?     @relation(fields: [pdfFileId], references: [id])
+  Company_PurchaseOrder_targetCompanyIdToCompany Company?  @relation("PurchaseOrder_targetCompanyIdToCompany", fields: [targetCompanyId], references: [id])
+  Vendor                                         Vendor?   @relation(fields: [targetVendorId], references: [id])
+
+  @@index([externalRef])
+  @@index([jobId])
+  @@index([originCompanyId])
+  @@index([poNumber])
+  @@index([referencePONumber])
+  @@index([targetCompanyId])
+  @@index([targetVendorId])
+}
+
+model Quote {
+  id             String       @id
+  quoteRequestId String
+  lines          Json
+  subtotal       Decimal
+  tax            Decimal      @default(0)
+  total          Decimal
+  validUntil     DateTime
+  notes          String?
+  approvedAt     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime
+  Job            Job[]
+  QuoteRequest   QuoteRequest @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
+
+  @@index([quoteRequestId])
+}
+
+model QuoteRequest {
+  id         String             @id
+  customerId String
+  status     QuoteRequestStatus @default(PENDING)
+  specs      Json
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime
+  Quote      Quote[]
+  Company    Company            @relation(fields: [customerId], references: [id])
+
+  @@index([customerId])
+  @@index([status])
+}
+
+model SampleShipment {
+  id               String    @id
+  jobId            String
+  description      String
+  carrier          String
+  trackingNo       String?
+  recipientName    String
+  recipientEmail   String
+  recipientAddress String?
+  sentAt           DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime
+  Job              Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([trackingNo])
+}
+
+model Shipment {
+  id                String              @id
+  jobId             String
+  carrier           String
+  trackingNo        String?
+  weight            Decimal?
+  boxes             Int?
+  scheduledAt       DateTime?
+  shippedAt         DateTime?
+  deliveredAt       DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime
+  Job               Job                 @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  ShipmentRecipient ShipmentRecipient[]
+
+  @@index([jobId])
+  @@index([trackingNo])
+}
+
+model ShipmentRecipient {
+  id         String   @id
+  shipmentId String
+  companyId  String?
+  name       String
+  address    String
+  city       String
+  state      String
+  zip        String
+  phone      String?
+  createdAt  DateTime @default(now())
+  Company    Company? @relation(fields: [companyId], references: [id])
+  Shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+}
+
+model SyncLog {
+  id              String      @id
+  trigger         SyncTrigger
+  purchaseOrderId String?
+  invoiceId       String?
+  jobId           String?
+  field           String
+  oldValue        Decimal?
+  newValue        Decimal
+  changedBy       String?
+  notes           String?
+  createdAt       DateTime    @default(now())
+
+  @@index([createdAt])
+  @@index([invoiceId])
+  @@index([jobId])
+  @@index([purchaseOrderId])
+}
+
+model User {
+  id            String    @id
+  email         String    @unique
+  emailVerified DateTime?
+  password      String?
+  name          String?
+  role          Role      @default(CUSTOMER)
+  companyId     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime
+  Account       Account[]
+  Company       Company?  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
+  @@index([email])
+}
+
+model Vendor {
+  id            String          @id
+  name          String
+  email         String?
+  phone         String?
+  isActive      Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime
+  city          String?
+  country       String?         @default("USA")
+  state         String?
+  streetAddress String?
+  vendorCode    String?         @unique
+  zip           String?
+  Job           Job[]
+  PurchaseOrder PurchaseOrder[]
+
+  @@index([isActive])
+  @@index([name])
+  @@index([vendorCode])
+}
+
+model WebhookEvent {
+  id        String        @id
+  source    WebhookSource
+  payload   Json
+  processed Boolean       @default(false)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime
+
+  @@index([processed])
+  @@index([source])
+}
+
+enum FileKind {
+  ARTWORK
+  DATA_FILE
+  PROOF
+  INVOICE
+  PO_PDF
+}
+
 enum JobStatus {
-  DRAFT
-  QUOTED
-  APPROVED
-  PO_ISSUED
+  PENDING
   IN_PRODUCTION
-  SHIPPED
-  INVOICED
-  PAID
+  READY_FOR_PROOF
+  PROOF_APPROVED
+  COMPLETED
   CANCELLED
 }
 
-// Product Types
-enum ProductType {
-  BOOK
+enum JobType {
   FLAT
   FOLDED
-  OTHER
+  BOOKLET_SELF_COVER
+  BOOKLET_PLUS_COVER
 }
 
-// Cover Types (for books)
-enum CoverType {
-  SELF
-  PLUS
+enum NotificationType {
+  QUOTE_READY
+  PROOF_READY
+  PROOF_APPROVED
+  SHIPMENT_SCHEDULED
+  INVOICE_SENT
+  PO_CREATED
+  JOB_READY_FOR_PRODUCTION
+  JOB_SUBMITTED_CONFIRMATION
+  PO_ACCEPTED
+  PO_REJECTED
+  BRADFORD_PO_CREATED
 }
 
-// Entities (Customers & Vendors)
-model Entity {
-  id                  String    @id @default(cuid())
-  name                String
-  type                EntityType
-  uniqueCode          String?   @unique // 3-digit code for document numbering (e.g., "ABC", "XYZ")
-  email               String
-  phone               String
-  address             String
-  contactPerson       String
-  isPartner           Boolean   @default(false) // For Bradford partner vendor
-  notes               String?
-
-  // Document counters
-  lastInvoiceNumber   Int       @default(0) // For customers
-  lastPONumber        Int       @default(0) // For vendors
-
-  // Relations
-  contacts            Contact[]
-  jobsAsCustomer      Job[]     @relation("CustomerJobs")
-  jobsAsVendor        Job[]     @relation("VendorJobs")
-  capability          VendorCapability?
-  vendorQuotes        VendorQuote[]     @relation("VendorQuotes")
-  jobVendors          JobVendor[]       @relation("JobVendorAssignments")
-
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-
-  @@index([type])
-  @@index([name])
-  @@index([uniqueCode])
+enum POStatus {
+  PENDING
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  REJECTED
 }
 
-// Additional Contacts for Entities
-model Contact {
-  id                  String    @id @default(cuid())
-  entityId            String
-  name                String
-  email               String
-  phone               String?
-  isPrimary           Boolean   @default(false)
-
-  entity              Entity    @relation(fields: [entityId], references: [id], onDelete: Cascade)
-
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-
-  @@index([entityId])
+enum ProofStatus {
+  PENDING
+  APPROVED
+  CHANGES_REQUESTED
 }
 
-// Jobs
-model Job {
-  id                  String      @id @default(cuid())
-  number              String      @unique // e.g., "J-1001"
-  title               String
-  customerId          String
-  vendorId            String
-  bradfordRefNumber   String?     // PO to JD Graphic
-
-  // Documents
-  customerPONumber    String?
-  originalPOUrl       String?     // File path or base64
-  vendorPONumber      String?
-  invoiceNumber       String?
-  quoteNumber         String?
-
-  // Document tracking
-  generatedDocuments  Json        @default("[]") // Array of {type, number, generatedAt, generatedBy, downloadUrl}
-
-  // Logistics
-  artworkUrl          String?
-  artworkFilename     String?
-
-  status              JobStatus   @default(DRAFT)
-  locked              Boolean     @default(false)
-  isDuplicate         Boolean     @default(false) // Flag to mark suspected duplicates
-
-  dateCreated         DateTime    @default(now())
-  dueDate             DateTime?
-  notes               String      @default("")
-
-  // Relations
-  customer            Entity      @relation("CustomerJobs", fields: [customerId], references: [id])
-  vendor              Entity      @relation("VendorJobs", fields: [vendorId], references: [id])
-  lineItems           LineItem[]
-  specs               JobSpecs?
-  financials          JobFinancials?
-  quoteRequests       QuoteRequest[]
-  jobVendors          JobVendor[]       @relation("JobVendors")
-
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
-
-  @@index([customerId])
-  @@index([vendorId])
-  @@index([status])
-  @@index([number])
-}
-
-// Job Specifications
-model JobSpecs {
-  id                  String      @id @default(cuid())
-  jobId               String      @unique
-
-  productType         ProductType @default(OTHER)
-
-  // Common specs
-  colors              String?     // "4/4", "4/1", "PMS"
-  coating             String?
-  finishing           String?
-
-  // Sizes
-  flatSize            String?
-  finishedSize        String?
-
-  // Paper
-  paperType           String?     // Text/main stock
-  paperLbs            Float?      // Paper usage in pounds (for Bradford jobs)
-
-  // Book-specific
-  pageCount           Int?
-  bindingStyle        String?     // Saddle Stitch, Perfect
-  coverType           CoverType?
-  coverPaperType      String?
-
-  job                 Job         @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
-}
-
-// Job Financials (Partner vs Standard models)
-model JobFinancials {
-  id                  String      @id @default(cuid())
-  jobId               String      @unique
-
-  // Partner (Bradford) model - Legacy CPM fields
-  paperCostCPM        Float?      // Cost per thousand
-  paperSellCPM        Float?      // Sell price per thousand
-  paperUsage          String?     // e.g., "12,000 sheets 25x38"
-  manufacturingCPM    Float?      // Manufacturing cost
-
-  // Partner (Bradford) model - New total-based pricing
-  jdServicesTotal     Float?      // Total JD Graphic charges Bradford
-  bradfordPaperCost   Float?      // What Bradford paid for paper
-  paperMarkupAmount   Float?      // Dollar markup on paper to Impact
-  impactCustomerTotal Float?      // Total customer pays Impact
-  calculatedSpread    Float?      // Spread = Customer - (Paper+Markup+JD)
-  bradfordShareAmount Float?      // Bradford's 50% of spread
-  impactCostFromBradford Float?   // Total Impact pays Bradford
-
-  // Standard model
-  consultantFee       Float?      // Flat fee for Bradford
-
-  job                 Job         @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
-}
-
-// Line Items
-model LineItem {
-  id                  String      @id @default(cuid())
-  jobId               String
-  description         String
-  quantity            Int
-  unitCost            Float       // Vendor cost
-  markupPercent       Float
-  unitPrice           Float       // Customer price
-  sortOrder           Int         @default(0)
-
-  job                 Job         @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
-
-  @@index([jobId])
-}
-
-// Vendor Capabilities
-model VendorCapability {
-  id                  String      @id @default(cuid())
-  vendorId            String      @unique
-
-  // Service capabilities (boolean flags)
-  printing            Boolean     @default(true)   // Base printing service
-  binding             Boolean     @default(false)
-  foilStamping        Boolean     @default(false)
-  embossing           Boolean     @default(false)
-  dieCutting          Boolean     @default(false)
-  uvCoating           Boolean     @default(false)
-  lamination          Boolean     @default(false)
-  scoring             Boolean     @default(false)
-  folding             Boolean     @default(false)
-
-  // Detailed capabilities (arrays for flexibility)
-  bindingTypes        String[]    // ["Perfect Bound", "Saddle Stitch", "Coil", "Case Binding"]
-  foilColors          String[]    // ["Gold", "Silver", "Copper", "Red", "Blue"]
-  coatingTypes        String[]    // ["UV", "Aqueous", "Soft Touch", "Gloss"]
-
-  // Equipment & capacity
-  maxSheetSize        String?     // "25x38", "28x40"
-  minQuantity         Int?        // Minimum order quantity
-  maxQuantity         Int?        // Maximum capacity per job
-
-  // Business details
-  avgLeadTimeDays     Int?        // Typical turnaround time
-  notes               String?     // Free-form notes about capabilities
-
-  // Relations
-  vendor              Entity      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
-
-  @@index([vendorId])
-}
-
-// Quote Request Status
 enum QuoteRequestStatus {
-  DRAFT               // Being prepared
-  SENT                // Sent to vendors
-  RESPONSES_RECEIVED  // At least one quote received
-  AWARDED             // Vendor(s) selected
-  CANCELLED           // Cancelled
+  PENDING
+  QUOTED
+  APPROVED
+  REJECTED
 }
 
-// Quote Requests
-model QuoteRequest {
-  id                  String                @id @default(cuid())
-  jobId               String
-  requestNumber       String                @unique  // QR-1001, QR-1002, etc.
-
-  // Request details
-  specs               Json                  // Snapshot of JobSpecs at time of request
-  requiredServices    String[]              // ["printing", "binding", "foilStamping"]
-  dueDate             DateTime?
-  notes               String?
-
-  // Status tracking
-  status              QuoteRequestStatus    @default(DRAFT)
-  sentAt              DateTime?
-
-  // Relations
-  job                 Job                   @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  vendorQuotes        VendorQuote[]
-
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
-
-  @@index([jobId])
-  @@index([status])
-  @@index([requestNumber])
+enum Role {
+  CUSTOMER
+  BROKER_ADMIN
+  BRADFORD_ADMIN
 }
 
-// Vendor Quote Status
-enum VendorQuoteStatus {
-  PENDING       // Awaiting response from vendor
-  RECEIVED      // Quote received
-  ACCEPTED      // Vendor selected for this job
-  DECLINED      // Vendor declined to quote
-  REJECTED      // Quote rejected by Impact
+enum RoutingType {
+  BRADFORD_JD
+  THIRD_PARTY_VENDOR
 }
 
-// Vendor Quotes (responses to quote requests)
-model VendorQuote {
-  id                  String              @id @default(cuid())
-  quoteRequestId      String
-  vendorId            String
-
-  // Quote details
-  quoteNumber         String?             // Vendor's quote/estimate number
-  totalCost           Float?
-  leadTimeDays        Int?
-  notes               String?
-
-  // Line items breakdown (JSON for flexibility)
-  lineItems           Json?               // Array of {service, description, quantity, unitCost, total}
-
-  // Status & tracking
-  status              VendorQuoteStatus   @default(PENDING)
-  sentEmailAt         DateTime?           // When RFQ email was sent
-  receivedAt          DateTime?           // When quote was received
-  acceptedAt          DateTime?           // When quote was accepted
-  declinedAt          DateTime?           // When vendor declined
-  declineReason       String?
-
-  // Relations
-  quoteRequest        QuoteRequest        @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
-  vendor              Entity              @relation("VendorQuotes", fields: [vendorId], references: [id], onDelete: Cascade)
-
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
-
-  @@index([quoteRequestId])
-  @@index([vendorId])
-  @@index([status])
+enum SyncTrigger {
+  PO_UPDATE
+  INVOICE_UPDATE
 }
 
-// Job-Vendor Junction (for multi-vendor jobs)
-model JobVendor {
-  id                  String      @id @default(cuid())
-  jobId               String
-  vendorId            String
-
-  // Assignment details
-  services            String[]    // Which services this vendor provides ["printing", "binding"]
-  poNumber            String?     // PO number for this vendor
-  cost                Float?      // Cost from this vendor
-  status              String?     // Status of work with this vendor
-  notes               String?
-
-  // Relations
-  job                 Job         @relation("JobVendors", fields: [jobId], references: [id], onDelete: Cascade)
-  vendor              Entity      @relation("JobVendorAssignments", fields: [vendorId], references: [id], onDelete: Cascade)
-
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
-
-  @@unique([jobId, vendorId])
-  @@index([jobId])
-  @@index([vendorId])
+enum WebhookSource {
+  ZAPIER
+  BRADFORD
+  EMAIL
 }

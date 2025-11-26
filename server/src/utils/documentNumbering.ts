@@ -1,5 +1,5 @@
 /**
- * Document Numbering Utilities for Impact Direct
+ * Document Numbering Utilities for Impact Direct - Production Schema Version
  *
  * Generates unique document numbers for:
  * - Customer Invoices: {customerCode}-{number} (e.g., "ABC-001")
@@ -39,27 +39,22 @@ export async function generateEntityUniqueCode(entityName: string, entityType: '
     code = (words[0] || prefix).substring(0, 2).padEnd(2, 'X') + prefix;
   }
 
-  // Check if code already exists
-  const existing = await prisma.entity.findUnique({
-    where: { uniqueCode: code }
-  });
-
-  if (existing) {
-    // Add numbers until we find a unique code
-    for (let i = 1; i <= 99; i++) {
-      const numberedCode = code.substring(0, 2) + i.toString().padStart(1, '0');
-      const exists = await prisma.entity.findUnique({
-        where: { uniqueCode: numberedCode }
-      });
-
-      if (!exists) {
-        return numberedCode;
-      }
+  // For production schema, check against Company or Vendor based on type
+  if (entityType === 'CUSTOMER') {
+    const existing = await prisma.company.findFirst({
+      where: { name: { contains: cleanName } }
+    });
+    if (existing) {
+      // Add number to make unique
+      code = code + Math.floor(Math.random() * 99).toString().padStart(2, '0');
     }
-
-    // Fallback: Use random letters
-    const randomCode = generateRandomCode();
-    return randomCode;
+  } else {
+    const existing = await prisma.vendor.findFirst({
+      where: { name: { contains: cleanName } }
+    });
+    if (existing) {
+      code = code + Math.floor(Math.random() * 99).toString().padStart(2, '0');
+    }
   }
 
   return code;
@@ -79,42 +74,32 @@ function generateRandomCode(): string {
 
 /**
  * Generates the next invoice number for a customer
- * Format: {customerCode}-{sequentialNumber}
- * Example: "ABC-001", "ABC-002", etc.
+ * Format: INV-{jobNumber}
  */
 export async function generateInvoiceNumber(customerId: string): Promise<string> {
-  const customer = await prisma.entity.findUnique({
+  const company = await prisma.company.findUnique({
     where: { id: customerId }
   });
 
-  if (!customer) {
+  if (!company) {
     throw new Error('Customer not found');
   }
 
-  if (!customer.uniqueCode) {
-    throw new Error('Customer does not have a unique code assigned');
-  }
-
-  // Increment the counter
-  const nextNumber = customer.lastInvoiceNumber + 1;
-
-  // Update the counter in the database
-  await prisma.entity.update({
-    where: { id: customerId },
-    data: { lastInvoiceNumber: nextNumber }
+  // Count existing jobs for this customer to generate unique number
+  const jobCount = await prisma.job.count({
+    where: { customerId }
   });
 
-  // Format: ABC-001
-  return `${customer.uniqueCode}-${nextNumber.toString().padStart(3, '0')}`;
+  const code = company.name.substring(0, 3).toUpperCase();
+  return `${code}-${(jobCount + 1).toString().padStart(3, '0')}`;
 }
 
 /**
  * Generates the next PO number for a vendor
- * Format: {vendorCode}-{sequentialNumber}
- * Example: "VEN-001", "VEN-002", etc.
+ * Format: PO-{vendorCode}-{number}
  */
 export async function generatePONumber(vendorId: string): Promise<string> {
-  const vendor = await prisma.entity.findUnique({
+  const vendor = await prisma.vendor.findUnique({
     where: { id: vendorId }
   });
 
@@ -122,21 +107,13 @@ export async function generatePONumber(vendorId: string): Promise<string> {
     throw new Error('Vendor not found');
   }
 
-  if (!vendor.uniqueCode) {
-    throw new Error('Vendor does not have a unique code assigned');
-  }
-
-  // Increment the counter
-  const nextNumber = vendor.lastPONumber + 1;
-
-  // Update the counter in the database
-  await prisma.entity.update({
-    where: { id: vendorId },
-    data: { lastPONumber: nextNumber }
+  // Count existing jobs for this vendor to generate unique number
+  const jobCount = await prisma.job.count({
+    where: { vendorId }
   });
 
-  // Format: VEN-001
-  return `${vendor.uniqueCode}-${nextNumber.toString().padStart(3, '0')}`;
+  const code = vendor.vendorCode || vendor.name.substring(0, 3).toUpperCase();
+  return `${code}-${(jobCount + 1).toString().padStart(3, '0')}`;
 }
 
 /**
@@ -154,12 +131,13 @@ export async function generateQuoteNumber(jobId: string, version: number = 1): P
   }
 
   // Format: Q-1001-01
-  const jobNumberPart = job.number.replace('J-', '');
+  const jobNumberPart = job.jobNo.replace('J-', '');
   return `Q-${jobNumberPart}-${version.toString().padStart(2, '0')}`;
 }
 
 /**
  * Logs a generated document to the job's document history
+ * Note: Production schema doesn't have generatedDocuments field - this is a stub
  */
 export async function logGeneratedDocument(
   jobId: string,
@@ -175,32 +153,24 @@ export async function logGeneratedDocument(
     throw new Error('Job not found');
   }
 
-  const documents = Array.isArray(job.generatedDocuments)
-    ? job.generatedDocuments as any[]
-    : [];
-
+  // Production schema doesn't have generatedDocuments field
+  // Just return the document info
   const newDocument = {
     type: documentType,
     number: documentNumber,
     generatedAt: new Date().toISOString(),
-    generatedBy: 'System', // TODO: Add actual user when auth is implemented
+    generatedBy: 'System',
     downloadUrl: downloadUrl || null
   };
 
-  documents.push(newDocument);
-
-  await prisma.job.update({
-    where: { id: jobId },
-    data: {
-      generatedDocuments: documents
-    }
-  });
+  console.log(`Document generated: ${documentType} ${documentNumber} for job ${job.jobNo}`);
 
   return newDocument;
 }
 
 /**
  * Retrieves all generated documents for a job
+ * Note: Production schema doesn't have generatedDocuments field - returns empty array
  */
 export async function getJobDocuments(jobId: string) {
   const job = await prisma.job.findUnique({
@@ -211,5 +181,6 @@ export async function getJobDocuments(jobId: string) {
     throw new Error('Job not found');
   }
 
-  return Array.isArray(job.generatedDocuments) ? job.generatedDocuments : [];
+  // Production schema doesn't have generatedDocuments field
+  return [];
 }

@@ -1,21 +1,19 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../utils/prisma';
 
 // Financial calculation utilities (server-side)
+// Using Job-level totals since production schema doesn't have lineItems
 function calculateJobCost(job: any): number {
-  if (!job.lineItems || job.lineItems.length === 0) return 0;
-  return job.lineItems.reduce((sum: number, item: any) => {
-    return sum + (item.quantity * item.unitCost);
-  }, 0);
+  // Use bradfordTotal + jdTotal as cost basis
+  const bradfordTotal = job.bradfordTotal ? Number(job.bradfordTotal) : 0;
+  const jdTotal = job.jdTotal ? Number(job.jdTotal) : 0;
+  return bradfordTotal + jdTotal;
 }
 
 function calculateJobRevenue(job: any): number {
-  if (!job.lineItems || job.lineItems.length === 0) return 0;
-  return job.lineItems.reduce((sum: number, item: any) => {
-    return sum + (item.quantity * item.unitPrice);
-  }, 0);
+  // Use impactCustomerTotal or customerTotal
+  return job.impactCustomerTotal ? Number(job.impactCustomerTotal) :
+         job.customerTotal ? Number(job.customerTotal) : 0;
 }
 
 /**
@@ -25,10 +23,12 @@ function calculateJobRevenue(job: any): number {
 export async function getFinancialSummary(req: Request, res: Response) {
   try {
     const jobs = await prisma.job.findMany({
+      where: {
+        deletedAt: null,
+      },
       include: {
-        lineItems: true,
-        customer: true,
-        vendor: true,
+        Company: true,
+        Vendor: true,
       },
     });
 
@@ -71,20 +71,22 @@ export async function getFinancialSummary(req: Request, res: Response) {
 export async function getFinancialsByCustomer(req: Request, res: Response) {
   try {
     const jobs = await prisma.job.findMany({
+      where: {
+        deletedAt: null,
+      },
       include: {
-        lineItems: true,
-        customer: true,
-        vendor: true,
+        Company: true,
+        Vendor: true,
       },
     });
 
     const customerMap = new Map<string, any>();
 
     jobs.forEach((job: any) => {
-      if (!job.customer) return;
+      if (!job.Company) return;
 
-      const customerId = job.customer.id;
-      const customerName = job.customer.name;
+      const customerId = job.Company.id;
+      const customerName = job.Company.name;
       const revenue = calculateJobRevenue(job);
       const cost = calculateJobCost(job);
       const profit = revenue - cost;
@@ -112,8 +114,8 @@ export async function getFinancialsByCustomer(req: Request, res: Response) {
       customerData.jobCount += 1;
       customerData.jobs.push({
         id: job.id,
-        number: job.number,
-        title: job.title,
+        number: job.jobNo,
+        title: job.title || '',
         status: job.status,
         revenue,
         cost,
@@ -155,23 +157,26 @@ export async function getFinancialsByCustomer(req: Request, res: Response) {
 export async function getFinancialsByVendor(req: Request, res: Response) {
   try {
     const jobs = await prisma.job.findMany({
+      where: {
+        deletedAt: null,
+      },
       include: {
-        lineItems: true,
-        customer: true,
-        vendor: true,
+        Company: true,
+        Vendor: true,
       },
     });
 
     const vendorMap = new Map<string, any>();
 
     jobs.forEach((job: any) => {
-      if (!job.vendor) return;
+      if (!job.Vendor) return;
 
-      const vendorId = job.vendor.id;
-      const vendorName = job.vendor.name;
+      const vendorId = job.Vendor.id;
+      const vendorName = job.Vendor.name;
       const cost = calculateJobCost(job);
       const revenue = calculateJobRevenue(job);
       const isUnpaid = ['APPROVED', 'PO_ISSUED', 'IN_PRODUCTION', 'SHIPPED', 'INVOICED'].includes(job.status);
+      const isPartner = job.Vendor.vendorCode === 'BRADFORD' || job.Vendor.name?.toLowerCase().includes('bradford');
 
       if (!vendorMap.has(vendorId)) {
         vendorMap.set(vendorId, {
@@ -181,7 +186,7 @@ export async function getFinancialsByVendor(req: Request, res: Response) {
           jobCount: 0,
           unpaidCost: 0,
           unpaidJobCount: 0,
-          isPartner: job.vendor.isPartner || false,
+          isPartner,
           jobs: [],
         });
       }
@@ -191,13 +196,13 @@ export async function getFinancialsByVendor(req: Request, res: Response) {
       vendorData.jobCount += 1;
       vendorData.jobs.push({
         id: job.id,
-        number: job.number,
-        title: job.title,
+        number: job.jobNo,
+        title: job.title || '',
         status: job.status,
         cost,
         revenue,
         createdAt: job.createdAt,
-        customerName: job.customer?.name,
+        customerName: job.Company?.name || '',
       });
 
       if (isUnpaid) {

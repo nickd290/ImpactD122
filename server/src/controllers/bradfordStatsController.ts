@@ -5,19 +5,20 @@ import { BRADFORD_SIZE_PRICING } from '../utils/bradfordPricing';
 // Get comprehensive Bradford statistics
 export const getBradfordStats = async (req: Request, res: Response) => {
   try {
-    // Fetch all Bradford jobs (where vendor.isPartner = true)
+    // Fetch all Bradford jobs (where vendor is Bradford - check vendorCode or name)
     const bradfordJobs = await prisma.job.findMany({
       where: {
-        vendor: {
-          isPartner: true,
+        deletedAt: null,
+        Vendor: {
+          OR: [
+            { vendorCode: 'BRADFORD' },
+            { name: { contains: 'Bradford', mode: 'insensitive' } },
+          ],
         },
       },
       include: {
-        customer: true,
-        vendor: true,
-        lineItems: true,
-        specs: true,
-        financials: true,
+        Company: true,
+        Vendor: true,
       },
     });
 
@@ -83,20 +84,19 @@ export const getBradfordStats = async (req: Request, res: Response) => {
         stats.inProductionJobs++;
       }
 
-      // Count by product type
-      const productType = job.specs?.productType || 'OTHER';
+      // Count by product type (from specs JSON)
+      const specs = job.specs as any || {};
+      const productType = specs.productType || 'OTHER';
       if (!stats.jobsByProductType[productType]) {
         stats.jobsByProductType[productType] = 0;
       }
       stats.jobsByProductType[productType]++;
 
-      // Calculate revenue (sum of line items)
-      const jobRevenue = job.lineItems.reduce(
-        (sum: number, item: any) => sum + (item.quantity * item.unitPrice),
-        0
-      );
+      // Calculate revenue from customerTotal (or impactCustomerTotal)
+      const jobRevenue = job.impactCustomerTotal ? Number(job.impactCustomerTotal) :
+                         job.customerTotal ? Number(job.customerTotal) : 0;
       stats.totalRevenue += jobRevenue;
-      stats.totalLineItems += job.lineItems.length;
+      stats.totalLineItems += job.quantity ? 1 : 0;
 
       // Track if job is paid
       const isPaid = job.status === 'PAID';
@@ -108,75 +108,73 @@ export const getBradfordStats = async (req: Request, res: Response) => {
         stats.unpaidRevenue += jobRevenue;
       }
 
-      // Process financials if available
-      if (job.financials) {
-        const fin = job.financials;
+      // Process financials from flat fields on Job
+      const jdTotal = job.jdTotal ? Number(job.jdTotal) : 0;
+      const bradfordTotal = job.bradfordTotal ? Number(job.bradfordTotal) : 0;
+      const impactMargin = job.impactMargin ? Number(job.impactMargin) : 0;
+      const bradfordCut = job.bradfordCut ? Number(job.bradfordCut) : 0;
+      const bradfordTotalMargin = job.bradfordTotalMargin ? Number(job.bradfordTotalMargin) : 0;
 
-        // Calculate Bradford profit (paper markup + 50% of spread)
-        const bradfordProfit = (fin.paperMarkupAmount || 0) + (fin.bradfordShareAmount || 0);
-        stats.totalBradfordProfit += bradfordProfit;
+      // Calculate Bradford profit (paper markup + their share of spread)
+      const bradfordProfit = impactMargin + bradfordTotalMargin;
+      stats.totalBradfordProfit += bradfordProfit;
 
-        // Calculate spread
-        const spread = fin.calculatedSpread || 0;
-        stats.totalSpread += spread;
+      // Calculate spread
+      const spread = bradfordCut;
+      stats.totalSpread += spread;
 
-        // Impact profit = spread - Bradford's share
-        const impactProfit = spread - (fin.bradfordShareAmount || 0);
-        stats.totalImpactProfit += impactProfit;
+      // Impact profit = spread - Bradford's share
+      const impactProfit = spread - bradfordTotalMargin;
+      stats.totalImpactProfit += impactProfit;
 
-        // JD costs
-        const jdCosts = fin.jdServicesTotal || 0;
-        stats.totalJDCosts += jdCosts;
+      // JD costs
+      stats.totalJDCosts += jdTotal;
 
-        // Track by paid/unpaid status
-        if (isPaid) {
-          stats.paidBradfordProfit += bradfordProfit;
-          stats.paidImpactProfit += impactProfit;
-          stats.paidJDCosts += jdCosts;
-        } else {
-          stats.unpaidBradfordProfit += bradfordProfit;
-          stats.unpaidImpactProfit += impactProfit;
-          stats.unpaidJDCosts += jdCosts;
-        }
-
-        // Check for warnings
-        if (spread < 0) {
-          stats.jobsWithNegativeSpread++;
-          stats.problematicJobs.push({
-            id: job.id,
-            number: job.number,
-            title: job.title,
-            issue: `Negative spread: $${spread.toFixed(2)}`,
-          });
-        }
-
-        if (bradfordProfit > impactProfit && impactProfit > 0) {
-          stats.jobsWhereBradfordProfitExceedsImpact++;
-          stats.problematicJobs.push({
-            id: job.id,
-            number: job.number,
-            title: job.title,
-            issue: `Bradford profit ($${bradfordProfit.toFixed(2)}) > Impact profit ($${impactProfit.toFixed(2)})`,
-          });
-        }
+      // Track by paid/unpaid status
+      if (isPaid) {
+        stats.paidBradfordProfit += bradfordProfit;
+        stats.paidImpactProfit += impactProfit;
+        stats.paidJDCosts += jdTotal;
+      } else {
+        stats.unpaidBradfordProfit += bradfordProfit;
+        stats.unpaidImpactProfit += impactProfit;
+        stats.unpaidJDCosts += jdTotal;
       }
 
-      // Check for missing Bradford reference number
-      if (!job.bradfordRefNumber || job.bradfordRefNumber.trim() === '') {
+      // Check for warnings
+      if (spread < 0) {
+        stats.jobsWithNegativeSpread++;
+        stats.problematicJobs.push({
+          id: job.id,
+          number: job.jobNo,
+          title: job.title || '',
+          issue: `Negative spread: $${spread.toFixed(2)}`,
+        });
+      }
+
+      if (bradfordProfit > impactProfit && impactProfit > 0) {
+        stats.jobsWhereBradfordProfitExceedsImpact++;
+        stats.problematicJobs.push({
+          id: job.id,
+          number: job.jobNo,
+          title: job.title || '',
+          issue: `Bradford profit ($${bradfordProfit.toFixed(2)}) > Impact profit ($${impactProfit.toFixed(2)})`,
+        });
+      }
+
+      // Check for missing Bradford reference number (using customerPONumber as workaround)
+      if (!job.customerPONumber || job.customerPONumber.trim() === '') {
         stats.jobsMissingRefNumber++;
       }
 
       // Calculate paper usage
-      if (job.specs?.finishedSize) {
-        const size = job.specs.finishedSize;
-        const pricing = BRADFORD_SIZE_PRICING[size as keyof typeof BRADFORD_SIZE_PRICING];
+      const finishedSize = specs.finishedSize || specs.sizeName;
+      if (finishedSize) {
+        const pricing = BRADFORD_SIZE_PRICING[finishedSize as keyof typeof BRADFORD_SIZE_PRICING];
 
         if (pricing) {
-          // Get total quantity from line items
-          const totalQuantity = job.lineItems.reduce(
-            (sum: number, item: any) => sum + item.quantity,
-            0
-          );
+          // Get total quantity from job
+          const totalQuantity = job.quantity || 0;
 
           // Calculate sheets (quantity is already in pieces)
           const sheets = totalQuantity;
@@ -189,11 +187,11 @@ export const getBradfordStats = async (req: Request, res: Response) => {
           stats.totalPaperPounds += pounds;
 
           // Add to size breakdown
-          if (!stats.paperUsageBySize[size]) {
-            stats.paperUsageBySize[size] = { sheets: 0, pounds: 0 };
+          if (!stats.paperUsageBySize[finishedSize]) {
+            stats.paperUsageBySize[finishedSize] = { sheets: 0, pounds: 0 };
           }
-          stats.paperUsageBySize[size].sheets += sheets;
-          stats.paperUsageBySize[size].pounds += pounds;
+          stats.paperUsageBySize[finishedSize].sheets += sheets;
+          stats.paperUsageBySize[finishedSize].pounds += pounds;
         }
       }
     });
@@ -204,9 +202,9 @@ export const getBradfordStats = async (req: Request, res: Response) => {
       stats.averageJobValue = stats.totalRevenue / stats.totalJobs;
     }
 
-    const jobsWithFinancials = bradfordJobs.filter(j => j.financials?.jdServicesTotal).length;
-    if (jobsWithFinancials > 0) {
-      stats.averageJDCost = stats.totalJDCosts / jobsWithFinancials;
+    const jobsWithJDCosts = bradfordJobs.filter(j => j.jdTotal && Number(j.jdTotal) > 0).length;
+    if (jobsWithJDCosts > 0) {
+      stats.averageJDCost = stats.totalJDCosts / jobsWithJDCosts;
     }
 
     res.json(stats);
