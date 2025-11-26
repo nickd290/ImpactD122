@@ -568,13 +568,13 @@ export const JobDrawer: React.FC<JobDrawerProps> = ({
                     <option value="">Select customer...</option>
                     {customers.map((customer: any) => (
                       <option key={customer.id} value={customer.id}>
-                        {customer.name}
+                        {customer.name || 'Unknown'}
                       </option>
                     ))}
                   </select>
                 ) : isEditingCustomerInfo ? (
                   <div className="space-y-2">
-                    <p className="font-medium text-gray-900 mb-2">{job.customer.name}</p>
+                    <p className="font-medium text-gray-900 mb-2">{job.customer?.name || 'Unknown'}</p>
                     <div>
                       <label className="text-xs text-gray-600">Contact Person</label>
                       <input
@@ -663,13 +663,13 @@ export const JobDrawer: React.FC<JobDrawerProps> = ({
                     <option value="">Select vendor...</option>
                     {vendors.map((vendor: any) => (
                       <option key={vendor.id} value={vendor.id}>
-                        {vendor.name}
+                        {vendor.name || 'Unknown'}
                       </option>
                     ))}
                   </select>
                 ) : isEditingVendorInfo ? (
                   <div className="space-y-2">
-                    <p className="font-medium text-gray-900 mb-2">{job.vendor.name}</p>
+                    <p className="font-medium text-gray-900 mb-2">{job.vendor?.name || 'Unknown'}</p>
                     <div>
                       <label className="text-xs text-gray-600">Contact Person</label>
                       <input

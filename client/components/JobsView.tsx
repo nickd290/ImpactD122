@@ -331,7 +331,7 @@ export function JobsView({
                       <ChevronDown className="w-5 h-5 text-muted-foreground" />
                     )}
                     <h3 className="text-sm font-semibold text-foreground">
-                      {customer.name}
+                      {customer.name || 'Unknown Customer'}
                     </h3>
                     <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
                       {customerJobs.length} {customerJobs.length === 1 ? 'job' : 'jobs'}

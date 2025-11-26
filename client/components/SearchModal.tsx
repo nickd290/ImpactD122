@@ -77,7 +77,7 @@ export function SearchModal({
         allResults.push({
           id: customer.id,
           type: 'customer',
-          title: customer.name,
+          title: customer.name || 'Unknown Customer',
           subtitle: customer.contactPerson,
           metadata: customer.email,
         });
@@ -94,7 +94,7 @@ export function SearchModal({
         allResults.push({
           id: vendor.id,
           type: 'vendor',
-          title: vendor.name,
+          title: vendor.name || 'Unknown Vendor',
           subtitle: vendor.contactPerson,
           metadata: vendor.email,
         });
