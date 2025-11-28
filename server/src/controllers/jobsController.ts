@@ -770,7 +770,7 @@ export const updateJob = async (req: Request, res: Response) => {
     );
 
     if (poValidation.valid && !hasImpactPO) {
-      console.log(`Auto-creating POs for job ${job.number}: Job now meets criteria`);
+      console.log(`Auto-creating POs for job ${job.jobNo}: Job now meets criteria`);
 
       // Calculate tier pricing for the job
       const tierPricing = calculateTierPricing({
@@ -791,7 +791,7 @@ export const updateJob = async (req: Request, res: Response) => {
           jobId: id,
           originCompanyId: 'impact-direct',
           targetCompanyId: 'bradford',
-          poNumber: `PO-${job.number}-IB-${timestamp}`,
+          poNumber: `PO-${job.jobNo}-IB-${timestamp}`,
           description: 'Impact to Bradford',
           buyCost: totalCost,
           paperCost: paperCost,
@@ -814,7 +814,7 @@ export const updateJob = async (req: Request, res: Response) => {
             jobId: id,
             originCompanyId: 'bradford',
             targetCompanyId: 'jd-graphic',
-            poNumber: `PO-${job.number}-BJ-${timestamp}`,
+            poNumber: `PO-${job.jobNo}-BJ-${timestamp}`,
             description: 'Bradford to JD',
             buyCost: mfgCost > 0 ? mfgCost : null,
             mfgCost: mfgCost > 0 ? mfgCost : null,
