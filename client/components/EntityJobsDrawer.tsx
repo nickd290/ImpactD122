@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, DollarSign, Calendar } from 'lucide-react';
 import { StatusBadge } from './ui/StatusBadge';
-import { JobDrawer } from './JobDrawer';
+import { JobDetailModal } from './JobDetailModal';
 import { pdfApi, jobsApi } from '../lib/api';
 
 const formatCurrency = (amount: number) => {
@@ -212,9 +212,9 @@ export function EntityJobsDrawer({
         </div>
       </div>
 
-      {/* Job Details Drawer (nested on top) */}
+      {/* Job Details Modal (nested on top) */}
       {selectedJob && (
-        <JobDrawer
+        <JobDetailModal
           isOpen={isJobDrawerOpen}
           onClose={() => {
             setIsJobDrawerOpen(false);
@@ -225,7 +225,7 @@ export function EntityJobsDrawer({
           onDownloadPO={() => pdfApi.generateVendorPO(selectedJob.id)}
           onDownloadInvoice={() => pdfApi.generateInvoice(selectedJob.id)}
           onDownloadQuote={() => pdfApi.generateQuote(selectedJob.id)}
-          onUpdateBradfordRef={handleUpdateBradfordRef}
+          onRefresh={onRefresh}
         />
       )}
     </>

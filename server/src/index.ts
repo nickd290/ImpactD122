@@ -9,9 +9,12 @@ import pdfRouter from './routes/pdf';
 import financialsRouter from './routes/financials';
 import exportRouter from './routes/export';
 import bradfordRouter from './routes/bradford';
+import paperInventoryRouter from './routes/paperInventory';
+import emailRouter from './routes/email';
 
 // Load environment variables
-dotenv.config();
+// Use path relative to this file to find .env in the server directory
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -42,6 +45,8 @@ app.use('/api/pdf', pdfRouter);
 app.use('/api/financials', financialsRouter);
 app.use('/api/export', exportRouter);
 app.use('/api/bradford', bradfordRouter);
+app.use('/api/paper-inventory', paperInventoryRouter);
+app.use('/api/email', emailRouter);
 
 // Serve frontend in production
 if (process.env.NODE_ENV === 'production') {

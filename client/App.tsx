@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { Toaster } from 'sonner';
 import { jobsApi, entitiesApi } from './lib/api';
 import { SpecParser } from './components/SpecParser';
 import { POUploader } from './components/POUploader';
 import { EmailDraftModal } from './components/EmailDraftModal';
 import { ParsedJobReviewModal } from './components/ParsedJobReviewModal';
-import JobEditModal from './components/JobEditModal';
 import EntityEditModal from './components/EntityEditModal';
 import EntityCreateModal from './components/EntityCreateModal';
 import DeleteConfirmationModal from './components/DeleteConfirmationModal';
@@ -15,12 +15,14 @@ import { SearchModal } from './components/SearchModal';
 import { EntitiesView } from './components/EntitiesView';
 import { BradfordStatsView } from './components/BradfordStatsView';
 import { FinancialsView } from './components/FinancialsView';
+import { PaperInventoryView } from './components/PaperInventoryView';
+import { AccountingDashboardView } from './components/AccountingDashboardView';
 import { JobFormModal } from './components/JobFormModal';
 import { JobExcelImporter } from './components/JobExcelImporter';
 import { JobImportPreviewModal } from './components/JobImportPreviewModal';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 
-type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS';
+type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING';
 
 // Impact Direct entity for PDF generation
 const IMPACT_DIRECT_ENTITY = {
@@ -56,7 +58,7 @@ function App() {
   const [parsedExcelJobs, setParsedExcelJobs] = useState<any[]>([]);
 
   // CRUD Modals
-  const [showJobEditModal, setShowJobEditModal] = useState(false);
+  const [editingJob, setEditingJob] = useState<any | null>(null);
   const [showEntityEditModal, setShowEntityEditModal] = useState(false);
   const [showEntityCreateModal, setShowEntityCreateModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -88,6 +90,13 @@ function App() {
       setJobs(jobsData);
       setCustomers(customersData);
       setVendors(vendorsData);
+      // Update selectedJob with fresh data if one is currently selected
+      if (selectedJob) {
+        const updatedJob = jobsData.find((j: any) => j.id === selectedJob.id);
+        if (updatedJob) {
+          setSelectedJob(updatedJob);
+        }
+      }
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {
@@ -149,7 +158,7 @@ function App() {
 
   const handleSaveDraftFromParsed = async (jobData: any) => {
     try {
-      const newJob = await jobsApi.create({ ...jobData, status: 'DRAFT' });
+      const newJob = await jobsApi.create({ ...jobData, status: 'ACTIVE' });
       setJobs([newJob, ...jobs]);
       setSelectedJob(newJob);
       setShowReviewModal(false);
@@ -184,8 +193,8 @@ function App() {
 
   // CRUD Handlers
   const handleEditJob = (job: any) => {
-    setSelectedJob(job);
-    setShowJobEditModal(true);
+    setEditingJob(job);
+    setShowJobFormModal(true);
   };
 
   const handleUpdateJob = async (jobId: string, jobData: any) => {
@@ -196,7 +205,8 @@ function App() {
       if (selectedJob?.id === jobId) {
         setSelectedJob(updated);
       }
-      setShowJobEditModal(false);
+      setShowJobFormModal(false);
+      setEditingJob(null);
       await loadData(); // Refresh to get complete data with relations
     } catch (error) {
       console.error('Failed to update job:', error);
@@ -308,7 +318,7 @@ function App() {
     onShowSearch: () => setShowSearchModal(true),
     onViewChange: setCurrentView,
     onCreateJob: handleCreateJob,
-    enabled: !showSpecParser && !showPOUploader && !showEmailDraft && !showReviewModal && !showJobEditModal && !showEntityEditModal && !showEntityCreateModal && !showDeleteModal && !showSearchModal && !showExcelImporter && !showImportPreview,
+    enabled: !showSpecParser && !showPOUploader && !showEmailDraft && !showReviewModal && !showJobFormModal && !showEntityEditModal && !showEntityCreateModal && !showDeleteModal && !showSearchModal && !showExcelImporter && !showImportPreview,
   });
 
   if (loading) {
@@ -422,6 +432,10 @@ function App() {
               }}
             />
           )}
+
+          {currentView === 'PAPER_INVENTORY' && <PaperInventoryView />}
+
+          {currentView === 'ACCOUNTING' && <AccountingDashboardView />}
         </div>
       </div>
 
@@ -465,26 +479,27 @@ function App() {
         />
       )}
 
-      {/* Job Form Modal */}
+      {/* Job Form Modal (Create and Edit) */}
       <JobFormModal
         isOpen={showJobFormModal}
-        onClose={() => setShowJobFormModal(false)}
-        onSubmit={handleSubmitJobForm}
+        onClose={() => {
+          setShowJobFormModal(false);
+          setEditingJob(null);
+        }}
+        onSubmit={async (jobData) => {
+          if (editingJob) {
+            await handleUpdateJob(editingJob.id, jobData);
+          } else {
+            await handleSubmitJobForm(jobData);
+            setShowJobFormModal(false);
+          }
+        }}
         customers={customers}
         vendors={vendors}
+        initialData={editingJob}
       />
 
       {/* CRUD Modals */}
-      <JobEditModal
-        isOpen={showJobEditModal}
-        onClose={() => setShowJobEditModal(false)}
-        onSubmit={handleUpdateJob}
-        job={selectedJob}
-        customers={customers}
-        vendors={vendors}
-        isSaving={isSaving}
-      />
-
       <EntityCreateModal
         isOpen={showEntityCreateModal}
         onClose={() => setShowEntityCreateModal(false)}
@@ -562,6 +577,9 @@ function App() {
         existingCustomers={customers}
         existingVendors={vendors}
       />
+
+      {/* Toast Notifications */}
+      <Toaster position="top-right" richColors closeButton />
     </div>
   );
 }

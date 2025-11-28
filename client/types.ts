@@ -26,14 +26,8 @@ export interface Entity {
 }
 
 export enum JobStatus {
-  DRAFT = 'DRAFT',
-  QUOTED = 'QUOTED',
-  APPROVED = 'APPROVED',
-  PO_ISSUED = 'PO_ISSUED',
-  IN_PRODUCTION = 'IN_PRODUCTION',
-  SHIPPED = 'SHIPPED',
-  INVOICED = 'INVOICED',
-  PAID = 'PAID',
+  ACTIVE = 'ACTIVE',     // Job is in progress (not paid)
+  PAID = 'PAID',         // Job is paid/completed
   CANCELLED = 'CANCELLED'
 }
 

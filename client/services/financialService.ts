@@ -124,7 +124,7 @@ export function getOutstandingByCustomer(jobs: Job[]): CustomerFinancial[] {
     const revenue = calculateJobRevenue(job);
     const cost = calculateJobCost(job);
     const profit = revenue - cost;
-    const isOutstanding = job.status === 'INVOICED';
+    const isActive = job.status === 'ACTIVE';
 
     if (!customerMap.has(customerId)) {
       customerMap.set(customerId, {
@@ -148,7 +148,7 @@ export function getOutstandingByCustomer(jobs: Job[]): CustomerFinancial[] {
     customerData.jobCount += 1;
     customerData.jobs.push(job);
 
-    if (isOutstanding) {
+    if (isActive) {
       customerData.outstandingRevenue += revenue;
       customerData.outstandingJobCount += 1;
     }
@@ -178,7 +178,7 @@ export function getOutstandingByVendor(jobs: Job[]): VendorFinancial[] {
     const vendorId = job.vendor.id;
     const vendorName = job.vendor.name;
     const cost = calculateJobCost(job);
-    const isUnpaid = ['APPROVED', 'PO_ISSUED', 'IN_PRODUCTION', 'SHIPPED', 'INVOICED'].includes(job.status);
+    const isUnpaid = job.status === 'ACTIVE';
 
     if (!vendorMap.has(vendorId)) {
       vendorMap.set(vendorId, {
@@ -226,13 +226,9 @@ export function getBradfordFinancials(jobs: Job[]): {
     const revenue = calculateJobRevenue(job);
     const cost = calculateJobCost(job);
 
-    // Bradford owes us (we sent them work, they owe us for it)
-    if (job.status === 'INVOICED') {
+    // Bradford owes us (active jobs, not yet paid)
+    if (job.status === 'ACTIVE') {
       bradfordOwesJD += revenue;
-    }
-
-    // We owe Bradford (they did work for us, we need to pay them)
-    if (['APPROVED', 'PO_ISSUED', 'IN_PRODUCTION', 'SHIPPED', 'INVOICED'].includes(job.status)) {
       jdOwesBradford += cost;
     }
   });

@@ -1,24 +1,70 @@
 import { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
 
-// Financial calculation utilities (server-side)
-// Using Job-level totals since production schema doesn't have lineItems
+/**
+ * Calculate cost from POs - only Impact-origin POs count as our cost
+ */
 function calculateJobCost(job: any): number {
-  // Use bradfordTotal + jdTotal as cost basis
-  const bradfordTotal = job.bradfordTotal ? Number(job.bradfordTotal) : 0;
-  const jdTotal = job.jdTotal ? Number(job.jdTotal) : 0;
-  return bradfordTotal + jdTotal;
+  const purchaseOrders = job.PurchaseOrder || [];
+  // Filter to only Impact-origin POs (Impact → any vendor counts as our cost)
+  const impactPOs = purchaseOrders.filter((po: any) =>
+    po.originCompanyId === 'impact-direct'
+  );
+  return impactPOs.reduce((sum: number, po: any) => {
+    return sum + (Number(po.buyCost) || 0);
+  }, 0);
 }
 
+/**
+ * Calculate revenue from sellPrice
+ */
 function calculateJobRevenue(job: any): number {
-  // Use impactCustomerTotal or customerTotal
-  return job.impactCustomerTotal ? Number(job.impactCustomerTotal) :
-         job.customerTotal ? Number(job.customerTotal) : 0;
+  return Number(job.sellPrice) || 0;
+}
+
+/**
+ * Calculate Bradford paper markup from POs - only Impact-origin POs
+ */
+function calculatePaperMarkup(job: any): number {
+  const purchaseOrders = job.PurchaseOrder || [];
+  const impactPOs = purchaseOrders.filter((po: any) =>
+    po.originCompanyId === 'impact-direct'
+  );
+  return impactPOs.reduce((sum: number, po: any) => {
+    return sum + (Number(po.paperMarkup) || 0);
+  }, 0);
+}
+
+/**
+ * NEW: Calculate profit split (Bradford 50% + paper markup, Impact 50%)
+ */
+function calculateProfitSplit(job: any) {
+  const revenue = calculateJobRevenue(job);
+  const cost = calculateJobCost(job);
+  const spread = revenue - cost;
+  const paperMarkup = calculatePaperMarkup(job);
+
+  // 50/50 split on the spread
+  const bradfordSpreadShare = spread * 0.5;
+  const impactSpreadShare = spread * 0.5;
+
+  // Bradford Total = Paper Markup + 50% of Spread
+  const bradfordTotal = paperMarkup + bradfordSpreadShare;
+  const impactTotal = impactSpreadShare;
+
+  return {
+    spread,
+    paperMarkup,
+    bradfordSpreadShare,
+    impactSpreadShare,
+    bradfordTotal,
+    impactTotal
+  };
 }
 
 /**
  * GET /api/financials/summary
- * Get overall financial summary
+ * Get overall financial summary with Bradford/Impact split
  */
 export async function getFinancialSummary(req: Request, res: Response) {
   try {
@@ -29,6 +75,7 @@ export async function getFinancialSummary(req: Request, res: Response) {
       include: {
         Company: true,
         Vendor: true,
+        PurchaseOrder: true, // Include POs for new model calculations
       },
     });
 
@@ -37,25 +84,38 @@ export async function getFinancialSummary(req: Request, res: Response) {
     const totalProfit = totalRevenue - totalCost;
     const averageMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 
-    // Outstanding invoices (INVOICED but not PAID)
-    const outstandingJobs = jobs.filter((job: any) => job.status === 'INVOICED');
-    const outstandingRevenue = outstandingJobs.reduce((sum: number, job: any) => sum + calculateJobRevenue(job), 0);
+    // NEW: Calculate Bradford/Impact split totals
+    let totalBradfordShare = 0;
+    let totalImpactShare = 0;
+    let totalPaperMarkup = 0;
 
-    // Unpaid vendor costs (not yet PAID)
-    const unpaidJobs = jobs.filter((job: any) =>
-      ['APPROVED', 'PO_ISSUED', 'IN_PRODUCTION', 'SHIPPED', 'INVOICED'].includes(job.status)
-    );
-    const unpaidCost = unpaidJobs.reduce((sum: number, job: any) => sum + calculateJobCost(job), 0);
+    jobs.forEach((job: any) => {
+      const split = calculateProfitSplit(job);
+      totalBradfordShare += split.bradfordTotal;
+      totalImpactShare += split.impactTotal;
+      totalPaperMarkup += split.paperMarkup;
+    });
+
+    // Active jobs (not yet paid)
+    const activeJobs = jobs.filter((job: any) => job.status === 'ACTIVE');
+    const activeRevenue = activeJobs.reduce((sum: number, job: any) => sum + calculateJobRevenue(job), 0);
+
+    // Unpaid vendor costs (ACTIVE jobs)
+    const unpaidCost = activeJobs.reduce((sum: number, job: any) => sum + calculateJobCost(job), 0);
 
     res.json({
       totalRevenue,
       totalCost,
       totalProfit,
       averageMargin,
-      outstandingRevenue,
-      outstandingJobCount: outstandingJobs.length,
+      // Bradford/Impact split
+      totalBradfordShare,
+      totalImpactShare,
+      totalPaperMarkup,
+      // Active (unpaid) jobs
+      activeRevenue,
+      activeJobCount: activeJobs.length,
       unpaidCost,
-      unpaidJobCount: unpaidJobs.length,
       totalJobs: jobs.length,
     });
   } catch (error) {
@@ -77,6 +137,7 @@ export async function getFinancialsByCustomer(req: Request, res: Response) {
       include: {
         Company: true,
         Vendor: true,
+        PurchaseOrder: true, // Include POs for new model calculations
       },
     });
 
@@ -90,7 +151,7 @@ export async function getFinancialsByCustomer(req: Request, res: Response) {
       const revenue = calculateJobRevenue(job);
       const cost = calculateJobCost(job);
       const profit = revenue - cost;
-      const isOutstanding = job.status === 'INVOICED';
+      const isActive = job.status === 'ACTIVE';
 
       if (!customerMap.has(customerId)) {
         customerMap.set(customerId, {
@@ -101,8 +162,8 @@ export async function getFinancialsByCustomer(req: Request, res: Response) {
           totalProfit: 0,
           averageMargin: 0,
           jobCount: 0,
-          outstandingRevenue: 0,
-          outstandingJobCount: 0,
+          activeRevenue: 0,
+          activeJobCount: 0,
           jobs: [],
         });
       }
@@ -124,9 +185,9 @@ export async function getFinancialsByCustomer(req: Request, res: Response) {
         createdAt: job.createdAt,
       });
 
-      if (isOutstanding) {
-        customerData.outstandingRevenue += revenue;
-        customerData.outstandingJobCount += 1;
+      if (isActive) {
+        customerData.activeRevenue += revenue;
+        customerData.activeJobCount += 1;
       }
     });
 
@@ -138,9 +199,9 @@ export async function getFinancialsByCustomer(req: Request, res: Response) {
           : 0;
     });
 
-    // Sort by outstanding revenue (highest first)
+    // Sort by active revenue (highest first)
     const customers = Array.from(customerMap.values()).sort(
-      (a, b) => b.outstandingRevenue - a.outstandingRevenue
+      (a, b) => b.activeRevenue - a.activeRevenue
     );
 
     res.json(customers);
@@ -163,6 +224,7 @@ export async function getFinancialsByVendor(req: Request, res: Response) {
       include: {
         Company: true,
         Vendor: true,
+        PurchaseOrder: true, // Include POs for new model calculations
       },
     });
 
@@ -175,7 +237,7 @@ export async function getFinancialsByVendor(req: Request, res: Response) {
       const vendorName = job.Vendor.name;
       const cost = calculateJobCost(job);
       const revenue = calculateJobRevenue(job);
-      const isUnpaid = ['APPROVED', 'PO_ISSUED', 'IN_PRODUCTION', 'SHIPPED', 'INVOICED'].includes(job.status);
+      const isUnpaid = job.status === 'ACTIVE';
       const isPartner = job.Vendor.vendorCode === 'BRADFORD' || job.Vendor.name?.toLowerCase().includes('bradford');
 
       if (!vendorMap.has(vendorId)) {

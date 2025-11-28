@@ -60,40 +60,105 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
   try {
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
-    const prompt = `Analyze this Purchase Order (PO) for Impact Direct Printing.
+    const prompt = `Analyze this Purchase Order (PO) for Impact Direct Printing. Extract ALL available information.
 
-    **Extraction Rules:**
-    1. **Customer**: Identify the company sending the PO.
-    2. **Quantity (CRITICAL)**:
-       - ALWAYS extract the exact quantity from the PO.
-       - Look for "Qty:", "Quantity:", "QTY", or numeric values near item descriptions.
-       - Common quantities: 1000, 2500, 5000, 10000, etc.
-       - NEVER default to 1 - if unclear, look harder at the document.
-       - The quantity is a separate field from the price - do not confuse them.
-    3. **Pricing**:
-       - The price on the PO is the **Revenue** (Customer Price).
-       - Set 'unitPrice' to this value.
-       - IMPORTANT: If the unitPrice looks like a Total (e.g. > $100 for a quantity > 100), assume it is the 'Line Total'.
-       - In your JSON, provide 'unitPrice' (per piece) and 'lineTotal' (total amount). Calculate unitPrice if only total is present.
-    4. **Product Type**:
-       - If "Book", "Catalog", "Magazine", "Booklet" is mentioned -> "BOOK".
-       - If "Fold", "Brochure" -> "FOLDED".
-       - Otherwise "FLAT".
-    5. **Sizes**:
-       - Extract "Flat Size" (unfolded/uncut size) -> map to 'flatSize'.
-       - Extract "Finished Size" or "Final Size" or "Folded Size" -> map to 'finishedSize'.
-       - Format as "Width x Height" (e.g., "8.5 x 11", "11 x 17").
-    6. **Book Details**:
-       - Look for "Page Count".
-       - "Cover Type": "Plus Cover" vs "Self Cover".
-       - "Stock" or "Cover Stock" -> map to 'coverPaperType'.
-       - "Text" or "Text Weight" -> map to 'paperType'.
-       - "Binding": Saddle Stitch, Perfect Bound, etc.
-    7. **Line Items**:
-       - Extract description, quantity (REQUIRED - look carefully!), and the total price.
-       - Each item MUST have a quantity - it's one of the most important fields.
+    **EXTRACTION RULES - BE THOROUGH:**
 
-    Return clean JSON with: customerName, poNumber, title, specs (productType, flatSize, finishedSize, paperType, coverPaperType, colors, coating, finishing, pageCount, bindingStyle, coverType), items (EACH item must have: description, quantity, unitPrice or lineTotal)`;
+    1. **Customer/Company Info**:
+       - customerName: Company name sending the PO
+       - contactPerson: Contact name if shown
+       - contactEmail: Email address
+       - contactPhone: Phone number
+       - customerAddress: Billing address if shown
+
+    2. **PO Details**:
+       - poNumber: The PO number (look for "PO#", "Purchase Order #", "Order #")
+       - title: Job name/title/description
+       - projectName: Project or campaign name if different from title
+
+    3. **Dates (CRITICAL for print jobs)**:
+       - dueDate: Delivery date, ship date, due date, or "need by" date
+       - mailDate: If this is direct mail, look for "mail date", "drop date", "pool date", or "mailing date"
+         - IMPORTANT: "Pool date" IS the mail date - extract it as mailDate
+       - inHomesDate: "In-homes date" or "in-home date" for direct mail
+       - Format dates as "YYYY-MM-DD"
+
+    4. **Shipping/Delivery**:
+       - shipToName: Ship-to company or person name
+       - shipToAddress: Full shipping address
+       - shipVia: Shipping method if specified
+       - specialInstructions: ANY notes, instructions, or special requirements mentioned ANYWHERE on the PO
+
+    5. **Quantity (CRITICAL - LOOK CAREFULLY)**:
+       - ALWAYS extract the exact quantity from the PO
+       - Look for "Qty:", "Quantity:", "QTY", numeric values near descriptions
+       - Common quantities: 1000, 2500, 5000, 10000, 25000, 50000, 100000
+       - NEVER default to 1 - if unclear, look harder
+       - If multiple quantities exist (like 5,000 + 2,500), capture them separately
+
+    6. **Pricing (CRITICAL - READ CAREFULLY)**:
+       - The price on the PO is the **Customer's Price** (our Revenue)
+       - IMPORTANT: Print pricing is often quoted "per thousand" or "/M"
+         - "$35.00/M" means $35.00 per 1,000 pieces
+         - "$35/M" for 30,000 qty = $35 × 30 = $1,050 total (NOT $35 × 30,000)
+         - "CPM" also means Cost Per Thousand (M = Roman numeral for 1000)
+       - When you see "/M", "per M", "per thousand", or "CPM":
+         - pricePerThousand: The rate per 1,000 (e.g., 35.00)
+         - lineTotal: pricePerThousand × (quantity / 1000)
+         - unitPrice: pricePerThousand / 1000 (price per single piece)
+       - If a flat total is given (no /M), use that as lineTotal
+       - NEVER multiply per-thousand rates by the full quantity
+
+    7. **Product Type**:
+       - "BOOK": catalog, magazine, booklet, program, annual report
+       - "FOLDED": brochure, folder, mailer with folds
+       - "FLAT": flyer, postcard, sell sheet, poster, card
+
+    8. **Print Specifications - Extract ALL available**:
+       - flatSize: Unfolded/flat size (e.g., "11 x 17", "17 x 22")
+       - finishedSize: Final trimmed size - LOOK FOR "Page Size:" or "Size:" on the PO
+         - Common sizes: "6 x 9", "6 x 11", "8.5 x 11", "5.5 x 8.5"
+         - Oversized postcards: "6 x 11", "7 1/4 x 16 3/8", "8 1/2 x 17 1/2", "9 3/4 x 22 1/8"
+         - Format as "W x H" with spaces around the x (e.g., "6 x 11" not "6x11")
+       - paperType: Text/body paper stock (e.g., "80# Gloss Text", "100# Uncoated")
+       - paperWeight: Paper weight if separate from type (e.g., "100#", "80 lb")
+       - coverPaperType: Cover stock for books (e.g., "100# Gloss Cover")
+       - colors: Print colors (e.g., "4/4", "4/1", "4/0", "CMYK", "PMS 485")
+       - coating: Coating type (e.g., "AQ", "UV", "Matte", "Gloss", "Satin", "Soft Touch")
+       - finishing: Finishing operations (e.g., "Score", "Die Cut", "Emboss", "Foil")
+       - folds: Fold type (e.g., "Tri-fold", "Z-fold", "Gate fold", "Roll fold")
+       - perforations: Any perfs (e.g., "Perf at 3.5 inches")
+       - dieCut: Die cut details if applicable
+       - pageCount: Number of pages for books (e.g., "16 + cover", "32pp")
+       - bindingStyle: Binding type (e.g., "Saddle Stitch", "Perfect Bound", "Wire-O", "Spiral")
+       - coverType: "PLUS" (separate cover) or "SELF" (self-cover)
+       - bleed: Bleed information if specified
+       - proofType: Proof requirements (e.g., "PDF proof", "Hard copy proof", "No proof needed")
+
+    9. **Line Items**:
+       - Extract EACH line item with: description, quantity (REQUIRED!), pricePerThousand (if /M pricing), lineTotal
+       - If pricing is "/M" or "per thousand": include pricePerThousand and calculate lineTotal = pricePerThousand × (quantity / 1000)
+       - If there are multiple size/quantity combinations, capture each separately
+
+    10. **Additional Fields**:
+        - artworkInstructions: Instructions about artwork, files, etc.
+        - packingInstructions: How to pack/box the job
+        - labelingInstructions: Labeling requirements
+
+    Return comprehensive JSON with ALL extracted fields:
+    {
+      customerName, contactPerson, contactEmail, contactPhone, customerAddress,
+      poNumber, title, projectName,
+      dueDate, mailDate, inHomesDate,
+      shipToName, shipToAddress, shipVia, specialInstructions,
+      specs: {
+        productType, flatSize, finishedSize, paperType, paperWeight, coverPaperType,
+        colors, coating, finishing, folds, perforations, dieCut,
+        pageCount, bindingStyle, coverType, bleed, proofType
+      },
+      items: [{ description, quantity, pricePerThousand, lineTotal }],
+      artworkInstructions, packingInstructions, labelingInstructions
+    }`;
 
     const result = await model.generateContent([
       {
@@ -117,18 +182,68 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
     // Log the full parsed data for debugging
     console.log('📋 PO Parser - Full AI Response:', JSON.stringify(parsed, null, 2));
 
+    // Calculate total quantity from all line items
+    const totalQuantity = parsed.items?.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0) || 0;
+
     return {
-      title: parsed.title || "PO Import",
+      // Basic job info
+      title: parsed.title || parsed.projectName || "PO Import",
       customerPONumber: parsed.poNumber,
       customerName: parsed.customerName,
+
+      // Contact info
+      contactPerson: parsed.contactPerson || null,
+      contactEmail: parsed.contactEmail || null,
+      contactPhone: parsed.contactPhone || null,
+      customerAddress: parsed.customerAddress || null,
+
+      // Dates - parse to Date objects if valid
+      dueDate: parsed.dueDate ? new Date(parsed.dueDate).toISOString() : null,
+      mailDate: parsed.mailDate ? new Date(parsed.mailDate).toISOString() : null,
+      inHomesDate: parsed.inHomesDate ? new Date(parsed.inHomesDate).toISOString() : null,
+
+      // Shipping
+      shipToName: parsed.shipToName || null,
+      shipToAddress: parsed.shipToAddress || null,
+      shipVia: parsed.shipVia || null,
+
+      // Total quantity from all items
+      quantity: totalQuantity,
+
+      // Comprehensive specs
       specs: {
         productType: parsed.specs?.productType || 'FLAT',
-        ...parsed.specs
+        flatSize: parsed.specs?.flatSize || null,
+        finishedSize: parsed.specs?.finishedSize || null,
+        paperType: parsed.specs?.paperType || null,
+        paperWeight: parsed.specs?.paperWeight || null,
+        coverPaperType: parsed.specs?.coverPaperType || null,
+        colors: parsed.specs?.colors || null,
+        coating: parsed.specs?.coating || null,
+        finishing: parsed.specs?.finishing || null,
+        folds: parsed.specs?.folds || null,
+        perforations: parsed.specs?.perforations || null,
+        dieCut: parsed.specs?.dieCut || null,
+        pageCount: parsed.specs?.pageCount || null,
+        bindingStyle: parsed.specs?.bindingStyle || null,
+        coverType: parsed.specs?.coverType || null,
+        bleed: parsed.specs?.bleed || null,
+        proofType: parsed.specs?.proofType || null,
+        // Combine all special instructions
+        specialInstructions: [
+          parsed.specialInstructions,
+          parsed.artworkInstructions,
+          parsed.packingInstructions,
+          parsed.labelingInstructions
+        ].filter(Boolean).join('\n\n') || null,
       },
+
+      // Line items with smart price calculation
       lineItems: parsed.items?.map((i: any, index: number) => {
-        // Smart Price Logic: If unitPrice seems way too high, it might be a total
-        let finalUnitPrice = i.unitPrice || 0;
-        const qty = i.quantity || 0; // Changed from 1 to 0 to make missing quantities more obvious
+        const qty = i.quantity || 0;
+        let lineTotal = 0;
+        let unitPrice = 0;
+        let pricePerThousand = i.pricePerThousand || 0;
 
         // Log warning if quantity is missing or suspicious
         if (!i.quantity || i.quantity === 0 || i.quantity === 1) {
@@ -139,23 +254,47 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
           });
         }
 
-        // Heuristic: If UnitPrice > 100 and Qty > 100, it's likely a total disguised as a unit price
-        // Or if lineTotal is explicitly provided
-        if (i.lineTotal && i.lineTotal > 0 && qty > 0) {
-          finalUnitPrice = i.lineTotal / qty;
-        } else if (finalUnitPrice > 50 && qty > 50) {
-          // Fallback heuristic
-          finalUnitPrice = finalUnitPrice / qty;
+        // Smart Price Logic for /M (per thousand) pricing
+        if (pricePerThousand > 0 && qty > 0) {
+          // Price is per thousand - calculate correctly
+          lineTotal = pricePerThousand * (qty / 1000);
+          unitPrice = pricePerThousand / 1000;
+          console.log(`💰 PO Parser: /M pricing detected - $${pricePerThousand}/M × ${qty / 1000} = $${lineTotal}`);
+        } else if (i.lineTotal && i.lineTotal > 0) {
+          // Explicit line total provided
+          lineTotal = i.lineTotal;
+          unitPrice = qty > 0 ? lineTotal / qty : 0;
+        } else if (i.unitPrice && i.unitPrice > 0) {
+          // Old unitPrice field (fallback)
+          unitPrice = i.unitPrice;
+          // Check if this looks like a /M rate (small number relative to quantity)
+          if (unitPrice < 100 && qty >= 1000) {
+            // Likely a per-thousand rate mistakenly put in unitPrice
+            pricePerThousand = unitPrice;
+            lineTotal = pricePerThousand * (qty / 1000);
+            unitPrice = pricePerThousand / 1000;
+            console.log(`💰 PO Parser: Detected /M rate in unitPrice - $${pricePerThousand}/M × ${qty / 1000} = $${lineTotal}`);
+          } else {
+            lineTotal = unitPrice * qty;
+          }
         }
 
         return {
           description: i.description || "PO Item",
           quantity: qty,
-          unitPrice: finalUnitPrice,
+          pricePerThousand: pricePerThousand,
+          unitPrice: unitPrice,
+          lineTotal: lineTotal,
           unitCost: 0, // Vendor cost unknown initially
           markupPercent: 0 // Margin unknown initially
         };
-      }) || []
+      }) || [],
+
+      // Additional instructions (also stored separately for easy access)
+      specialInstructions: parsed.specialInstructions || null,
+      artworkInstructions: parsed.artworkInstructions || null,
+      packingInstructions: parsed.packingInstructions || null,
+      labelingInstructions: parsed.labelingInstructions || null,
     };
 
   } catch (e) {

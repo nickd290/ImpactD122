@@ -113,6 +113,23 @@ export const pdfApi = {
   generateVendorPO: (jobId: string) => {
     window.open(`${API_BASE_URL}/pdf/vendor-po/${jobId}`, '_blank');
   },
+  generatePO: (poId: string) => {
+    window.open(`${API_BASE_URL}/pdf/po/${poId}`, '_blank');
+  },
+};
+
+// Email API
+export const emailApi = {
+  sendInvoice: (jobId: string, recipientEmail: string) =>
+    apiFetch(`/email/invoice/${jobId}`, {
+      method: 'POST',
+      body: JSON.stringify({ recipientEmail }),
+    }),
+  sendPO: (poId: string, recipientEmail: string) =>
+    apiFetch(`/email/po/${poId}`, {
+      method: 'POST',
+      body: JSON.stringify({ recipientEmail }),
+    }),
 };
 
 // Financials API

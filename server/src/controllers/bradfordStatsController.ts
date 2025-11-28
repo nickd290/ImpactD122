@@ -2,58 +2,104 @@ import { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
 import { BRADFORD_SIZE_PRICING } from '../utils/bradfordPricing';
 
+// Calculate job cost from POs - only Impact-origin POs count as our cost
+function calculateJobCost(job: any): number {
+  const purchaseOrders = job.PurchaseOrder || [];
+  // Filter to only Impact-origin POs (Impact → any vendor counts as our cost)
+  const impactPOs = purchaseOrders.filter((po: any) =>
+    po.originCompanyId === 'impact-direct'
+  );
+  return impactPOs.reduce((sum: number, po: any) => {
+    return sum + (Number(po.buyCost) || 0);
+  }, 0);
+}
+
+// Calculate job revenue from sellPrice
+function calculateJobRevenue(job: any): number {
+  return Number(job.sellPrice) || 0;
+}
+
+// Calculate paper markup from POs - only Impact-origin POs
+function calculatePaperMarkup(job: any): number {
+  const purchaseOrders = job.PurchaseOrder || [];
+  const impactPOs = purchaseOrders.filter((po: any) =>
+    po.originCompanyId === 'impact-direct'
+  );
+  return impactPOs.reduce((sum: number, po: any) => {
+    return sum + (Number(po.paperMarkup) || 0);
+  }, 0);
+}
+
+// Calculate paper cost from POs - only Impact-origin POs
+function calculatePaperCost(job: any): number {
+  const purchaseOrders = job.PurchaseOrder || [];
+  const impactPOs = purchaseOrders.filter((po: any) =>
+    po.originCompanyId === 'impact-direct'
+  );
+  return impactPOs.reduce((sum: number, po: any) => {
+    return sum + (Number(po.paperCost) || 0);
+  }, 0);
+}
+
+// Calculate paper pounds for a job
+function calculatePaperPounds(job: any): number {
+  const specs = job.specs as any || {};
+  const finishedSize = specs.finishedSize || specs.sizeName || job.sizeName;
+
+  if (finishedSize) {
+    const pricing = BRADFORD_SIZE_PRICING[finishedSize as keyof typeof BRADFORD_SIZE_PRICING];
+    if (pricing) {
+      const totalQuantity = job.quantity || 0;
+      return (totalQuantity / 1000) * pricing.paperLbsPerM;
+    }
+  }
+  return 0;
+}
+
 // Get comprehensive Bradford statistics
+// Bradford gets a cut of ALL jobs:
+// - Bradford vendor jobs: 50/50 split + paper markup to Bradford
+// - Non-Bradford vendor jobs: 35% Bradford / 65% Impact
 export const getBradfordStats = async (req: Request, res: Response) => {
   try {
-    // Fetch all jobs with vendors first, then filter for Bradford in memory
-    // (Prisma nested WHERE fails when vendorId is null)
-    const allJobsWithVendors = await prisma.job.findMany({
+    // Fetch ALL jobs - Bradford gets a share of everything
+    const allJobs = await prisma.job.findMany({
       where: {
         deletedAt: null,
-        vendorId: { not: null },
       },
       include: {
         Company: true,
         Vendor: true,
+        PurchaseOrder: true,
+        ProfitSplit: true,
       },
     });
-
-    // Filter for Bradford vendor in memory (case-insensitive)
-    const bradfordJobs = allJobsWithVendors.filter(job =>
-      job.Vendor?.vendorCode?.toUpperCase() === 'BRADFORD' ||
-      job.Vendor?.name?.toLowerCase().includes('bradford')
-    );
 
     // Initialize stats object
     const stats = {
       // Volume metrics
-      totalJobs: bradfordJobs.length,
+      totalJobs: allJobs.length,
       activeJobs: 0,
-      completedJobs: 0,
-      inProductionJobs: 0,
+      paidJobs: 0,
       jobsByStatus: {} as Record<string, number>,
       jobsByProductType: {} as Record<string, number>,
 
       // Financial metrics
       totalRevenue: 0,
-      totalBradfordProfit: 0,
-      totalImpactProfit: 0,
-      totalSpread: 0,
-      averageSpread: 0,
-      totalJDCosts: 0,
-      averageJDCost: 0,
+      totalCost: 0,
+      totalProfit: 0,
+      totalBradfordShare: 0,
+      totalImpactShare: 0,
+      totalPaperMarkup: 0,
       averageJobValue: 0,
-      totalLineItems: 0,
 
       // Paid/Unpaid breakdown
       paidRevenue: 0,
       unpaidRevenue: 0,
-      paidBradfordProfit: 0,
-      unpaidBradfordProfit: 0,
-      paidImpactProfit: 0,
-      unpaidImpactProfit: 0,
-      paidJDCosts: 0,
-      unpaidJDCosts: 0,
+      paidBradfordShare: 0,
+      unpaidBradfordShare: 0,
+      paidImpactShare: 0,
+      unpaidImpactShare: 0,
 
       // Paper usage metrics
       totalPaperSheets: 0,
@@ -61,29 +107,51 @@ export const getBradfordStats = async (req: Request, res: Response) => {
       paperUsageBySize: {} as Record<string, { sheets: number; pounds: number }>,
 
       // Warnings
-      jobsWithNegativeSpread: 0,
+      jobsWithNegativeMargin: 0,
       jobsMissingRefNumber: 0,
-      jobsWhereBradfordProfitExceedsImpact: 0,
       problematicJobs: [] as Array<{ id: string; number: string; title: string; issue: string }>,
+
+      // Individual job details for table display
+      jobs: [] as Array<{
+        id: string;
+        jobNo: string;
+        title: string;
+        bradfordRef: string;
+        status: string;
+        sizeName: string;
+        quantity: number;
+        paperPounds: number;
+        sellPrice: number;
+        totalCost: number;
+        spread: number;
+        paperCost: number;
+        paperMarkup: number;
+        bradfordShare: number;
+        impactShare: number;
+        marginPercent: number;
+        customerName: string;
+      }>,
     };
 
     // Process each job
-    bradfordJobs.forEach((job: any) => {
+    allJobs.forEach((job: any) => {
+      // Check if this is a Bradford vendor job
+      const isBradfordVendor =
+        job.Vendor?.vendorCode?.toUpperCase() === 'BRADFORD' ||
+        job.Vendor?.name?.toLowerCase().includes('bradford');
+
       // Count by status
       if (!stats.jobsByStatus[job.status]) {
         stats.jobsByStatus[job.status] = 0;
       }
       stats.jobsByStatus[job.status]++;
 
-      // Count active/completed/in production
-      if (job.status !== 'PAID' && job.status !== 'CANCELLED') {
+      // Count active/paid
+      if (job.status === 'ACTIVE') {
         stats.activeJobs++;
       }
       if (job.status === 'PAID') {
-        stats.completedJobs++;
-      }
-      if (job.status === 'IN_PRODUCTION') {
-        stats.inProductionJobs++;
+        stats.paidJobs++;
       }
 
       // Count by product type (from specs JSON)
@@ -94,84 +162,93 @@ export const getBradfordStats = async (req: Request, res: Response) => {
       }
       stats.jobsByProductType[productType]++;
 
-      // Calculate revenue from customerTotal (or impactCustomerTotal)
-      const jobRevenue = job.impactCustomerTotal ? Number(job.impactCustomerTotal) :
-                         job.customerTotal ? Number(job.customerTotal) : 0;
-      stats.totalRevenue += jobRevenue;
-      stats.totalLineItems += job.quantity ? 1 : 0;
+      // Calculate financials based on vendor type
+      let revenue: number;
+      let cost: number;
+      let spread: number;
+      let paperMarkup: number;
+      let bradfordShare: number;
+      let impactShare: number;
+
+      if (isBradfordVendor) {
+        // Bradford vendor: Use ProfitSplit when available, else 50/50 + paper markup
+        const profitSplit = job.ProfitSplit;
+        if (profitSplit && Number(profitSplit.totalCost) > 0) {
+          // Use ProfitSplit values (same as Jobs/Financials tabs)
+          revenue = Number(profitSplit.sellPrice) || Number(job.sellPrice) || 0;
+          cost = Number(profitSplit.totalCost);
+          spread = Number(profitSplit.grossMargin) || (revenue - cost);
+          paperMarkup = Number(profitSplit.paperMarkup) || 0;
+          bradfordShare = Number(profitSplit.bradfordShare) || 0;
+          impactShare = Number(profitSplit.impactShare) || 0;
+        } else {
+          // Fallback to PO-based calculation
+          revenue = calculateJobRevenue(job);
+          cost = calculateJobCost(job);
+          spread = revenue - cost;
+          paperMarkup = calculatePaperMarkup(job);
+          // 50/50 split + paper markup to Bradford
+          bradfordShare = paperMarkup + (spread * 0.5);
+          impactShare = spread * 0.5;
+        }
+      } else {
+        // Non-Bradford vendor (ThreeZ, etc.): 35%/65% split, no paper markup
+        revenue = Number(job.sellPrice) || 0;
+        cost = calculateJobCost(job);
+        spread = revenue - cost;
+        paperMarkup = 0; // No paper markup for non-Bradford jobs
+        bradfordShare = spread * 0.35;
+        impactShare = spread * 0.65;
+      }
+
+      stats.totalRevenue += revenue;
+      stats.totalCost += cost;
+      stats.totalProfit += spread;
+      stats.totalBradfordShare += bradfordShare;
+      stats.totalImpactShare += impactShare;
+      stats.totalPaperMarkup += paperMarkup;
 
       // Track if job is paid
       const isPaid = job.status === 'PAID';
 
       // Track revenue by paid/unpaid
       if (isPaid) {
-        stats.paidRevenue += jobRevenue;
+        stats.paidRevenue += revenue;
+        stats.paidBradfordShare += bradfordShare;
+        stats.paidImpactShare += impactShare;
       } else {
-        stats.unpaidRevenue += jobRevenue;
-      }
-
-      // Process financials from flat fields on Job
-      const jdTotal = job.jdTotal ? Number(job.jdTotal) : 0;
-      const bradfordTotal = job.bradfordTotal ? Number(job.bradfordTotal) : 0;
-      const impactMargin = job.impactMargin ? Number(job.impactMargin) : 0;
-      const bradfordCut = job.bradfordCut ? Number(job.bradfordCut) : 0;
-      const bradfordTotalMargin = job.bradfordTotalMargin ? Number(job.bradfordTotalMargin) : 0;
-
-      // Calculate Bradford profit (paper markup + their share of spread)
-      const bradfordProfit = impactMargin + bradfordTotalMargin;
-      stats.totalBradfordProfit += bradfordProfit;
-
-      // Calculate spread
-      const spread = bradfordCut;
-      stats.totalSpread += spread;
-
-      // Impact profit = spread - Bradford's share
-      const impactProfit = spread - bradfordTotalMargin;
-      stats.totalImpactProfit += impactProfit;
-
-      // JD costs
-      stats.totalJDCosts += jdTotal;
-
-      // Track by paid/unpaid status
-      if (isPaid) {
-        stats.paidBradfordProfit += bradfordProfit;
-        stats.paidImpactProfit += impactProfit;
-        stats.paidJDCosts += jdTotal;
-      } else {
-        stats.unpaidBradfordProfit += bradfordProfit;
-        stats.unpaidImpactProfit += impactProfit;
-        stats.unpaidJDCosts += jdTotal;
+        stats.unpaidRevenue += revenue;
+        stats.unpaidBradfordShare += bradfordShare;
+        stats.unpaidImpactShare += impactShare;
       }
 
       // Check for warnings
       if (spread < 0) {
-        stats.jobsWithNegativeSpread++;
+        stats.jobsWithNegativeMargin++;
         stats.problematicJobs.push({
           id: job.id,
           number: job.jobNo,
           title: job.title || '',
-          issue: `Negative spread: $${spread.toFixed(2)}`,
+          issue: `Negative margin: $${spread.toFixed(2)}`,
         });
       }
 
-      if (bradfordProfit > impactProfit && impactProfit > 0) {
-        stats.jobsWhereBradfordProfitExceedsImpact++;
-        stats.problematicJobs.push({
-          id: job.id,
-          number: job.jobNo,
-          title: job.title || '',
-          issue: `Bradford profit ($${bradfordProfit.toFixed(2)}) > Impact profit ($${impactProfit.toFixed(2)})`,
-        });
-      }
+      // Find the Bradford → JD PO (this is the reference Bradford uses internally)
+      const bradfordJDPO = (job.PurchaseOrder || []).find(
+        (po: any) => po.originCompanyId === 'bradford' && po.targetCompanyId === 'jd-graphic'
+      );
 
-      // Check for missing Bradford reference number (using customerPONumber as workaround)
-      if (!job.customerPONumber || job.customerPONumber.trim() === '') {
+      // Check for missing Bradford reference number (only for Bradford vendor jobs)
+      if (isBradfordVendor && (!bradfordJDPO?.poNumber || bradfordJDPO.poNumber.trim() === '')) {
         stats.jobsMissingRefNumber++;
       }
 
-      // Calculate paper usage
-      const finishedSize = specs.finishedSize || specs.sizeName;
-      if (finishedSize) {
+      // Calculate paper usage (only for Bradford vendor jobs)
+      const finishedSize = specs.finishedSize || specs.sizeName || job.sizeName;
+      let jobPaperPounds = 0;
+      let paperCost = 0;
+
+      if (isBradfordVendor && finishedSize) {
         const pricing = BRADFORD_SIZE_PRICING[finishedSize as keyof typeof BRADFORD_SIZE_PRICING];
 
         if (pricing) {
@@ -183,6 +260,7 @@ export const getBradfordStats = async (req: Request, res: Response) => {
 
           // Calculate pounds using paperLbsPerM (pounds per thousand)
           const pounds = (sheets / 1000) * pricing.paperLbsPerM;
+          jobPaperPounds = pounds;
 
           // Add to totals
           stats.totalPaperSheets += sheets;
@@ -195,23 +273,91 @@ export const getBradfordStats = async (req: Request, res: Response) => {
           stats.paperUsageBySize[finishedSize].sheets += sheets;
           stats.paperUsageBySize[finishedSize].pounds += pounds;
         }
+
+        // Only calculate paper cost for Bradford jobs
+        paperCost = calculatePaperCost(job);
       }
+
+      // Add job to jobs array with calculated fields
+      const marginPercent = revenue > 0 ? ((revenue - cost) / revenue) * 100 : 0;
+
+      stats.jobs.push({
+        id: job.id,
+        jobNo: job.jobNo,
+        title: job.title || '',
+        bradfordRef: bradfordJDPO?.poNumber || '',
+        status: job.status,
+        sizeName: finishedSize || '',
+        quantity: job.quantity || 0,
+        paperPounds: Math.round(jobPaperPounds * 100) / 100,
+        sellPrice: Math.round(revenue * 100) / 100,
+        totalCost: Math.round(cost * 100) / 100,
+        spread: Math.round(spread * 100) / 100,
+        paperCost: Math.round(paperCost * 100) / 100,
+        paperMarkup: Math.round(paperMarkup * 100) / 100,
+        bradfordShare: Math.round(bradfordShare * 100) / 100,
+        impactShare: Math.round(impactShare * 100) / 100,
+        marginPercent: Math.round(marginPercent * 100) / 100,
+        customerName: job.Company?.name || '',
+      });
     });
 
     // Calculate averages
     if (stats.totalJobs > 0) {
-      stats.averageSpread = stats.totalSpread / stats.totalJobs;
       stats.averageJobValue = stats.totalRevenue / stats.totalJobs;
-    }
-
-    const jobsWithJDCosts = bradfordJobs.filter(j => j.jdTotal && Number(j.jdTotal) > 0).length;
-    if (jobsWithJDCosts > 0) {
-      stats.averageJDCost = stats.totalJDCosts / jobsWithJDCosts;
     }
 
     res.json(stats);
   } catch (error) {
     console.error('Bradford stats error:', error);
     res.status(500).json({ error: 'Failed to fetch Bradford statistics' });
+  }
+};
+
+// Update Bradford PO number for a job
+export const updateBradfordPO = async (req: Request, res: Response) => {
+  try {
+    const { jobId } = req.params;
+    const { poNumber } = req.body;
+
+    if (!jobId) {
+      return res.status(400).json({ error: 'Job ID is required' });
+    }
+
+    // Find the Bradford → JD PO for this job
+    const existingPO = await prisma.purchaseOrder.findFirst({
+      where: {
+        jobId,
+        originCompanyId: 'bradford',
+        targetCompanyId: 'jd-graphic',
+      },
+    });
+
+    if (existingPO) {
+      // Update existing PO
+      const updatedPO = await prisma.purchaseOrder.update({
+        where: { id: existingPO.id },
+        data: { poNumber: poNumber || '' },
+      });
+      return res.json({ success: true, poNumber: updatedPO.poNumber });
+    } else {
+      // Create new Bradford → JD PO if it doesn't exist
+      const newPO = await prisma.purchaseOrder.create({
+        data: {
+          id: crypto.randomUUID(),
+          jobId,
+          originCompanyId: 'bradford',
+          targetCompanyId: 'jd-graphic',
+          poNumber: poNumber || '',
+          buyCost: 0,
+          paperCost: 0,
+          paperMarkup: 0,
+        },
+      });
+      return res.json({ success: true, poNumber: newPO.poNumber });
+    }
+  } catch (error) {
+    console.error('Update Bradford PO error:', error);
+    res.status(500).json({ error: 'Failed to update Bradford PO number' });
   }
 };

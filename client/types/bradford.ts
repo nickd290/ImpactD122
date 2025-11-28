@@ -10,35 +10,51 @@ export interface BradfordProblematicJob {
   issue: string;
 }
 
+// Individual job with calculated Bradford metrics
+export interface BradfordJob {
+  id: string;
+  jobNo: string;
+  title: string;
+  bradfordRef: string;
+  status: string;
+  sizeName: string;
+  quantity: number;
+  paperPounds: number;
+  sellPrice: number;
+  totalCost: number;
+  spread: number;
+  paperCost: number;
+  paperMarkup: number;
+  bradfordShare: number;
+  impactShare: number;
+  marginPercent: number;
+  customerName: string;
+}
+
 export interface BradfordStats {
   // Volume metrics
   totalJobs: number;
   activeJobs: number;
-  completedJobs: number;
-  inProductionJobs: number;
+  paidJobs: number;
   jobsByStatus: Record<string, number>;
   jobsByProductType: Record<string, number>;
 
   // Financial metrics
   totalRevenue: number;
-  totalBradfordProfit: number;
-  totalImpactProfit: number;
-  totalSpread: number;
-  averageSpread: number;
-  totalJDCosts: number;
-  averageJDCost: number;
+  totalCost: number;
+  totalProfit: number;
+  totalBradfordShare: number;
+  totalImpactShare: number;
+  totalPaperMarkup: number;
   averageJobValue: number;
-  totalLineItems: number;
 
   // Paid/Unpaid breakdown
   paidRevenue: number;
   unpaidRevenue: number;
-  paidBradfordProfit: number;
-  unpaidBradfordProfit: number;
-  paidImpactProfit: number;
-  unpaidImpactProfit: number;
-  paidJDCosts: number;
-  unpaidJDCosts: number;
+  paidBradfordShare: number;
+  unpaidBradfordShare: number;
+  paidImpactShare: number;
+  unpaidImpactShare: number;
 
   // Paper usage metrics
   totalPaperSheets: number;
@@ -46,8 +62,10 @@ export interface BradfordStats {
   paperUsageBySize: Record<string, BradfordPaperUsage>;
 
   // Warnings
-  jobsWithNegativeSpread: number;
+  jobsWithNegativeMargin: number;
   jobsMissingRefNumber: number;
-  jobsWhereBradfordProfitExceedsImpact: number;
   problematicJobs: BradfordProblematicJob[];
+
+  // Individual job details for table display
+  jobs: BradfordJob[];
 }

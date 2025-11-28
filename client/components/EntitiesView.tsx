@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, Edit, Trash2, Users, Building2 } from 'lucide-react';
+import { Button } from './ui';
+import { Card } from './ui';
 import { EntityJobsDrawer } from './EntityJobsDrawer';
 
 interface EntitiesViewProps {
@@ -61,54 +63,58 @@ export function EntitiesView({
   };
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-3xl font-bold text-gray-900">{entityTypeLabelPlural}</h2>
-        <button
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">{entityTypeLabelPlural}</h1>
+          <p className="text-muted-foreground mt-1">
+            Manage your {entityTypeLabelPlural.toLowerCase()} and view their jobs
+          </p>
+        </div>
+        <Button
           onClick={() => onCreateEntity(type === 'CUSTOMER' ? 'customer' : 'vendor')}
-          className={`flex items-center space-x-2 ${type === 'CUSTOMER' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-orange-600 hover:bg-orange-700'} text-white px-4 py-2 rounded-lg transition-colors`}
         >
-          <Plus className="w-5 h-5" />
-          <span>Add {entityTypeLabel}</span>
-        </button>
+          <Plus className="w-4 h-4 mr-2" />
+          Add {entityTypeLabel}
+        </Button>
       </div>
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <Card className="overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+          <table className="min-w-full divide-y divide-border">
+            <thead className="bg-muted/50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Name
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Contact Person
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Email
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Phone
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   # Jobs
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-card divide-y divide-border">
               {entities.map((entity: any) => (
-                <tr key={entity.id} className="hover:bg-gray-50 cursor-pointer transition-colors">
+                <tr key={entity.id} className="hover:bg-accent/50 cursor-pointer transition-colors">
                   <td
                     onClick={() => handleRowClick(entity)}
                     className="px-6 py-4 whitespace-nowrap"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-gray-900">{entity.name}</span>
+                      <span className="font-semibold text-foreground">{entity.name}</span>
                       {entity.isPartner && (
-                        <span className="px-2 py-0.5 text-xs bg-impact-orange text-white rounded">
+                        <span className="px-2 py-0.5 text-xs bg-primary text-primary-foreground rounded">
                           Partner
                         </span>
                       )}
@@ -116,50 +122,54 @@ export function EntitiesView({
                   </td>
                   <td
                     onClick={() => handleRowClick(entity)}
-                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"
+                    className="px-6 py-4 whitespace-nowrap text-sm text-foreground"
                   >
                     {entity.contactPerson}
                   </td>
                   <td
                     onClick={() => handleRowClick(entity)}
-                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-600"
+                    className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground"
                   >
                     {entity.email}
                   </td>
                   <td
                     onClick={() => handleRowClick(entity)}
-                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-600"
+                    className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground"
                   >
                     {entity.phone}
                   </td>
                   <td
                     onClick={() => handleRowClick(entity)}
-                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"
+                    className="px-6 py-4 whitespace-nowrap text-sm text-foreground"
                   >
                     {getJobCount(entity.id)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center justify-end gap-2">
-                      <button
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
                         onClick={(e) => {
                           e.stopPropagation();
                           onEditEntity(entity);
                         }}
-                        className={`p-1.5 ${type === 'CUSTOMER' ? 'text-blue-600 hover:bg-blue-50' : 'text-orange-600 hover:bg-orange-50'} rounded transition-colors`}
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
                         title={`Edit ${entityTypeLabel}`}
                       >
                         <Edit className="w-4 h-4" />
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         onClick={(e) => {
                           e.stopPropagation();
                           onDeleteEntity(entity);
                         }}
-                        className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                         title={`Delete ${entityTypeLabel}`}
                       >
                         <Trash2 className="w-4 h-4" />
-                      </button>
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -168,26 +178,30 @@ export function EntitiesView({
           </table>
 
           {entities.length === 0 && (
-            <div className="p-8 text-center text-gray-500">
-              <div className="w-12 h-12 mx-auto mb-3 text-gray-300">
+            <div className="p-12 text-center">
+              <div className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50">
                 {type === 'CUSTOMER' ? (
                   <Users className="w-full h-full" />
                 ) : (
                   <Building2 className="w-full h-full" />
                 )}
               </div>
-              <p>No {entityTypeLabelPlural.toLowerCase()} found</p>
-              <button
+              <h3 className="text-lg font-medium text-foreground mb-1">
+                No {entityTypeLabelPlural.toLowerCase()} yet
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Get started by adding your first {entityTypeLabel.toLowerCase()}
+              </p>
+              <Button
                 onClick={() => onCreateEntity(type === 'CUSTOMER' ? 'customer' : 'vendor')}
-                className={`mt-4 flex items-center gap-2 mx-auto px-4 py-2 ${type === 'CUSTOMER' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-orange-600 hover:bg-orange-700'} text-white rounded-lg transition-colors`}
               >
-                <Plus className="w-4 h-4" />
-                <span>Add Your First {entityTypeLabel}</span>
-              </button>
+                <Plus className="w-4 h-4 mr-2" />
+                Add Your First {entityTypeLabel}
+              </Button>
             </div>
           )}
         </div>
-      </div>
+      </Card>
 
       {/* Entity Jobs Drawer */}
       {selectedEntity && (

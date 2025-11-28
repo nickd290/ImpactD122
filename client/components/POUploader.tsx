@@ -155,14 +155,23 @@ export function POUploader({ onParsed, onCancel }: POUploaderProps) {
         </div>
 
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
-          <p className="font-medium mb-1">💡 What AI will extract:</p>
-          <ul className="list-disc list-inside space-y-1 ml-2">
-            <li>Customer name and contact info</li>
-            <li>PO number</li>
-            <li>Product specifications</li>
-            <li>Quantities and pricing</li>
-            <li>Line item details</li>
-          </ul>
+          <p className="font-medium mb-2">💡 What AI will extract:</p>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 ml-2">
+            <ul className="list-disc list-inside space-y-1">
+              <li>Customer name & contact</li>
+              <li>PO number</li>
+              <li>Due date, mail date, in-homes</li>
+              <li>Shipping address</li>
+              <li>Quantities & pricing</li>
+            </ul>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Sizes (flat & finished)</li>
+              <li>Paper type & weight</li>
+              <li>Colors & coating</li>
+              <li>Folds, perfs, die cuts</li>
+              <li>Special instructions</li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>

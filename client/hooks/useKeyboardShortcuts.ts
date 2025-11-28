@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'PARTNER_STATS';
+type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY';
 
 interface KeyboardShortcutsConfig {
   onShowSearch: () => void;
@@ -21,10 +21,18 @@ export function useKeyboardShortcuts({
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't trigger shortcuts when typing in inputs
       const target = e.target as HTMLElement;
+      const activeElement = document.activeElement as HTMLElement;
+
+      // Check both the event target and the active element
       if (
         target.tagName === 'INPUT' ||
         target.tagName === 'TEXTAREA' ||
-        target.isContentEditable
+        target.tagName === 'SELECT' ||
+        target.isContentEditable ||
+        activeElement?.tagName === 'INPUT' ||
+        activeElement?.tagName === 'TEXTAREA' ||
+        activeElement?.tagName === 'SELECT' ||
+        activeElement?.isContentEditable
       ) {
         return;
       }
@@ -53,6 +61,14 @@ export function useKeyboardShortcuts({
         case 'v':
           e.preventDefault();
           onViewChange('VENDORS');
+          break;
+        case 'f':
+          e.preventDefault();
+          onViewChange('FINANCIALS');
+          break;
+        case 'p':
+          e.preventDefault();
+          onViewChange('PAPER_INVENTORY');
           break;
         case 'n':
           // Only when Ctrl/Cmd is pressed for new job

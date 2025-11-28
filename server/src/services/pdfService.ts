@@ -879,3 +879,323 @@ export const generateVendorPOPDF = (jobData: any): Buffer => {
 
   return Buffer.from(doc.output('arraybuffer'));
 };
+
+export const generatePOPDF = (poData: any): Buffer => {
+  const doc = new jsPDF();
+
+  // ===== CROSSHAIR REGISTRATION MARKS =====
+  drawCrosshairs(doc);
+
+  let currentY = 15;
+
+  // ===== LOGO (Top Left) =====
+  drawLogo(doc, 20, currentY, 16);
+
+  // ===== HEADER SECTION (Right Side) =====
+  doc.setFontSize(24);
+  doc.setTextColor(BRAND_BLACK);
+  doc.setFont('helvetica', 'bold');
+  doc.text('IMPACT DIRECT', 105, currentY + 8, { align: 'center' });
+
+  doc.setFontSize(10);
+  doc.setTextColor(TEXT_GRAY);
+  doc.setFont('helvetica', 'normal');
+  doc.text('PRINT-NATIVE AGENCY', 105, currentY + 14, { align: 'center' });
+
+  doc.setFontSize(9);
+  doc.text('Brandon@impactdirectprinting.com | (555) 123-4567', 105, currentY + 20, { align: 'center' });
+
+  currentY += 28;
+
+  // ===== OUTLINED DOCUMENT TITLE =====
+  drawOutlinedText(doc, 'PURCHASE ORDER', 105, currentY, { align: 'center', fontSize: 20 });
+
+  // Heavy divider below title
+  currentY += 4;
+  drawHeavyDivider(doc, 20, 190, currentY);
+
+  // Orange accent line
+  doc.setLineWidth(0.8);
+  doc.setDrawColor(BRAND_ORANGE);
+  doc.line(20, currentY + 1, 190, currentY + 1);
+
+  currentY += 10;
+
+  // ===== TWO-COLUMN LAYOUT WITH GRID BOXES =====
+  const infoStartY = currentY;
+
+  // Left Column - PO Info
+  doc.setFontSize(10);
+  doc.setTextColor(0, 0, 0);
+  doc.setFont('helvetica', 'bold');
+  doc.text('PO NUMBER:', 20, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.text(poData.poNumber, 55, currentY);
+
+  currentY += 6;
+  doc.setFont('helvetica', 'bold');
+  doc.text('PO DATE:', 20, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.text(new Date(poData.issuedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), 55, currentY);
+
+  currentY += 6;
+  doc.setFont('helvetica', 'bold');
+  doc.text('JOB NUMBER:', 20, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.text(poData.jobNumber, 55, currentY);
+
+  currentY += 6;
+  doc.setFont('helvetica', 'bold');
+  doc.text('CUSTOMER PO:', 20, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.text(poData.customerPONumber || 'N/A', 55, currentY);
+
+  currentY += 6;
+  doc.setFont('helvetica', 'bold');
+  doc.text('DUE DATE:', 20, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.text(poData.dueDate ? new Date(poData.dueDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'ASAP', 55, currentY);
+
+  if (poData.vendorRef) {
+    currentY += 6;
+    doc.setFont('helvetica', 'bold');
+    doc.text('VENDOR REF:', 20, currentY);
+    doc.setFont('helvetica', 'normal');
+    doc.text(poData.vendorRef, 55, currentY);
+  }
+
+  // Right Column - Vendor Info with Grid Box
+  const vendorY = infoStartY;
+  const vendorBoxHeight = 34;
+
+  // Draw grid box around "VENDOR:" section
+  drawSectionGrid(doc, 118, vendorY - 4, 72, vendorBoxHeight);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('VENDOR:', 120, vendorY);
+  doc.setFont('helvetica', 'normal');
+  doc.text(poData.vendor?.name || 'N/A', 120, vendorY + 5);
+  doc.text(poData.vendor?.email || '', 120, vendorY + 10);
+  doc.text(poData.vendor?.phone || '', 120, vendorY + 15);
+
+  // Truncate address if too long
+  const vendorAddress = poData.vendor?.address || '';
+  const truncatedAddress = vendorAddress.length > 35 ? vendorAddress.substring(0, 32) + '...' : vendorAddress;
+  doc.text(truncatedAddress, 120, vendorY + 20);
+
+  // Vertical divider between columns
+  drawVerticalDivider(doc, 110, infoStartY - 4, infoStartY + vendorBoxHeight - 4);
+
+  currentY = infoStartY + vendorBoxHeight + 6;
+
+  // ===== CUSTOMER INFO SECTION =====
+  if (poData.customer?.name && poData.customer.name !== 'N/A') {
+    doc.setFillColor(248, 248, 248);
+    doc.rect(20, currentY, 170, 16, 'F');
+    doc.setDrawColor(GRID_LIGHT);
+    doc.setLineWidth(0.5);
+    doc.rect(20, currentY, 170, 16);
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(BRAND_BLACK);
+    doc.text('FOR CUSTOMER:', 22, currentY + 5);
+    doc.setFont('helvetica', 'normal');
+    doc.text(poData.customer.name, 55, currentY + 5);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('PROJECT:', 22, currentY + 11);
+    doc.setFont('helvetica', 'normal');
+    const projectTitle = poData.jobTitle || 'Print Job';
+    doc.text(projectTitle.length > 60 ? projectTitle.substring(0, 57) + '...' : projectTitle, 55, currentY + 11);
+
+    currentY += 20;
+  }
+
+  // ===== LINE ITEMS SECTION (PO Description as line items) =====
+  drawSectionHeader(doc, 'ORDER ITEMS', 20, currentY, 170);
+  currentY += 10;
+
+  // Parse description into line items (descriptions are comma-separated)
+  const descriptionItems = (poData.description || 'Purchase Order').split(',').map((item: string) => item.trim()).filter((item: string) => item);
+  const quantity = poData.quantity || 0;
+  const costPerItem = descriptionItems.length > 0 ? poData.buyCost / descriptionItems.length : poData.buyCost;
+
+  // Build table data with line items
+  const tableData: string[][] = descriptionItems.map((item: string, index: number) => {
+    // If there's only one item, show the full cost
+    // Otherwise show as individual line items
+    if (descriptionItems.length === 1) {
+      return [item, quantity > 0 ? quantity.toLocaleString() : '1', `$${poData.buyCost.toFixed(2)}`, `$${poData.buyCost.toFixed(2)}`];
+    } else {
+      // Multiple items - show them as individual line items
+      return [item, '1', `$${costPerItem.toFixed(2)}`, `$${costPerItem.toFixed(2)}`];
+    }
+  });
+
+  autoTable(doc, {
+    startY: currentY,
+    head: [['Description', 'Qty', 'Unit Cost', 'Line Total']],
+    body: tableData,
+    theme: 'striped',
+    headStyles: {
+      fillColor: BRAND_ORANGE,
+      fontSize: 10,
+      fontStyle: 'bold',
+    },
+    styles: {
+      fontSize: 9,
+    },
+    columnStyles: {
+      0: { cellWidth: 90 },
+      1: { cellWidth: 30, halign: 'center' },
+      2: { cellWidth: 30, halign: 'right' },
+      3: { cellWidth: 30, halign: 'right' },
+    },
+  });
+
+  let finalY = (doc as any).lastAutoTable.finalY || currentY + 20;
+
+  // ===== PRINT SPECIFICATIONS SECTION =====
+  const specs = poData.specs || {};
+  const hasSpecs = specs.productType || specs.finishedSize || specs.paperType || specs.colors || specs.coating || specs.finishing;
+
+  if (hasSpecs) {
+    finalY += 8;
+    drawSectionHeader(doc, 'PRINT SPECIFICATIONS', 20, finalY, 170);
+    finalY += 10;
+
+    const specsData: string[][] = [];
+
+    if (specs.productType) specsData.push(['Product Type:', specs.productType]);
+    if (poData.quantity) specsData.push(['Total Quantity:', poData.quantity.toLocaleString()]);
+    if (specs.finishedSize) specsData.push(['Finished Size:', specs.finishedSize]);
+    if (specs.flatSize) specsData.push(['Flat Size:', specs.flatSize]);
+    if (specs.paperType) specsData.push(['Paper Stock:', specs.paperType]);
+    if (specs.paperWeight) specsData.push(['Paper Weight:', specs.paperWeight]);
+    if (specs.colors) specsData.push(['Colors:', specs.colors]);
+    if (specs.coating) specsData.push(['Coating:', specs.coating]);
+    if (specs.finishing) specsData.push(['Finishing:', specs.finishing]);
+    if (specs.folds) specsData.push(['Folds:', specs.folds]);
+    if (specs.perforations) specsData.push(['Perforations:', specs.perforations]);
+
+    // Book-specific specs
+    if (specs.productType === 'BOOK') {
+      if (specs.pageCount) specsData.push(['Page Count:', specs.pageCount.toString() + ' pages']);
+      if (specs.bindingStyle) specsData.push(['Binding:', specs.bindingStyle]);
+      if (specs.coverType) specsData.push(['Cover Type:', specs.coverType === 'PLUS' ? 'Plus Cover' : 'Self Cover']);
+      if (specs.coverPaperType) specsData.push(['Cover Stock:', specs.coverPaperType]);
+    }
+
+    if (specsData.length > 0) {
+      autoTable(doc, {
+        startY: finalY,
+        body: specsData,
+        theme: 'plain',
+        styles: { fontSize: 9, cellPadding: 2 },
+        columnStyles: {
+          0: { fontStyle: 'bold', cellWidth: 40 },
+          1: { cellWidth: 130 },
+        },
+      });
+      finalY = (doc as any).lastAutoTable.finalY + 5;
+    }
+  }
+
+  // ===== COST BREAKDOWN (if available) =====
+  if (poData.paperCost || poData.mfgCost || poData.printCPM || poData.paperCPM) {
+    finalY += 5;
+    doc.setFontSize(9);
+    doc.setTextColor(TEXT_GRAY);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Cost Breakdown:', 20, finalY);
+    doc.setFont('helvetica', 'normal');
+    finalY += 5;
+
+    if (poData.paperCost) {
+      doc.text(`Paper Cost: $${poData.paperCost.toFixed(2)}`, 25, finalY);
+      finalY += 4;
+    }
+    if (poData.paperMarkup) {
+      doc.text(`Paper Markup (18%): $${poData.paperMarkup.toFixed(2)}`, 25, finalY);
+      finalY += 4;
+    }
+    if (poData.mfgCost) {
+      doc.text(`Manufacturing: $${poData.mfgCost.toFixed(2)}`, 25, finalY);
+      finalY += 4;
+    }
+    if (poData.printCPM) {
+      doc.text(`Print CPM: $${poData.printCPM.toFixed(2)}/M`, 25, finalY);
+      finalY += 4;
+    }
+    if (poData.paperCPM) {
+      doc.text(`Paper CPM: $${poData.paperCPM.toFixed(2)}/M`, 25, finalY);
+    }
+  }
+
+  // ===== DATES SECTION =====
+  if (poData.mailDate || poData.inHomesDate) {
+    finalY += 8;
+    doc.setFontSize(9);
+    doc.setTextColor(BRAND_BLACK);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Key Dates:', 20, finalY);
+    doc.setFont('helvetica', 'normal');
+    finalY += 5;
+
+    if (poData.dueDate) {
+      doc.text(`Delivery Date: ${new Date(poData.dueDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`, 25, finalY);
+      finalY += 4;
+    }
+    if (poData.mailDate) {
+      doc.text(`Mail Date: ${new Date(poData.mailDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`, 25, finalY);
+      finalY += 4;
+    }
+    if (poData.inHomesDate) {
+      doc.text(`In-Homes Date: ${new Date(poData.inHomesDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`, 25, finalY);
+    }
+  }
+
+  // ===== TOTAL WITH GRID BORDER =====
+  const totalBoxY = Math.max(finalY + 15, (doc as any).lastAutoTable?.finalY + 15 || finalY + 15);
+
+  // Draw grid border around total box
+  drawSectionGrid(doc, 128, totalBoxY, 64, 20);
+
+  // Larger, more prominent total box
+  doc.setFillColor(BRAND_ORANGE);
+  doc.rect(130, totalBoxY + 2, 60, 16, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text('TOTAL:', 135, totalBoxY + 12.5);
+  doc.setFontSize(16);
+  doc.text(`$${poData.buyCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 185, totalBoxY + 12.5, { align: 'right' });
+
+  // ===== SPECIAL INSTRUCTIONS =====
+  if (poData.specs?.specialInstructions) {
+    const instructionsY = totalBoxY + 28;
+    doc.setFontSize(9);
+    doc.setTextColor(BRAND_BLACK);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Special Instructions:', 20, instructionsY);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(TEXT_GRAY);
+    const splitInstructions = doc.splitTextToSize(poData.specs.specialInstructions, 170);
+    doc.text(splitInstructions, 20, instructionsY + 5);
+  }
+
+  // ===== FOOTER =====
+  const pageHeight = doc.internal.pageSize.height;
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 100);
+  doc.setFont('helvetica', 'italic');
+  doc.text('Please confirm receipt of this PO and provide production timeline.', 105, pageHeight - 20, { align: 'center' });
+  doc.text('Questions? Contact Brandon at Brandon@impactdirectprinting.com', 105, pageHeight - 15, { align: 'center' });
+
+  doc.setDrawColor(BRAND_ORANGE);
+  doc.setLineWidth(0.3);
+  doc.line(20, pageHeight - 10, 190, pageHeight - 10);
+
+  return Buffer.from(doc.output('arraybuffer'));
+};

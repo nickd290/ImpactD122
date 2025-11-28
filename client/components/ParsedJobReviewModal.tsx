@@ -26,8 +26,38 @@ export function ParsedJobReviewModal({
   const [vendorId, setVendorId] = useState('');
   const [customerPONumber, setCustomerPONumber] = useState(parsedData.customerPONumber || '');
   const [bradfordRefNumber, setBradfordRefNumber] = useState(parsedData.bradfordRefNumber || '');
-  const [dueDate, setDueDate] = useState('');
-  const [notes, setNotes] = useState(parsedData.notes || '');
+  // Parse due date from parsedData if available
+  const [dueDate, setDueDate] = useState(() => {
+    if (parsedData.dueDate) {
+      const d = new Date(parsedData.dueDate);
+      return d.toISOString().split('T')[0];
+    }
+    return '';
+  });
+  const [mailDate, setMailDate] = useState(() => {
+    if (parsedData.mailDate) {
+      const d = new Date(parsedData.mailDate);
+      return d.toISOString().split('T')[0];
+    }
+    return '';
+  });
+  const [inHomesDate, setInHomesDate] = useState(() => {
+    if (parsedData.inHomesDate) {
+      const d = new Date(parsedData.inHomesDate);
+      return d.toISOString().split('T')[0];
+    }
+    return '';
+  });
+  // Combine special instructions into notes
+  const [notes, setNotes] = useState(
+    parsedData.notes ||
+    parsedData.specs?.specialInstructions ||
+    parsedData.specialInstructions ||
+    ''
+  );
+
+  // Shipping info from PO
+  const [shipToAddress, setShipToAddress] = useState(parsedData.shipToAddress || '');
 
   // New Customer Form
   const [showNewCustomerForm, setShowNewCustomerForm] = useState(false);
@@ -49,11 +79,18 @@ export function ParsedJobReviewModal({
   // Specifications
   const [productType, setProductType] = useState(parsedData.specs?.productType || 'FLAT');
   const [paperType, setPaperType] = useState(parsedData.specs?.paperType || '');
+  const [paperWeight, setPaperWeight] = useState(parsedData.specs?.paperWeight || '');
   const [colors, setColors] = useState(parsedData.specs?.colors || '');
   const [coating, setCoating] = useState(parsedData.specs?.coating || '');
   const [finishing, setFinishing] = useState(parsedData.specs?.finishing || '');
+  const [folds, setFolds] = useState(parsedData.specs?.folds || '');
+  const [perforations, setPerforations] = useState(parsedData.specs?.perforations || '');
+  const [dieCut, setDieCut] = useState(parsedData.specs?.dieCut || '');
   const [flatSize, setFlatSize] = useState(parsedData.specs?.flatSize || '');
   const [finishedSize, setFinishedSize] = useState(parsedData.specs?.finishedSize || '');
+
+  // Quantity from parsed data
+  const [quantity, setQuantity] = useState(parsedData.quantity || 0);
 
   // Book-Specific
   const [pageCount, setPageCount] = useState(parsedData.specs?.pageCount || 0);
@@ -72,8 +109,12 @@ export function ParsedJobReviewModal({
   const [useCustomSize, setUseCustomSize] = useState(false);
   const [customSizeValue, setCustomSizeValue] = useState('');
   const [bradfordPrintCPM, setBradfordPrintCPM] = useState(0);
+  const [bradfordPaperCostCPM, setBradfordPaperCostCPM] = useState(0);
+  const [bradfordPaperSellCPM, setBradfordPaperSellCPM] = useState(0);
+  // Total cost to Impact = Paper SELL + Print (NOT paper cost)
+  const [impactTotalCostCPM, setImpactTotalCostCPM] = useState(0);
 
-  // Check for unmatched customer on mount
+  // Check for unmatched customer on mount and pre-fill contact info
   useEffect(() => {
     if (parsedData.customerName) {
       const matchingCustomer = customers.find(c =>
@@ -86,25 +127,109 @@ export function ParsedJobReviewModal({
       } else {
         setUnmatchedCustomerName(parsedData.customerName);
         setNewCustomerName(parsedData.customerName);
+        // Pre-fill contact info from parsed data
+        if (parsedData.contactPerson) setNewCustomerContact(parsedData.contactPerson);
+        if (parsedData.contactEmail) setNewCustomerEmail(parsedData.contactEmail);
+        if (parsedData.contactPhone) setNewCustomerPhone(parsedData.contactPhone);
       }
     }
   }, []);
+
+  // Auto-detect Bradford size from parsed data and set vendor/size
+  useEffect(() => {
+    const parsedSize = parsedData.specs?.finishedSize;
+    if (parsedSize) {
+      // Normalize the size format (handle "6x11" vs "6 x 11")
+      const normalizedSize = parsedSize.replace(/\s*x\s*/gi, ' x ').trim();
+
+      // Check if it's a Bradford size
+      if (isBradfordSize(normalizedSize)) {
+        setFinishedSize(normalizedSize);
+
+        // Auto-select Bradford vendor if available
+        const bradfordVendor = vendors.find(v =>
+          v.isPartner === true ||
+          v.name?.toLowerCase().includes('bradford')
+        );
+        if (bradfordVendor && !vendorId) {
+          setVendorId(bradfordVendor.id);
+          console.log(`🏭 Auto-selected Bradford vendor for size: ${normalizedSize}`);
+        }
+      } else {
+        // Check common size variations
+        const sizeVariations: { [key: string]: string } = {
+          '6x11': '6 x 11',
+          '6x9': '6 x 9',
+          '6 x 9': '6 x 9',
+          '6 x 11': '6 x 11',
+        };
+        const mappedSize = sizeVariations[parsedSize.toLowerCase().replace(/\s+/g, '')] || parsedSize;
+
+        if (isBradfordSize(mappedSize)) {
+          setFinishedSize(mappedSize);
+          const bradfordVendor = vendors.find(v =>
+            v.isPartner === true ||
+            v.name?.toLowerCase().includes('bradford')
+          );
+          if (bradfordVendor && !vendorId) {
+            setVendorId(bradfordVendor.id);
+            console.log(`🏭 Auto-selected Bradford vendor for mapped size: ${mappedSize}`);
+          }
+        } else {
+          setFinishedSize(parsedSize);
+        }
+      }
+    }
+  }, [parsedData.specs?.finishedSize, vendors]);
 
   // Get selected Bradford vendor
   const selectedVendor = vendors.find(v => v.id === vendorId);
   const isBradfordVendor = selectedVendor?.isPartner === true;
 
   // Auto-calculate Bradford pricing when vendor and size change
+  // CORRECT BUSINESS LOGIC:
+  // - Impact pays Bradford: Paper SELL price (with 18% markup) + Print (passthrough from JD)
+  // - Profit = Customer Revenue - Impact's Total Cost
+  // - 50/50 split on the profit
+  // - Bradford also keeps the paper markup (difference between paper sell and paper cost)
   useEffect(() => {
     if (isBradfordVendor && finishedSize && !useCustomSize) {
       const pricing = getBradfordPricing(finishedSize);
       if (pricing) {
         setBradfordPrintCPM(pricing.printCPM);
+        setBradfordPaperCostCPM(pricing.costCPMPaper);
+        setBradfordPaperSellCPM(pricing.sellCPMPaper);
+        // Impact's Total Cost = Paper SELL + Print (NOT paper cost!)
+        const totalCostToImpact = pricing.sellCPMPaper + pricing.printCPM;
+        setImpactTotalCostCPM(totalCostToImpact);
+
+        // Auto-apply Bradford costs to line items
+        const updatedLineItems = lineItems.map((item: any) => {
+          const qty = item.quantity || 0;
+          // Calculate unit cost based on Impact's cost (paper sell + print)
+          const unitCostFromBradford = totalCostToImpact / 1000; // Cost per piece
+          const totalCost = qty > 0 ? totalCostToImpact * (qty / 1000) : 0;
+
+          return {
+            ...item,
+            unitCost: unitCostFromBradford,
+            bradfordPrintCost: qty > 0 ? pricing.printCPM * (qty / 1000) : 0,
+            bradfordPaperSellCost: qty > 0 ? pricing.sellCPMPaper * (qty / 1000) : 0,
+            bradfordTotalCost: totalCost,
+          };
+        });
+        setLineItems(updatedLineItems);
       } else {
         setBradfordPrintCPM(0);
+        setBradfordPaperCostCPM(0);
+        setBradfordPaperSellCPM(0);
+        setImpactTotalCostCPM(0);
       }
     } else {
       setBradfordPrintCPM(0);
+      setBradfordPaperCostCPM(0);
+      setBradfordPaperSellCPM(0);
+      setImpactTotalCostCPM(0);
     }
   }, [vendorId, finishedSize, useCustomSize, isBradfordVendor]);
 
@@ -194,22 +319,46 @@ export function ParsedJobReviewModal({
       customerPONumber,
       bradfordRefNumber,
       dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
+      mailDate: mailDate ? new Date(mailDate).toISOString() : undefined,
+      inHomesDate: inHomesDate ? new Date(inHomesDate).toISOString() : undefined,
       notes,
+      quantity: quantity || undefined,
       specs: {
         productType,
         paperType,
+        paperWeight,
         colors,
         coating,
         finishing,
+        folds,
+        perforations,
+        dieCut,
         flatSize,
         finishedSize,
         pageCount: pageCount || undefined,
         bindingStyle,
         coverType,
-        coverPaperType
+        coverPaperType,
+        shipToAddress: shipToAddress || undefined,
       },
       lineItems,
-      status: 'DRAFT'
+      status: 'ACTIVE',
+      // Bradford pricing data for auto-PO creation
+      // CORRECT: Impact's cost = Paper SELL + Print, then 50/50 profit split
+      isBradfordJob: isBradfordVendor && isBradfordSize(finishedSize),
+      bradfordPricing: isBradfordVendor && isBradfordSize(finishedSize) ? {
+        printCPM: bradfordPrintCPM,
+        paperCostCPM: bradfordPaperCostCPM,
+        paperSellCPM: bradfordPaperSellCPM,
+        impactTotalCostCPM: impactTotalCostCPM, // Paper SELL + Print
+        // Total amounts
+        totalPrintCost: quantity > 0 ? bradfordPrintCPM * (quantity / 1000) : 0,
+        totalPaperCost: quantity > 0 ? bradfordPaperCostCPM * (quantity / 1000) : 0,
+        totalPaperSell: quantity > 0 ? bradfordPaperSellCPM * (quantity / 1000) : 0,
+        totalCostToImpact: quantity > 0 ? impactTotalCostCPM * (quantity / 1000) : 0,
+        // Bradford's paper profit (separate from 50/50 split)
+        bradfordPaperProfit: quantity > 0 ? (bradfordPaperSellCPM - bradfordPaperCostCPM) * (quantity / 1000) : 0,
+      } : undefined,
     };
     onCreate(jobData);
   };
@@ -222,22 +371,30 @@ export function ParsedJobReviewModal({
       customerPONumber,
       bradfordRefNumber,
       dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
+      mailDate: mailDate ? new Date(mailDate).toISOString() : undefined,
+      inHomesDate: inHomesDate ? new Date(inHomesDate).toISOString() : undefined,
       notes,
+      quantity: quantity || undefined,
       specs: {
         productType,
         paperType,
+        paperWeight,
         colors,
         coating,
         finishing,
+        folds,
+        perforations,
+        dieCut,
         flatSize,
         finishedSize,
         pageCount: pageCount || undefined,
         bindingStyle,
         coverType,
-        coverPaperType
+        coverPaperType,
+        shipToAddress: shipToAddress || undefined,
       },
       lineItems,
-      status: 'DRAFT'
+      status: 'ACTIVE'
     };
     onSaveDraft(jobData);
   };
@@ -545,10 +702,54 @@ export function ParsedJobReviewModal({
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
                 />
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Mail Date</label>
+                <input
+                  type="date"
+                  value={mailDate}
+                  onChange={(e) => setMailDate(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">In-Homes Date</label>
+                <input
+                  type="date"
+                  value={inHomesDate}
+                  onChange={(e) => setInHomesDate(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Total Quantity</label>
+                <input
+                  type="number"
+                  value={quantity}
+                  onChange={(e) => setQuantity(parseInt(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  placeholder="Total quantity"
+                />
+              </div>
             </div>
 
+            {/* Shipping Address (if extracted) */}
+            {shipToAddress && (
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <label className="block text-sm font-medium text-blue-800 mb-1">Ship-To Address (from PO)</label>
+                <textarea
+                  value={shipToAddress}
+                  onChange={(e) => setShipToAddress(e.target.value)}
+                  rows={2}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+            )}
+
             <div className="mt-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Notes / Special Instructions</label>
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
@@ -588,6 +789,17 @@ export function ParsedJobReviewModal({
               </div>
 
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Paper Weight</label>
+                <input
+                  type="text"
+                  value={paperWeight}
+                  onChange={(e) => setPaperWeight(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  placeholder="e.g., 100#, 80 lb"
+                />
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Colors</label>
                 <input
                   type="text"
@@ -617,6 +829,39 @@ export function ParsedJobReviewModal({
                   onChange={(e) => setFinishing(e.target.value)}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
                   placeholder="e.g., Die Cut, Scoring"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Folds</label>
+                <input
+                  type="text"
+                  value={folds}
+                  onChange={(e) => setFolds(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  placeholder="e.g., Tri-fold, Z-fold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Perforations</label>
+                <input
+                  type="text"
+                  value={perforations}
+                  onChange={(e) => setPerforations(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  placeholder="e.g., Perf at 3.5 inches"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Die Cut</label>
+                <input
+                  type="text"
+                  value={dieCut}
+                  onChange={(e) => setDieCut(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  placeholder="Die cut details"
                 />
               </div>
 
@@ -739,25 +984,137 @@ export function ParsedJobReviewModal({
             </div>
           )}
 
-          {/* Bradford Print CPM Display */}
-          {isBradfordVendor && bradfordPrintCPM > 0 && (
-            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex items-center justify-between">
-                <div>
-                  <label className="block text-sm font-semibold text-blue-900 mb-1">
-                    Bradford Print CPM (Auto-calculated)
-                  </label>
-                  <p className="text-xs text-blue-700">
-                    Based on size: <strong>{finishedSize}</strong>
+          {/* Bradford Size Detection Alert */}
+          {isBradfordSize(finishedSize) && !isBradfordVendor && (
+            <div className="p-4 bg-yellow-50 border border-yellow-300 rounded-lg">
+              <div className="flex items-start space-x-2">
+                <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-yellow-900 mb-1">
+                    Bradford Size Detected: {finishedSize}
                   </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-2xl font-bold text-blue-900">
-                    ${bradfordPrintCPM.toFixed(2)}
+                  <p className="text-sm text-yellow-800 mb-2">
+                    This is a standard Bradford size. Jobs with this size should go to Bradford for printing.
                   </p>
-                  <p className="text-xs text-blue-700">per thousand</p>
+                  <button
+                    onClick={() => {
+                      const bradfordVendor = vendors.find(v =>
+                        v.isPartner === true || v.name?.toLowerCase().includes('bradford')
+                      );
+                      if (bradfordVendor) setVendorId(bradfordVendor.id);
+                    }}
+                    className="text-sm bg-yellow-600 text-white px-3 py-1 rounded hover:bg-yellow-700"
+                  >
+                    Select Bradford Vendor
+                  </button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Bradford PO Preview - Full Cost Breakdown with 50/50 Profit Split */}
+          {isBradfordVendor && bradfordPrintCPM > 0 && (
+            <div className="p-4 bg-gradient-to-r from-blue-50 to-green-50 border-2 border-blue-300 rounded-lg">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center space-x-2">
+                  <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
+                    <FileText className="w-4 h-4 text-white" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-blue-900">Bradford PO Will Be Generated</h4>
+                    <p className="text-xs text-blue-700">Size: {finishedSize} • 50/50 Profit Split Model</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-gray-500">Impact's Cost/M</p>
+                  <p className="text-xl font-bold text-blue-900">${impactTotalCostCPM.toFixed(2)}</p>
+                </div>
+              </div>
+
+              {/* Cost Breakdown Table */}
+              <div className="bg-white rounded-lg p-3 mb-3">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-1 text-gray-600">Cost Component</th>
+                      <th className="text-right py-1 text-gray-600">Per M</th>
+                      {quantity > 0 && <th className="text-right py-1 text-gray-600">Total ({(quantity/1000).toFixed(1)}M)</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="text-gray-500 text-xs">
+                      <td className="py-1 pl-2">└ Paper Cost (Bradford pays)</td>
+                      <td className="text-right font-mono">${bradfordPaperCostCPM.toFixed(2)}</td>
+                      {quantity > 0 && <td className="text-right font-mono">${(bradfordPaperCostCPM * (quantity / 1000)).toFixed(2)}</td>}
+                    </tr>
+                    <tr>
+                      <td className="py-1">Paper Sell (Impact pays Bradford)</td>
+                      <td className="text-right font-mono">${bradfordPaperSellCPM.toFixed(2)}</td>
+                      {quantity > 0 && <td className="text-right font-mono">${(bradfordPaperSellCPM * (quantity / 1000)).toFixed(2)}</td>}
+                    </tr>
+                    <tr className="text-purple-600 text-xs">
+                      <td className="py-1 pl-2">└ Bradford Paper Profit (18% markup)</td>
+                      <td className="text-right font-mono">${(bradfordPaperSellCPM - bradfordPaperCostCPM).toFixed(2)}</td>
+                      {quantity > 0 && <td className="text-right font-mono">${((bradfordPaperSellCPM - bradfordPaperCostCPM) * (quantity / 1000)).toFixed(2)}</td>}
+                    </tr>
+                    <tr>
+                      <td className="py-1">Print (JD→Bradford→Impact passthrough)</td>
+                      <td className="text-right font-mono">${bradfordPrintCPM.toFixed(2)}</td>
+                      {quantity > 0 && <td className="text-right font-mono">${(bradfordPrintCPM * (quantity / 1000)).toFixed(2)}</td>}
+                    </tr>
+                    <tr className="border-t font-semibold bg-blue-50">
+                      <td className="py-1">Total Cost to Impact</td>
+                      <td className="text-right font-mono">${impactTotalCostCPM.toFixed(2)}</td>
+                      {quantity > 0 && <td className="text-right font-mono text-blue-700">${(impactTotalCostCPM * (quantity / 1000)).toFixed(2)}</td>}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* 50/50 Profit Split Preview */}
+              {quantity > 0 && lineItems[0]?.lineTotal > 0 && (() => {
+                const customerRevenue = lineItems[0].lineTotal;
+                const impactTotalCost = impactTotalCostCPM * (quantity / 1000);
+                const profitToSplit = customerRevenue - impactTotalCost;
+                const impactShare = profitToSplit / 2;
+                const bradfordShare = profitToSplit / 2;
+                const bradfordPaperProfit = (bradfordPaperSellCPM - bradfordPaperCostCPM) * (quantity / 1000);
+                const bradfordTotalProfit = bradfordShare + bradfordPaperProfit;
+
+                return (
+                  <div className="bg-white rounded-lg p-3 border border-green-200">
+                    <p className="text-xs font-semibold text-gray-600 mb-2">50/50 PROFIT SPLIT</p>
+                    <div className="grid grid-cols-4 gap-2 text-center">
+                      <div className="bg-gray-50 rounded p-2">
+                        <p className="text-xs text-gray-500">Customer Revenue</p>
+                        <p className="font-bold text-gray-900">${customerRevenue.toFixed(2)}</p>
+                      </div>
+                      <div className="bg-blue-50 rounded p-2">
+                        <p className="text-xs text-blue-600">Impact Cost</p>
+                        <p className="font-bold text-blue-900">${impactTotalCost.toFixed(2)}</p>
+                      </div>
+                      <div className="bg-yellow-50 rounded p-2">
+                        <p className="text-xs text-yellow-700">Profit to Split</p>
+                        <p className="font-bold text-yellow-900">${profitToSplit.toFixed(2)}</p>
+                      </div>
+                      <div className="bg-green-100 rounded p-2 border-2 border-green-400">
+                        <p className="text-xs text-green-700">Impact's Share (50%)</p>
+                        <p className="font-bold text-green-900 text-lg">${impactShare.toFixed(2)}</p>
+                      </div>
+                    </div>
+                    <div className="mt-2 pt-2 border-t border-dashed border-gray-300">
+                      <div className="flex justify-between text-xs text-purple-700">
+                        <span>Bradford gets: ${bradfordShare.toFixed(2)} (50% split) + ${bradfordPaperProfit.toFixed(2)} (paper profit)</span>
+                        <span className="font-semibold">= ${bradfordTotalProfit.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <p className="text-xs text-blue-600 mt-2 text-center">
+                ✓ Bradford PO will be auto-created when job is saved
+              </p>
             </div>
           )}
 
@@ -789,8 +1146,8 @@ export function ParsedJobReviewModal({
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="col-span-2">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="col-span-3">
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Description <span className="text-red-500">*</span>
                       </label>
@@ -820,13 +1177,40 @@ export function ParsedJobReviewModal({
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Unit Price ($)</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Price/M ($)</label>
                       <input
                         type="number"
                         step="0.01"
-                        value={item.unitPrice}
-                        onChange={(e) => handleLineItemChange(index, 'unitPrice', parseFloat(e.target.value) || 0)}
+                        value={item.pricePerThousand || ''}
+                        onChange={(e) => {
+                          const ppm = parseFloat(e.target.value) || 0;
+                          const qty = item.quantity || 0;
+                          handleLineItemChange(index, 'pricePerThousand', ppm);
+                          handleLineItemChange(index, 'lineTotal', ppm * (qty / 1000));
+                          handleLineItemChange(index, 'unitPrice', ppm / 1000);
+                        }}
                         className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                        placeholder="Per 1000"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Line Total ($)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={item.lineTotal || ''}
+                        onChange={(e) => {
+                          const total = parseFloat(e.target.value) || 0;
+                          const qty = item.quantity || 0;
+                          handleLineItemChange(index, 'lineTotal', total);
+                          if (qty > 0) {
+                            handleLineItemChange(index, 'pricePerThousand', total / (qty / 1000));
+                            handleLineItemChange(index, 'unitPrice', total / qty);
+                          }
+                        }}
+                        className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 bg-green-50 font-medium"
+                        placeholder="Total price"
                       />
                     </div>
 

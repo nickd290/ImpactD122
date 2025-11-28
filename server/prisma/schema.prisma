@@ -128,41 +128,52 @@ model Job {
   jobNo                     String           @unique
   quoteId                   String?
   customerId                String
-  status                    JobStatus        @default(PENDING)
+  status                    JobStatus        @default(ACTIVE)
   title                     String?
   description               String?
   specs                     Json
   sizeId                    String?
   sizeName                  String?
   quantity                  Int?
-  customerCPM               Decimal?
-  impactMarginCPM           Decimal?
-  bradfordTotalCPM          Decimal?
-  bradfordPrintMarginCPM    Decimal?
-  bradfordPaperMarginCPM    Decimal?
-  bradfordTotalMarginCPM    Decimal?
-  printCPM                  Decimal?
-  paperCostCPM              Decimal?
-  paperChargedCPM           Decimal?
-  customerTotal             Decimal
-  impactMargin              Decimal?
-  bradfordTotal             Decimal?
-  bradfordPrintMargin       Decimal?
-  bradfordPaperMargin       Decimal?
-  bradfordTotalMargin       Decimal?
-  jdTotal                   Decimal?
-  paperCostTotal            Decimal?
-  paperChargedTotal         Decimal?
-  paperType                 String?
-  paperWeightTotal          Decimal?
-  paperWeightPer1000        Decimal?
+
+  // === FINANCIALS ===
+  sellPrice                 Decimal?         // What customer pays (total)
+
   deliveryDate              DateTime?
   mailDate                  DateTime?
   inHomesDate               DateTime?
   packingSlipNotes          String?
   customerPONumber          String?
   customerPOFile            String?
-  partnerPONumber           String?          // Bradford/Partner PO number
+  partnerPONumber           String?          // Bradford/Partner PO number (also used as payment reference)
+
+  // === PAYMENT TRACKING ===
+  // Customer → Impact (ALL jobs)
+  customerPaymentAmount     Decimal?         // Amount customer paid
+  customerPaymentDate       DateTime?        // When customer paid
+
+  // Impact → Vendor (ALL jobs)
+  vendorPaymentAmount       Decimal?         // Amount paid to vendor
+  vendorPaymentDate         DateTime?        // When vendor was paid
+
+  // Impact → Bradford (PARTNER jobs only - 50% split)
+  bradfordPaymentAmount     Decimal?         // Amount paid to Bradford
+  bradfordPaymentPaid       Boolean          @default(false)  // Has Bradford's 50% been paid?
+  bradfordPaymentDate       DateTime?        // When was Bradford paid
+
+  // === DOCUMENT GENERATION TRACKING ===
+  quoteGeneratedAt          DateTime?        // Last time quote PDF was generated
+  quoteGeneratedCount       Int              @default(0)  // How many times quote was generated
+  poGeneratedAt             DateTime?        // Last time vendor PO PDF was generated
+  poGeneratedCount          Int              @default(0)  // How many times PO was generated
+  invoiceGeneratedAt        DateTime?        // Last time invoice PDF was generated
+  invoiceGeneratedCount     Int              @default(0)  // How many times invoice was generated
+
+  // === EMAIL TRACKING ===
+  invoiceEmailedAt          DateTime?        // Last time invoice was emailed to customer
+  invoiceEmailedTo          String?          // Email address invoice was sent to
+  invoiceEmailedCount       Int              @default(0)  // How many times invoice was emailed
+
   requiresApproval          Boolean          @default(false)
   approvedBy                String?
   approvedAt                DateTime?
@@ -177,10 +188,9 @@ model Job {
   dataFilesSectionComplete  Boolean          @default(false)
   bradfordWaivesPaperMargin Boolean          @default(false)
   jdSuppliesPaper           Boolean          @default(false)
-  bradfordCut               Decimal?
-  impactCustomerTotal       Decimal?
+  paperInventoryId          String?          // Optional link to PaperInventory when Bradford supplies paper
   routingType               RoutingType      @default(BRADFORD_JD)
-  vendorAmount              Decimal?
+  paperSource               PaperSource      @default(BRADFORD)  // Who supplies paper
   vendorId                  String?
   deletedAt                 DateTime?
   deletedBy                 String?
@@ -198,6 +208,7 @@ model Job {
   Invoice                   Invoice[]
   Company                   Company          @relation(fields: [customerId], references: [id])
   Employee                  Employee?        @relation(fields: [employeeId], references: [id])
+  PaperInventory            PaperInventory?  @relation(fields: [paperInventoryId], references: [id])
   Quote                     Quote?           @relation(fields: [quoteId], references: [id])
   Vendor                    Vendor?          @relation(fields: [vendorId], references: [id])
   JobActivity               JobActivity[]
@@ -206,11 +217,14 @@ model Job {
   PurchaseOrder             PurchaseOrder[]
   SampleShipment            SampleShipment[]
   Shipment                  Shipment[]
+  ProfitSplit               ProfitSplit?     // Calculated profit split for this job
 
   @@index([customerId])
+  @@index([paperSource])
   @@index([deletedAt])
   @@index([jobNo])
   @@index([jobType])
+  @@index([paperInventoryId])
   @@index([routingType])
   @@index([status])
   @@index([vendorId])
@@ -259,6 +273,7 @@ model PaperInventory {
   companyId        String
   createdAt        DateTime           @default(now())
   updatedAt        DateTime
+  Job              Job[]
   PaperTransaction PaperTransaction[]
 
   @@index([companyId])
@@ -304,6 +319,38 @@ model PricingRule {
   @@index([sizeName])
 }
 
+// ============================================
+// PROFIT SPLIT - Calculated & Cached for Each Job
+// ============================================
+model ProfitSplit {
+  id              String    @id @default(cuid())
+  jobId           String    @unique
+  job             Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  // Inputs (cached for audit trail)
+  sellPrice       Decimal   // What customer pays
+  totalCost       Decimal   // Sum of all costs (from POs)
+  paperCost       Decimal   @default(0)  // Raw paper cost (before markup)
+  paperMarkup     Decimal   @default(0)  // Bradford's 18% paper markup
+
+  // Calculated values
+  grossMargin     Decimal   // sellPrice - totalCost
+  bradfordShare   Decimal   // paperMarkup + 50% of spread
+  impactShare     Decimal   // 50% of spread
+
+  // Override support
+  isOverridden    Boolean   @default(false)
+  overrideReason  String?
+  overriddenBy    String?
+  overriddenAt    DateTime?
+
+  // Calculation metadata
+  calculatedAt    DateTime  @default(now())
+  calculationVersion Int    @default(1)  // For tracking formula changes
+
+  @@index([jobId])
+}
+
 model Proof {
   id             String          @id
   jobId          String
@@ -342,35 +389,48 @@ model PurchaseOrder {
   originCompanyId                                String
   targetCompanyId                                String?
   jobId                                          String?
-  originalAmount                                 Decimal
-  vendorAmount                                   Decimal
-  marginAmount                                   Decimal
   poNumber                                       String?
-  referencePONumber                              String?
-  externalRef                                    String?
-  pdfFileId                                      String?
   status                                         POStatus  @default(PENDING)
   createdAt                                      DateTime  @default(now())
   updatedAt                                      DateTime
-  vendorCPM                                      Decimal?
+
+  // === NEW SIMPLIFIED FIELDS ===
+  description                                    String?   // What this PO is for: "Covers", "Bodies", "Diecutting"
+  buyCost                                        Decimal?  // Total cost we pay vendor
+  vendorRef                                      String?   // Vendor's reference/confirmation number
+
+  // Optional breakdown (for Bradford jobs with paper)
+  paperCost                                      Decimal?  // Raw paper cost (before markup)
+  paperMarkup                                    Decimal?  // 18% markup Bradford keeps
+  mfgCost                                        Decimal?  // JD manufacturing cost (pass-through)
+
+  // CPM rates (for audit trail and recalculation)
+  printCPM                                       Decimal?  // Print cost per thousand (JD rate)
+  paperCPM                                       Decimal?  // Paper cost per thousand (Bradford rate)
+
+  issuedAt                                       DateTime? // When PO was issued
+  paidAt                                         DateTime? // When PO was paid
+
+  // PO tracking fields
+  pdfFileId                                      String?
   targetVendorId                                 String?
-  bradfordCutPaid                                Boolean?  @default(false)
-  bradfordCutPaidDate                            DateTime?
-  bradfordPaymentNotes                           String?
   acceptedAt                                     DateTime?
   rejectedAt                                     DateTime?
   rejectionReason                                String?
+
+  // Email tracking
+  emailedAt                                      DateTime? // When PO was emailed to vendor
+  emailedTo                                      String?   // Email address PO was sent to
+
   Job                                            Job?      @relation(fields: [jobId], references: [id])
   Company_PurchaseOrder_originCompanyIdToCompany Company   @relation("PurchaseOrder_originCompanyIdToCompany", fields: [originCompanyId], references: [id])
   File                                           File?     @relation(fields: [pdfFileId], references: [id])
   Company_PurchaseOrder_targetCompanyIdToCompany Company?  @relation("PurchaseOrder_targetCompanyIdToCompany", fields: [targetCompanyId], references: [id])
   Vendor                                         Vendor?   @relation(fields: [targetVendorId], references: [id])
 
-  @@index([externalRef])
   @@index([jobId])
   @@index([originCompanyId])
   @@index([poNumber])
-  @@index([referencePONumber])
   @@index([targetCompanyId])
   @@index([targetVendorId])
 }
@@ -540,12 +600,9 @@ enum FileKind {
 }
 
 enum JobStatus {
-  PENDING
-  IN_PRODUCTION
-  READY_FOR_PROOF
-  PROOF_APPROVED
-  COMPLETED
-  CANCELLED
+  ACTIVE      // Job is in progress (not paid)
+  PAID        // Job is paid/completed
+  CANCELLED   // Job was cancelled
 }
 
 enum JobType {
@@ -600,6 +657,12 @@ enum Role {
 enum RoutingType {
   BRADFORD_JD
   THIRD_PARTY_VENDOR
+}
+
+enum PaperSource {
+  BRADFORD        // Bradford supplies paper (gets 18% markup)
+  VENDOR          // Vendor (JD or third party) supplies paper
+  CUSTOMER        // Customer supplies paper (no paper cost)
 }
 
 enum SyncTrigger {

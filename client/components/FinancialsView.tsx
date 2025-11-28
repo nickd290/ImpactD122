@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Check, X } from 'lucide-react';
+import { Check, TrendingUp, Building2, Handshake, DollarSign } from 'lucide-react';
 import { jobsApi, pdfApi } from '../lib/api';
-import { JobDrawer } from './JobDrawer';
+import { JobDetailModal } from './JobDetailModal';
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('en-US', {
@@ -49,17 +49,6 @@ export function FinancialsView() {
     setIsDrawerOpen(true);
   };
 
-  const handleUpdateBradfordRef = async (jobId: string, refNumber: string) => {
-    try {
-      const updatedJob = await jobsApi.updateBradfordRef(jobId, refNumber);
-      setSelectedJob(updatedJob);
-      await loadJobs();
-    } catch (error) {
-      console.error('Failed to update Bradford reference:', error);
-      alert('Failed to update Bradford reference. Please try again.');
-    }
-  };
-
   const toggleJobSelection = (jobId: string) => {
     const newSelection = new Set(selectedJobIds);
     if (newSelection.has(jobId)) {
@@ -93,33 +82,84 @@ export function FinancialsView() {
     }
   };
 
-  const calculateCost = (job: any) => {
-    return job.lineItems?.reduce((sum: number, item: any) =>
-      sum + (item.quantity * item.unitCost), 0) || 0;
-  };
+  // Use the profit model from the backend, with CPM fallback when not available
+  const getJobFinancials = (job: any) => {
+    const profit = job.profit || {};
 
-  const calculateRevenue = (job: any) => {
-    return job.lineItems?.reduce((sum: number, item: any) =>
-      sum + (item.quantity * item.unitPrice), 0) || 0;
-  };
+    // If we have valid profit data from the backend, use it
+    if (profit.totalCost && profit.totalCost > 0) {
+      return {
+        sellPrice: profit.sellPrice || Number(job.sellPrice) || 0,
+        totalCost: profit.totalCost || 0,
+        spread: profit.spread || 0,
+        paperMarkup: profit.paperMarkup || 0,
+        bradfordTotal: profit.bradfordTotal || 0,
+        impactTotal: profit.impactTotal || 0,
+      };
+    }
 
-  const calculateProfit = (job: any) => {
-    return calculateRevenue(job) - calculateCost(job);
+    // Fallback: Calculate from CPM data (same logic as JobDetailModal Pricing tab)
+    const impactToBradfordPO = (job.purchaseOrders || []).find(
+      (po: any) => po.originCompanyId === 'impact-direct' && po.targetCompanyId === 'bradford'
+    );
+    const bradfordToJDPO = (job.purchaseOrders || []).find(
+      (po: any) => po.originCompanyId === 'bradford' && po.targetCompanyId === 'jd-graphic'
+    );
+
+    const paperCPM = impactToBradfordPO?.paperCPM || 0;
+    const printCPM = bradfordToJDPO?.printCPM || 0;
+    const qty = job.quantity || 0;
+    const sellPrice = profit.sellPrice || Number(job.sellPrice) || 0;
+    // Require BOTH paperCPM AND printCPM for CPM calculation
+    const hasCPMData = paperCPM > 0 && printCPM > 0;
+
+    if (hasCPMData && qty > 0) {
+      // Use CPM-based calculation
+      const paperCost = paperCPM * (qty / 1000);
+      const paperMarkup = paperCost * 0.18;
+      const mfgCost = printCPM * (qty / 1000);
+      const totalCost = paperCost + paperMarkup + mfgCost;
+      const spread = sellPrice - totalCost;
+      const spreadShare = spread / 2;
+
+      return {
+        sellPrice,
+        totalCost,
+        spread,
+        paperMarkup,
+        bradfordTotal: spreadShare + paperMarkup, // Bradford gets their half plus paper markup (they handle paper)
+        impactTotal: spreadShare, // Impact gets just their half
+      };
+    }
+
+    // Ultimate fallback: use whatever data we have
+    return {
+      sellPrice,
+      totalCost: profit.totalCost || 0,
+      spread: profit.spread || 0,
+      paperMarkup: profit.paperMarkup || 0,
+      bradfordTotal: profit.bradfordTotal || 0,
+      impactTotal: profit.impactTotal || 0,
+    };
   };
 
   const filteredJobs = jobs.filter(job => {
-    if (filter === 'unpaid') return ['APPROVED', 'PO_ISSUED', 'IN_PRODUCTION', 'SHIPPED'].includes(job.status);
-    if (filter === 'invoiced') return job.status === 'INVOICED';
+    if (filter === 'active') return job.status === 'ACTIVE';
     if (filter === 'paid') return job.status === 'PAID';
     return true;
   });
 
-  // Calculate totals
-  const totals = filteredJobs.reduce((acc, job) => ({
-    revenue: acc.revenue + calculateRevenue(job),
-    cost: acc.cost + calculateCost(job),
-    profit: acc.profit + calculateProfit(job),
-  }), { revenue: 0, cost: 0, profit: 0 });
+  // Calculate totals using new model
+  const totals = filteredJobs.reduce((acc, job) => {
+    const fin = getJobFinancials(job);
+    return {
+      sellPrice: acc.sellPrice + fin.sellPrice,
+      totalCost: acc.totalCost + fin.totalCost,
+      spread: acc.spread + fin.spread,
+      bradfordTotal: acc.bradfordTotal + fin.bradfordTotal,
+      impactTotal: acc.impactTotal + fin.impactTotal,
+    };
+  }, { sellPrice: 0, totalCost: 0, spread: 0, bradfordTotal: 0, impactTotal: 0 });
 
   if (loading) {
     return (
@@ -153,24 +193,14 @@ export function FinancialsView() {
           All Jobs ({jobs.length})
         </button>
         <button
-          onClick={() => setFilter('unpaid')}
+          onClick={() => setFilter('active')}
           className={`px-4 py-2 rounded-lg font-medium ${
-            filter === 'unpaid'
-              ? 'bg-red-600 text-white'
-              : 'bg-red-100 text-red-700 hover:bg-red-200'
+            filter === 'active'
+              ? 'bg-yellow-600 text-white'
+              : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
           }`}
         >
-          Unpaid ({jobs.filter(j => ['APPROVED', 'PO_ISSUED', 'IN_PRODUCTION', 'SHIPPED'].includes(j.status)).length})
-        </button>
-        <button
-          onClick={() => setFilter('invoiced')}
-          className={`px-4 py-2 rounded-lg font-medium ${
-            filter === 'invoiced'
-              ? 'bg-orange-600 text-white'
-              : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
-          }`}
-        >
-          Invoiced ({jobs.filter(j => j.status === 'INVOICED').length})
+          Active ({jobs.filter(j => j.status === 'ACTIVE').length})
         </button>
         <button
           onClick={() => setFilter('paid')}
@@ -200,12 +230,6 @@ export function FinancialsView() {
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => handleBatchUpdateStatus('INVOICED')}
-              className="px-4 py-2 bg-orange-600 text-white rounded-lg text-sm font-medium hover:bg-orange-700"
-            >
-              Mark as Invoiced
-            </button>
-            <button
               onClick={() => handleBatchUpdateStatus('PAID')}
               className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 flex items-center gap-2"
             >
@@ -216,23 +240,42 @@ export function FinancialsView() {
         </div>
       )}
 
-      {/* Totals Row */}
-      <div className="bg-gray-900 text-white rounded-lg p-4 mb-4 grid grid-cols-4 gap-4">
-        <div>
-          <p className="text-xs text-gray-400 mb-1">Total Revenue</p>
-          <p className="text-xl font-bold">{formatCurrency(totals.revenue)}</p>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-5 gap-4 mb-4">
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <DollarSign className="w-4 h-4 text-green-600" />
+            <p className="text-xs text-gray-500 font-medium">Sell Price</p>
+          </div>
+          <p className="text-xl font-bold text-gray-900">{formatCurrency(totals.sellPrice)}</p>
         </div>
-        <div>
-          <p className="text-xs text-gray-400 mb-1">Total Cost</p>
-          <p className="text-xl font-bold">{formatCurrency(totals.cost)}</p>
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <DollarSign className="w-4 h-4 text-red-600" />
+            <p className="text-xs text-gray-500 font-medium">Total Cost</p>
+          </div>
+          <p className="text-xl font-bold text-gray-900">{formatCurrency(totals.totalCost)}</p>
         </div>
-        <div>
-          <p className="text-xs text-gray-400 mb-1">Total Profit</p>
-          <p className="text-xl font-bold text-green-400">{formatCurrency(totals.profit)}</p>
+        <div className="bg-blue-50 rounded-lg border border-blue-200 p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <TrendingUp className="w-4 h-4 text-blue-600" />
+            <p className="text-xs text-blue-600 font-medium">Spread (Profit)</p>
+          </div>
+          <p className="text-xl font-bold text-blue-700">{formatCurrency(totals.spread)}</p>
         </div>
-        <div>
-          <p className="text-xs text-gray-400 mb-1">Jobs Shown</p>
-          <p className="text-xl font-bold">{filteredJobs.length}</p>
+        <div className="bg-orange-50 rounded-lg border border-orange-200 p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <Building2 className="w-4 h-4 text-orange-600" />
+            <p className="text-xs text-orange-600 font-medium">Bradford Share</p>
+          </div>
+          <p className="text-xl font-bold text-orange-700">{formatCurrency(totals.bradfordTotal)}</p>
+        </div>
+        <div className="bg-blue-50 rounded-lg border border-blue-200 p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <Handshake className="w-4 h-4 text-blue-600" />
+            <p className="text-xs text-blue-600 font-medium">Impact Share</p>
+          </div>
+          <p className="text-xl font-bold text-blue-700">{formatCurrency(totals.impactTotal)}</p>
         </div>
       </div>
 
@@ -249,27 +292,25 @@ export function FinancialsView() {
                   className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                 />
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Job #</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Job</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Customer</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Vendor</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Sell</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Cost</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Revenue</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Profit</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Payment</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Spread</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-orange-600 uppercase">Bradford</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-blue-600 uppercase">Impact</th>
+              <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Status</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
             {filteredJobs.map((job) => {
-              const cost = calculateCost(job);
-              const revenue = calculateRevenue(job);
-              const profit = calculateProfit(job);
-              const isPartner = job.vendor?.isPartner;
+              const fin = getJobFinancials(job);
 
               return (
                 <tr
                   key={job.id}
-                  className={`hover:bg-gray-50 transition-colors ${isPartner ? 'bg-orange-50' : ''}`}
+                  className="hover:bg-gray-50 transition-colors"
                 >
                   <td className="px-4 py-3 text-sm">
                     <input
@@ -284,43 +325,50 @@ export function FinancialsView() {
                   </td>
                   <td
                     onClick={() => handleRowClick(job)}
-                    className="px-4 py-3 text-sm font-medium text-gray-900 cursor-pointer"
+                    className="px-4 py-3 cursor-pointer"
                   >
-                    {job.number}
-                    {isPartner && (
-                      <span className="ml-2 px-1.5 py-0.5 bg-impact-orange text-white rounded text-xs">
-                        PARTNER
-                      </span>
-                    )}
+                    <p className="text-sm font-medium text-gray-900">{job.number}</p>
+                    <p className="text-xs text-gray-500 truncate max-w-[150px]">{job.title}</p>
                   </td>
-                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-gray-900 cursor-pointer">{job.customer?.name || '-'}</td>
-                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-gray-900 cursor-pointer">{job.vendor?.name || '-'}</td>
-                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-right font-semibold text-gray-900 cursor-pointer">{formatCurrency(cost)}</td>
-                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-right font-semibold text-gray-900 cursor-pointer">{formatCurrency(revenue)}</td>
-                  <td onClick={() => handleRowClick(job)} className={`px-4 py-3 text-sm text-right font-bold cursor-pointer ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatCurrency(profit)}
+                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-gray-900 cursor-pointer">
+                    {job.customer?.name || '-'}
                   </td>
-                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm cursor-pointer">
+                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-right font-semibold text-green-600 cursor-pointer">
+                    {formatCurrency(fin.sellPrice)}
+                  </td>
+                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-right font-semibold text-red-600 cursor-pointer">
+                    {formatCurrency(fin.totalCost)}
+                  </td>
+                  <td onClick={() => handleRowClick(job)} className={`px-4 py-3 text-sm text-right font-bold cursor-pointer ${fin.spread >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                    {formatCurrency(fin.spread)}
+                  </td>
+                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-right font-semibold text-orange-600 cursor-pointer">
+                    {formatCurrency(fin.bradfordTotal)}
+                  </td>
+                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-right font-semibold text-blue-600 cursor-pointer">
+                    {formatCurrency(fin.impactTotal)}
+                  </td>
+                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-center cursor-pointer">
                     {job.status === 'PAID' ? (
-                      <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-medium">
+                      <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
                         Paid
                       </span>
                     ) : job.status === 'INVOICED' ? (
-                      <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded text-xs font-medium">
+                      <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-xs font-medium">
                         Invoiced
                       </span>
                     ) : (
-                      <span className="px-2 py-1 bg-red-100 text-red-800 rounded text-xs font-medium">
+                      <span className="px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-medium">
                         Unpaid
                       </span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-sm">
-                    <div className="flex gap-2">
+                    <div className="flex gap-1">
                       {job.status !== 'INVOICED' && job.status !== 'PAID' && (
                         <button
                           onClick={() => handleUpdateStatus(job.id, 'INVOICED')}
-                          className="px-2 py-1 bg-orange-600 text-white rounded text-xs font-medium hover:bg-orange-700"
+                          className="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs font-medium hover:bg-orange-200"
                           title="Mark as Invoiced"
                         >
                           Invoice
@@ -329,7 +377,7 @@ export function FinancialsView() {
                       {job.status !== 'PAID' && (
                         <button
                           onClick={() => handleUpdateStatus(job.id, 'PAID')}
-                          className="px-2 py-1 bg-green-600 text-white rounded text-xs font-medium hover:bg-green-700 flex items-center gap-1"
+                          className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium hover:bg-green-200 flex items-center gap-1"
                           title="Mark as Paid"
                         >
                           <Check className="w-3 h-3" />
@@ -345,30 +393,31 @@ export function FinancialsView() {
           <tfoot className="bg-gray-900 text-white">
             <tr>
               <td className="px-4 py-3"></td>
-              <td colSpan={3} className="px-4 py-3 text-sm font-bold">TOTALS</td>
-              <td className="px-4 py-3 text-sm text-right font-bold">{formatCurrency(totals.cost)}</td>
-              <td className="px-4 py-3 text-sm text-right font-bold">{formatCurrency(totals.revenue)}</td>
-              <td className="px-4 py-3 text-sm text-right font-bold text-green-400">{formatCurrency(totals.profit)}</td>
-              <td colSpan={2} className="px-4 py-3 text-sm text-right font-bold">{filteredJobs.length} jobs</td>
+              <td colSpan={2} className="px-4 py-3 text-sm font-bold">TOTALS ({filteredJobs.length} jobs)</td>
+              <td className="px-4 py-3 text-sm text-right font-bold">{formatCurrency(totals.sellPrice)}</td>
+              <td className="px-4 py-3 text-sm text-right font-bold">{formatCurrency(totals.totalCost)}</td>
+              <td className="px-4 py-3 text-sm text-right font-bold text-blue-400">{formatCurrency(totals.spread)}</td>
+              <td className="px-4 py-3 text-sm text-right font-bold text-orange-400">{formatCurrency(totals.bradfordTotal)}</td>
+              <td className="px-4 py-3 text-sm text-right font-bold text-blue-400">{formatCurrency(totals.impactTotal)}</td>
+              <td colSpan={2} className="px-4 py-3"></td>
             </tr>
           </tfoot>
         </table>
       </div>
 
-      {/* Job Drawer */}
+      {/* Job Detail Modal */}
       {selectedJob && (
-        <JobDrawer
+        <JobDetailModal
           isOpen={isDrawerOpen}
           onClose={() => {
             setIsDrawerOpen(false);
             setSelectedJob(null);
           }}
           job={selectedJob}
-          onGenerateEmail={() => {}}
           onDownloadPO={() => pdfApi.generateVendorPO(selectedJob.id)}
           onDownloadInvoice={() => pdfApi.generateInvoice(selectedJob.id)}
           onDownloadQuote={() => pdfApi.generateQuote(selectedJob.id)}
-          onUpdateBradfordRef={handleUpdateBradfordRef}
+          onRefresh={loadJobs}
         />
       )}
     </div>

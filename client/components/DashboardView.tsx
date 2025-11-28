@@ -210,19 +210,7 @@ export function DashboardView({
 function StatusBadge({ status }: { status: string }) {
   const getVariant = (status: string) => {
     switch (status) {
-      case 'DRAFT':
-        return 'outline';
-      case 'QUOTED':
-        return 'info';
-      case 'APPROVED':
-        return 'success';
-      case 'PO_ISSUED':
-        return 'info';
-      case 'IN_PRODUCTION':
-        return 'warning';
-      case 'SHIPPED':
-        return 'info';
-      case 'INVOICED':
+      case 'ACTIVE':
         return 'warning';
       case 'PAID':
         return 'success';

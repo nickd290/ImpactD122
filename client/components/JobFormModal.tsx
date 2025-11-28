@@ -28,7 +28,12 @@ export function JobFormModal({
     customerPONumber: initialData?.customerPONumber || '',
     bradfordRefNumber: initialData?.bradfordRefNumber || '',
     dueDate: initialData?.dueDate || '',
+    jdSuppliesPaper: initialData?.jdSuppliesPaper || false, // false = Bradford supplies, true = Vendor supplies
+    paperInventoryId: initialData?.paperInventoryId || '',
   });
+
+  // Paper inventory for dropdown
+  const [paperInventory, setPaperInventory] = useState<any[]>([]);
 
   const [specs, setSpecs] = useState({
     productType: initialData?.specs?.productType || 'OTHER',
@@ -86,6 +91,16 @@ export function JobFormModal({
   // Get selected Bradford vendor
   const selectedVendor = vendors.find(v => v.id === formData.vendorId);
   const isBradfordVendor = selectedVendor?.isPartner === true;
+
+  // Fetch paper inventory for dropdown when Bradford supplies paper
+  useEffect(() => {
+    if (!formData.jdSuppliesPaper) {
+      fetch('/api/paper-inventory')
+        .then(res => res.json())
+        .then(data => setPaperInventory(data || []))
+        .catch(() => setPaperInventory([]));
+    }
+  }, [formData.jdSuppliesPaper]);
 
   // Auto-calculate Print CPM and Paper Lbs when Bradford vendor + Bradford size is selected
   useEffect(() => {
@@ -278,15 +293,9 @@ export function JobFormModal({
                   onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
-                  <option value="DRAFT">Draft</option>
-                  <option value="QUOTED">Quoted</option>
-                  <option value="APPROVED">Approved</option>
-                  <option value="PO_ISSUED">PO Issued</option>
-                  <option value="IN_PRODUCTION">In Production</option>
-                  <option value="SHIPPED">Shipped</option>
-                  <option value="DELIVERED">Delivered</option>
-                  <option value="INVOICED">Invoiced</option>
+                  <option value="ACTIVE">Active</option>
                   <option value="PAID">Paid</option>
+                  <option value="CANCELLED">Cancelled</option>
                 </select>
               </div>
 
@@ -343,14 +352,14 @@ export function JobFormModal({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Bradford Ref Number (PO to JD)
+                  JD PO / Bradford Payment Ref
                 </label>
                 <input
                   type="text"
                   value={formData.bradfordRefNumber}
                   onChange={(e) => setFormData({ ...formData, bradfordRefNumber: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Bradford PO to JD Graphic"
+                  placeholder="PO number to JD (also used for Bradford payment)"
                 />
               </div>
 
@@ -596,6 +605,70 @@ export function JobFormModal({
                 rows={3}
                 placeholder="Add any additional notes..."
               />
+            </div>
+
+            {/* Paper Source Section */}
+            <div className="border-t pt-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Paper Source</h3>
+              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                <div className="space-y-3">
+                  {/* Bradford Supplies Paper */}
+                  <label className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer border-2 transition-colors ${
+                    !formData.jdSuppliesPaper ? 'border-orange-500 bg-orange-50' : 'border-gray-200 bg-white hover:bg-gray-50'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="paperSource"
+                      checked={!formData.jdSuppliesPaper}
+                      onChange={() => setFormData({ ...formData, jdSuppliesPaper: false, paperInventoryId: '' })}
+                      className="mt-1 h-4 w-4 text-orange-600 border-gray-300 focus:ring-orange-500"
+                    />
+                    <div className="flex-1">
+                      <div className="font-medium text-gray-900">Bradford Supplies Paper</div>
+                      <p className="text-sm text-gray-500">Bradford will provide paper from inventory (default)</p>
+
+                      {/* Optional inventory link dropdown - only show when Bradford supplies */}
+                      {!formData.jdSuppliesPaper && paperInventory.length > 0 && (
+                        <div className="mt-3">
+                          <label className="block text-xs font-medium text-gray-600 mb-1">
+                            Link to Inventory (optional)
+                          </label>
+                          <select
+                            value={formData.paperInventoryId}
+                            onChange={(e) => setFormData({ ...formData, paperInventoryId: e.target.value })}
+                            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <option value="">-- Select paper from inventory --</option>
+                            {paperInventory.map((paper: any) => (
+                              <option key={paper.id} value={paper.id}>
+                                {paper.rollType} - {paper.rollWidth}" - {paper.paperPoint}pt {paper.paperType} ({paper.quantity} rolls)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  </label>
+
+                  {/* Vendor Supplies Paper */}
+                  <label className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer border-2 transition-colors ${
+                    formData.jdSuppliesPaper ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:bg-gray-50'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="paperSource"
+                      checked={formData.jdSuppliesPaper}
+                      onChange={() => setFormData({ ...formData, jdSuppliesPaper: true, paperInventoryId: '' })}
+                      className="mt-1 h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                    />
+                    <div className="flex-1">
+                      <div className="font-medium text-gray-900">Vendor Supplies Paper</div>
+                      <p className="text-sm text-gray-500">The vendor will provide their own paper</p>
+                    </div>
+                  </label>
+                </div>
+              </div>
             </div>
 
             {/* Line Items */}

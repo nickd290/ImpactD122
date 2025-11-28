@@ -1,10 +1,10 @@
 import React from 'react';
-import { BarChart3, Briefcase, Users, Building2, TrendingUp, DollarSign, Plus, Upload, Sparkles, Command } from 'lucide-react';
+import { BarChart3, Briefcase, Users, Building2, TrendingUp, DollarSign, Plus, Upload, Sparkles, Command, Package, Calculator } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Button } from './ui';
 import { Badge } from './ui';
 
-type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS';
+type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING';
 
 interface SidebarProps {
   currentView: View;
@@ -170,6 +170,20 @@ export function Sidebar({
             active={currentView === 'PARTNER_STATS'}
             onClick={() => onViewChange('PARTNER_STATS')}
             badge={partnerJobsCount}
+          />
+          <NavItem
+            icon={<Package className="w-5 h-5" />}
+            label="Paper Inventory"
+            active={currentView === 'PAPER_INVENTORY'}
+            onClick={() => onViewChange('PAPER_INVENTORY')}
+            shortcut="P"
+          />
+          <NavItem
+            icon={<Calculator className="w-5 h-5" />}
+            label="Accounting"
+            active={currentView === 'ACCOUNTING'}
+            onClick={() => onViewChange('ACCOUNTING')}
+            shortcut="A"
           />
         </div>
       </nav>
