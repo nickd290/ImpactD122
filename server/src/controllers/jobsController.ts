@@ -377,6 +377,7 @@ export const createJob = async (req: Request, res: Response) => {
       quantity: inputQuantity,
       bradfordCut,  // Bradford's cut for non-Bradford vendor jobs
       jdSuppliesPaper,  // Paper source: true = vendor supplies, false = Bradford supplies
+      bradfordRefNumber,  // Bradford reference number (for all jobs)
       ...rest
     } = req.body;
 
@@ -492,6 +493,7 @@ export const createJob = async (req: Request, res: Response) => {
         sizeName,
         paperSource,
         customerPONumber: customerPONumber || null,
+        partnerPONumber: bradfordRefNumber || null,
         deliveryDate: dueDate ? new Date(dueDate) : null,
         mailDate: mailDate ? new Date(mailDate) : null,
         inHomesDate: inHomesDate ? new Date(inHomesDate) : null,
@@ -679,6 +681,7 @@ export const updateJob = async (req: Request, res: Response) => {
       sellPrice: inputSellPrice,
       sizeName: inputSizeName,
       paperSource: inputPaperSource,
+      bradfordRefNumber,  // Bradford reference number (for all jobs)
       ...rest
     } = req.body;
 
@@ -714,6 +717,7 @@ export const updateJob = async (req: Request, res: Response) => {
     if (title !== undefined) updateData.title = title;
     if (status !== undefined) updateData.status = status;
     if (customerPONumber !== undefined) updateData.customerPONumber = customerPONumber;
+    if (bradfordRefNumber !== undefined) updateData.partnerPONumber = bradfordRefNumber;
     if (dueDate !== undefined) updateData.deliveryDate = dueDate ? new Date(dueDate) : null;
     if (customerId !== undefined) updateData.customerId = customerId;
     if (vendorId !== undefined) updateData.vendorId = vendorId;
