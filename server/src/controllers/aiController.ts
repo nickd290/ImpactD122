@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { parsePrintSpecs, parsePurchaseOrder, generateEmailDraft } from '../services/geminiService';
+import { parsePrintSpecs, parsePurchaseOrder, generateEmailDraft } from '../services/openaiService';
 import * as fs from 'fs';
 
 // Parse print specs from text

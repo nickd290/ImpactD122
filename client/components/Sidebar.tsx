@@ -1,5 +1,5 @@
 import React from 'react';
-import { BarChart3, Briefcase, Users, Building2, TrendingUp, DollarSign, Plus, Upload, Sparkles, Command, Package, Calculator } from 'lucide-react';
+import { BarChart3, Briefcase, Users, Building2, TrendingUp, DollarSign, Plus, Sparkles, Command, Package, Calculator } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Button } from './ui';
 import { Badge } from './ui';
@@ -14,7 +14,6 @@ interface SidebarProps {
   vendorsCount: number;
   partnerJobsCount: number;
   onShowSpecParser: () => void;
-  onShowPOUploader: () => void;
   onCreateJob: () => void;
   onShowSearch: () => void;
 }
@@ -74,7 +73,6 @@ export function Sidebar({
   vendorsCount,
   partnerJobsCount,
   onShowSpecParser,
-  onShowPOUploader,
   onCreateJob,
   onShowSearch,
 }: SidebarProps) {
@@ -209,15 +207,6 @@ export function Sidebar({
         >
           <Sparkles className="w-4 h-4 mr-2" />
           Parse Specs
-        </Button>
-        <Button
-          onClick={onShowPOUploader}
-          variant="outline"
-          className="w-full justify-start"
-          size="sm"
-        >
-          <Upload className="w-4 h-4 mr-2" />
-          Upload PO
         </Button>
       </div>
     </div>

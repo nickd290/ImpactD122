@@ -74,20 +74,15 @@ export function JobsView({
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const [collapsedCustomers, setCollapsedCustomers] = useState<Set<string>>(new Set());
-  const [isActionsOpen, setIsActionsOpen] = useState(false);
   const [isPaymentMenuOpen, setIsPaymentMenuOpen] = useState(false);
   const [isDocMenuOpen, setIsDocMenuOpen] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
-  const actionsRef = useRef<HTMLDivElement>(null);
   const paymentMenuRef = useRef<HTMLDivElement>(null);
   const docMenuRef = useRef<HTMLDivElement>(null);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (actionsRef.current && !actionsRef.current.contains(event.target as Node)) {
-        setIsActionsOpen(false);
-      }
       if (paymentMenuRef.current && !paymentMenuRef.current.contains(event.target as Node)) {
         setIsPaymentMenuOpen(false);
       }
@@ -96,11 +91,11 @@ export function JobsView({
       }
     };
 
-    if (isActionsOpen || isPaymentMenuOpen || isDocMenuOpen) {
+    if (isPaymentMenuOpen || isDocMenuOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [isActionsOpen, isPaymentMenuOpen, isDocMenuOpen]);
+  }, [isPaymentMenuOpen, isDocMenuOpen]);
 
   const filteredJobs = jobs.filter((job: Job) =>
     job.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -306,68 +301,6 @@ export function JobsView({
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {/* Actions Dropdown */}
-          <div className="relative" ref={actionsRef}>
-            <Button
-              onClick={() => setIsActionsOpen(!isActionsOpen)}
-              variant="outline"
-            >
-              <MoreVertical className="w-4 h-4 mr-2" />
-              Actions
-              <ChevronDown className="w-4 h-4 ml-2" />
-            </Button>
-
-            {isActionsOpen && (
-              <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
-                <button
-                  onClick={() => {
-                    onCreateJob();
-                    setIsActionsOpen(false);
-                  }}
-                  className="w-full px-4 py-2 text-left flex items-center gap-3 hover:bg-gray-100 transition-colors"
-                >
-                  <Plus className="w-4 h-4 text-gray-600" />
-                  <span className="text-sm font-medium">Full Job Form</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    onShowSpecParser();
-                    setIsActionsOpen(false);
-                  }}
-                  className="w-full px-4 py-2 text-left flex items-center gap-3 hover:bg-gray-100 transition-colors"
-                >
-                  <Sparkles className="w-4 h-4 text-purple-600" />
-                  <span className="text-sm font-medium">Parse Specs</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    onShowPOUploader();
-                    setIsActionsOpen(false);
-                  }}
-                  className="w-full px-4 py-2 text-left flex items-center gap-3 hover:bg-gray-100 transition-colors"
-                >
-                  <Upload className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm font-medium">Upload PO</span>
-                </button>
-
-                {onShowExcelImporter && (
-                  <button
-                    onClick={() => {
-                      onShowExcelImporter();
-                      setIsActionsOpen(false);
-                    }}
-                    className="w-full px-4 py-2 text-left flex items-center gap-3 hover:bg-gray-100 transition-colors"
-                  >
-                    <FileSpreadsheet className="w-4 h-4 text-green-600" />
-                    <span className="text-sm font-medium">Import Excel</span>
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-
           {/* Primary New Job Button */}
           <Button onClick={onCreateJob} className="bg-blue-600 hover:bg-blue-700">
             <Plus className="w-4 h-4 mr-2" />

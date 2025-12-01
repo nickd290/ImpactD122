@@ -22,6 +22,12 @@ function transformJobForPDF(job: any) {
     dueDate: job.deliveryDate,
     createdAt: job.createdAt,
     sellPrice: job.sellPrice,
+    // Additional job fields for PDF
+    quantity: quantity,
+    sizeName: job.sizeName || '',
+    mailDate: job.mailDate,
+    inHomesDate: job.inHomesDate,
+    description: job.description || '',
     customer: job.Company ? {
       name: job.Company.name,
       email: job.Company.email || '',

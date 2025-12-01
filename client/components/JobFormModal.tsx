@@ -35,9 +35,98 @@ export function JobFormModal({
   // Paper inventory for dropdown
   const [paperInventory, setPaperInventory] = useState<any[]>([]);
 
+  // Reset form when initialData changes (for parsed data or editing different jobs)
+  useEffect(() => {
+    if (isOpen) {
+      setFormData({
+        title: initialData?.title || '',
+        customerId: initialData?.customerId || '',
+        vendorId: initialData?.vendorId || '',
+        status: initialData?.status || 'ACTIVE',
+        notes: initialData?.notes || '',
+        customerPONumber: initialData?.customerPONumber || '',
+        bradfordRefNumber: initialData?.bradfordRefNumber || '',
+        dueDate: initialData?.dueDate || '',
+        jdSuppliesPaper: initialData?.jdSuppliesPaper || false,
+        paperInventoryId: initialData?.paperInventoryId || '',
+      });
+
+      setSpecs({
+        productType: initialData?.specs?.productType || 'OTHER',
+        paperType: initialData?.specs?.paperType || '',
+        paperWeight: initialData?.specs?.paperWeight || '',
+        colors: initialData?.specs?.colors || '',
+        coating: initialData?.specs?.coating || '',
+        finishing: initialData?.specs?.finishing || '',
+        flatSize: initialData?.specs?.flatSize || '',
+        finishedSize: initialData?.specs?.finishedSize || '',
+        pageCount: initialData?.specs?.pageCount || '',
+        bindingStyle: initialData?.specs?.bindingStyle || '',
+        coverType: initialData?.specs?.coverType || 'SELF',
+        coverPaperType: initialData?.specs?.coverPaperType || '',
+        paperLbs: initialData?.specs?.paperLbs || '',
+        // Additional print specs
+        folds: initialData?.specs?.folds || '',
+        perforations: initialData?.specs?.perforations || '',
+        dieCut: initialData?.specs?.dieCut || '',
+        bleed: initialData?.specs?.bleed || '',
+        proofType: initialData?.specs?.proofType || '',
+        // Ship-to information
+        shipToName: initialData?.specs?.shipToName || '',
+        shipToAddress: initialData?.specs?.shipToAddress || '',
+        shipVia: initialData?.specs?.shipVia || '',
+        // All parsed notes/instructions - CRITICAL for vendor PO PDF
+        specialInstructions: initialData?.specs?.specialInstructions || '',
+        artworkInstructions: initialData?.specs?.artworkInstructions || '',
+        packingInstructions: initialData?.specs?.packingInstructions || '',
+        labelingInstructions: initialData?.specs?.labelingInstructions || '',
+        additionalNotes: initialData?.specs?.additionalNotes || '',
+        artworkUrl: initialData?.specs?.artworkUrl || '',
+        artworkToFollow: initialData?.specs?.artworkToFollow || false,
+        // ===== PHASE 15: Enhanced Universal PO Parsing =====
+        versions: initialData?.specs?.versions || [],
+        languageBreakdown: initialData?.specs?.languageBreakdown || [],
+        totalVersionQuantity: initialData?.specs?.totalVersionQuantity || 0,
+        timeline: initialData?.specs?.timeline || {},
+        mailing: initialData?.specs?.mailing || {},
+        responsibilities: initialData?.specs?.responsibilities || { vendorTasks: [], customerTasks: [] },
+        specialHandling: initialData?.specs?.specialHandling || {},
+        paymentTerms: initialData?.specs?.paymentTerms || '',
+        fob: initialData?.specs?.fob || '',
+        accountNumber: initialData?.specs?.accountNumber || '',
+      });
+
+      setLineItems(initialData?.lineItems?.length > 0 ? initialData.lineItems : [
+        { description: '', quantity: 1, unitCost: 0, markupPercent: 20, unitPrice: 0 }
+      ]);
+
+      setBradfordFinancials({
+        impactCustomerTotal: initialData?.financials?.impactCustomerTotal || 0,
+        jdServicesTotal: initialData?.financials?.jdServicesTotal || 0,
+        bradfordPaperCost: initialData?.financials?.bradfordPaperCost || 0,
+        paperMarkupAmount: initialData?.financials?.paperMarkupAmount || 0,
+      });
+
+      setBradfordCPM({
+        customerCPM: 0,
+        jdServicesCPM: 0,
+        bradfordPaperCostCPM: 0,
+        paperMarkupCPM: 0,
+        printCPM: 0,
+      });
+
+      setUseCustomSize(false);
+      setCustomSizeValue('');
+      setManualOverrides(new Set()); // Reset manual overrides when form resets
+      setBradfordCut(initialData?.bradfordCut || 0); // Reset Bradford's cut
+      setUseBradford35Percent(false); // Reset 35% checkbox
+    }
+  }, [isOpen, initialData]);
+
   const [specs, setSpecs] = useState({
     productType: initialData?.specs?.productType || 'OTHER',
     paperType: initialData?.specs?.paperType || '',
+    paperWeight: initialData?.specs?.paperWeight || '',
     colors: initialData?.specs?.colors || '',
     coating: initialData?.specs?.coating || '',
     finishing: initialData?.specs?.finishing || '',
@@ -48,6 +137,35 @@ export function JobFormModal({
     coverType: initialData?.specs?.coverType || 'SELF',
     coverPaperType: initialData?.specs?.coverPaperType || '',
     paperLbs: initialData?.specs?.paperLbs || '',
+    // Additional print specs
+    folds: initialData?.specs?.folds || '',
+    perforations: initialData?.specs?.perforations || '',
+    dieCut: initialData?.specs?.dieCut || '',
+    bleed: initialData?.specs?.bleed || '',
+    proofType: initialData?.specs?.proofType || '',
+    // Ship-to information
+    shipToName: initialData?.specs?.shipToName || '',
+    shipToAddress: initialData?.specs?.shipToAddress || '',
+    shipVia: initialData?.specs?.shipVia || '',
+    // All parsed notes/instructions - CRITICAL for vendor PO PDF
+    specialInstructions: initialData?.specs?.specialInstructions || '',
+    artworkInstructions: initialData?.specs?.artworkInstructions || '',
+    packingInstructions: initialData?.specs?.packingInstructions || '',
+    labelingInstructions: initialData?.specs?.labelingInstructions || '',
+    additionalNotes: initialData?.specs?.additionalNotes || '',
+    artworkUrl: initialData?.specs?.artworkUrl || '',
+    artworkToFollow: initialData?.specs?.artworkToFollow || false,
+    // ===== PHASE 15: Enhanced Universal PO Parsing =====
+    versions: initialData?.specs?.versions || [],
+    languageBreakdown: initialData?.specs?.languageBreakdown || [],
+    totalVersionQuantity: initialData?.specs?.totalVersionQuantity || 0,
+    timeline: initialData?.specs?.timeline || {},
+    mailing: initialData?.specs?.mailing || {},
+    responsibilities: initialData?.specs?.responsibilities || { vendorTasks: [], customerTasks: [] },
+    specialHandling: initialData?.specs?.specialHandling || {},
+    paymentTerms: initialData?.specs?.paymentTerms || '',
+    fob: initialData?.specs?.fob || '',
+    accountNumber: initialData?.specs?.accountNumber || '',
   });
 
   const [lineItems, setLineItems] = useState(initialData?.lineItems || [
@@ -80,6 +198,15 @@ export function JobFormModal({
   const [useCustomSize, setUseCustomSize] = useState(false);
   const [customSizeValue, setCustomSizeValue] = useState('');
 
+  // Track which fields have been manually edited (to prevent auto-calc overwriting)
+  const [manualOverrides, setManualOverrides] = useState<Set<string>>(new Set());
+
+  // Bradford's cut for non-Bradford vendor jobs (payment back to Bradford)
+  const [bradfordCut, setBradfordCut] = useState(initialData?.bradfordCut || 0);
+
+  // Checkbox for auto-calculating 35% of net profit as Bradford's cut
+  const [useBradford35Percent, setUseBradford35Percent] = useState(false);
+
   // Calculate total quantity from all line items
   const totalQuantity = lineItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
 
@@ -103,6 +230,7 @@ export function JobFormModal({
   }, [formData.jdSuppliesPaper]);
 
   // Auto-calculate Print CPM and Paper Lbs when Bradford vendor + Bradford size is selected
+  // Only auto-calculate fields that haven't been manually edited
   useEffect(() => {
     if (isBradfordVendor && specs.finishedSize && !useCustomSize) {
       const pricing = getBradfordPricing(specs.finishedSize);
@@ -111,45 +239,83 @@ export function JobFormModal({
         const qty = totalQuantity > 0 ? totalQuantity : 1000;
         const calcFromCPM = (cpm: number) => (cpm * qty) / 1000;
 
+        // Only update CPM values if not manually overridden
         setBradfordCPM(prev => ({
           ...prev,
-          printCPM: pricing.printCPM,
-          jdServicesCPM: pricing.printCPM, // JD Services CPM = Print CPM
-          bradfordPaperCostCPM: pricing.costCPMPaper,
-          paperMarkupCPM: pricing.sellCPMPaper - pricing.costCPMPaper,
-        }));
-        // Update ALL financial totals when size is selected
-        setBradfordFinancials(prev => ({
-          ...prev,
-          jdServicesTotal: calcFromCPM(pricing.printCPM),
-          bradfordPaperCost: calcFromCPM(pricing.costCPMPaper),
-          paperMarkupAmount: calcFromCPM(pricing.sellCPMPaper - pricing.costCPMPaper),
+          printCPM: manualOverrides.has('printCPM') ? prev.printCPM : pricing.printCPM,
+          jdServicesCPM: manualOverrides.has('jdServicesCPM') ? prev.jdServicesCPM : pricing.printCPM,
+          bradfordPaperCostCPM: manualOverrides.has('bradfordPaperCostCPM') ? prev.bradfordPaperCostCPM : pricing.costCPMPaper,
+          paperMarkupCPM: manualOverrides.has('paperMarkupCPM') ? prev.paperMarkupCPM : (pricing.sellCPMPaper - pricing.costCPMPaper),
         }));
 
-        // Auto-calculate paper lbs based on paperLbsPerM and quantity
-        const calculatedPaperLbs = (pricing.paperLbsPerM * qty) / 1000;
-        setSpecs(prev => ({
+        // Only update financial totals if not manually overridden
+        setBradfordFinancials(prev => ({
           ...prev,
-          paperLbs: calculatedPaperLbs.toFixed(2),
+          jdServicesTotal: manualOverrides.has('jdServicesTotal') ? prev.jdServicesTotal : calcFromCPM(pricing.printCPM),
+          bradfordPaperCost: manualOverrides.has('bradfordPaperCost') ? prev.bradfordPaperCost : calcFromCPM(pricing.costCPMPaper),
+          paperMarkupAmount: manualOverrides.has('paperMarkupAmount') ? prev.paperMarkupAmount : calcFromCPM(pricing.sellCPMPaper - pricing.costCPMPaper),
         }));
+
+        // Auto-calculate paper lbs only if not manually overridden
+        if (!manualOverrides.has('paperLbs')) {
+          const calculatedPaperLbs = (pricing.paperLbsPerM * qty) / 1000;
+          setSpecs(prev => ({
+            ...prev,
+            paperLbs: calculatedPaperLbs.toFixed(2),
+          }));
+        }
       }
     }
-  }, [formData.vendorId, specs.finishedSize, useCustomSize, isBradfordVendor, totalQuantity]);
+  }, [formData.vendorId, specs.finishedSize, useCustomSize, isBradfordVendor, totalQuantity, manualOverrides]);
+
+  // Auto-calculate 35% of net profit when checkbox is checked
+  useEffect(() => {
+    if (useBradford35Percent && !isBradfordVendor) {
+      // Calculate totals from line items
+      const revenue = lineItems.reduce((sum: number, item: any) => sum + (item.quantity * item.unitPrice), 0);
+      const cost = lineItems.reduce((sum: number, item: any) => sum + (item.quantity * item.unitCost), 0);
+      // Net profit = Revenue - Vendor Cost (before Bradford cut)
+      const netProfit = revenue - cost;
+      const calculated35 = netProfit * 0.35;
+      // Never set negative Bradford cut
+      setBradfordCut(Math.max(0, Math.round(calculated35 * 100) / 100));
+    }
+  }, [useBradford35Percent, lineItems, isBradfordVendor]);
 
   if (!isOpen) return null;
 
   const calculateUnitPrice = (unitCost: number, markupPercent: number) => {
-    return unitCost * (1 + markupPercent / 100);
+    return Math.round(unitCost * (1 + markupPercent / 100) * 100) / 100;  // Round to 2 decimals
   };
 
   const handleLineItemChange = (index: number, field: string, value: any) => {
     const updated = [...lineItems];
     updated[index] = { ...updated[index], [field]: value };
 
-    // Auto-calculate unitPrice when cost or markup changes
-    if (field === 'unitCost' || field === 'markupPercent') {
-      const cost = field === 'unitCost' ? parseFloat(value) || 0 : updated[index].unitCost;
-      const markup = field === 'markupPercent' ? parseFloat(value) || 0 : updated[index].markupPercent;
+    // Dynamic recalculation based on which field changed:
+    // - Cost changed → recalculate Markup% (keep Price fixed)
+    // - Price changed → recalculate Markup% (keep Cost fixed)
+    // - Markup% changed → recalculate Price (keep Cost fixed)
+    if (field === 'unitCost') {
+      // Cost changed → recalculate Markup% (keep Price fixed)
+      const newCost = parseFloat(value) || 0;
+      const currentPrice = updated[index].unitPrice;
+      if (newCost > 0 && currentPrice > 0) {
+        // Markup% = ((Price - Cost) / Cost) * 100
+        updated[index].markupPercent = Math.round(((currentPrice - newCost) / newCost) * 100 * 100) / 100;
+      }
+    } else if (field === 'unitPrice') {
+      // Price changed → recalculate Markup% (keep Cost fixed)
+      const newPrice = parseFloat(value) || 0;
+      const currentCost = updated[index].unitCost;
+      if (currentCost > 0) {
+        // Markup% = ((Price - Cost) / Cost) * 100
+        updated[index].markupPercent = Math.round(((newPrice - currentCost) / currentCost) * 100 * 100) / 100;
+      }
+    } else if (field === 'markupPercent') {
+      // Markup% changed → recalculate Price (keep Cost fixed)
+      const cost = updated[index].unitCost;
+      const markup = parseFloat(value) || 0;
       updated[index].unitPrice = calculateUnitPrice(cost, markup);
     }
 
@@ -207,7 +373,8 @@ export function JobFormModal({
     // Prepare specs object (only include if at least one field is filled)
     const hasSpecs = specs.productType !== 'OTHER' ||
       specs.paperType || specs.colors || specs.coating ||
-      specs.finishing || specs.flatSize || specs.finishedSize || specs.paperLbs;
+      specs.finishing || specs.flatSize || specs.finishedSize || specs.paperLbs ||
+      specs.artworkUrl;
 
     const specsData = hasSpecs ? {
       ...specs,
@@ -228,6 +395,7 @@ export function JobFormModal({
       specs: specsData,
       lineItems: validLineItems,
       financials: financialsData,
+      bradfordCut: !isBradfordVendor && bradfordCut > 0 ? bradfordCut : null,
     });
     onClose();
   };
@@ -240,7 +408,9 @@ export function JobFormModal({
     sum + (item.quantity * item.unitCost), 0
   );
 
-  const totalProfit = totalRevenue - totalCost;
+  // Include Bradford's cut for non-Bradford vendors in profit calculation
+  const effectiveBradfordCut = isBradfordVendor ? 0 : bradfordCut;
+  const totalProfit = totalRevenue - totalCost - effectiveBradfordCut;
 
   return (
     <>
@@ -607,6 +777,50 @@ export function JobFormModal({
               />
             </div>
 
+            {/* Artwork Link for Vendors */}
+            <div className="border-t pt-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Artwork Files</h3>
+              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-blue-900">
+                    Artwork URL / Link
+                  </label>
+                  {/* Artwork to Follow Checkbox */}
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={(specs as any).artworkToFollow || false}
+                      onChange={(e) => setSpecs({ ...specs, artworkToFollow: e.target.checked } as any)}
+                      disabled={!!specs.artworkUrl}
+                      className="h-4 w-4 text-amber-600 border-amber-300 rounded focus:ring-amber-500"
+                    />
+                    <span className={`text-sm font-medium ${specs.artworkUrl ? 'text-gray-400' : 'text-amber-700'}`}>
+                      Artwork to follow
+                    </span>
+                  </label>
+                </div>
+                <input
+                  type="url"
+                  value={specs.artworkUrl}
+                  onChange={(e) => setSpecs({ ...specs, artworkUrl: e.target.value })}
+                  className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="https://drive.google.com/... or Dropbox/WeTransfer link"
+                />
+                {/* Info message when checkbox is checked and no artwork URL */}
+                {(specs as any).artworkToFollow && !specs.artworkUrl && (
+                  <div className="mt-2 p-2 bg-amber-100 border border-amber-300 rounded text-xs text-amber-700">
+                    <p className="font-medium">⚠️ Vendor PO PDFs will display "ARTWORK TO ARRIVE LATER"</p>
+                    <p className="mt-1">When you add the artwork URL, emails will automatically be sent to vendors whose POs were previously emailed.</p>
+                  </div>
+                )}
+                {!((specs as any).artworkToFollow) && (
+                  <p className="mt-2 text-xs text-blue-700">
+                    Provide a link to artwork files (Google Drive, Dropbox, WeTransfer, etc.). This will appear on the Vendor PO PDF.
+                  </p>
+                )}
+              </div>
+            </div>
+
             {/* Paper Source Section */}
             <div className="border-t pt-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Paper Source</h3>
@@ -729,7 +943,7 @@ export function JobFormModal({
                         </label>
                         <input
                           type="number"
-                          value={item.unitCost}
+                          value={Number(item.unitCost || 0).toFixed(2)}
                           onChange={(e) => handleLineItemChange(index, 'unitCost', e.target.value)}
                           className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                           step="0.01"
@@ -743,10 +957,10 @@ export function JobFormModal({
                         </label>
                         <input
                           type="number"
-                          value={item.markupPercent}
+                          value={Number(item.markupPercent || 0).toFixed(2)}
                           onChange={(e) => handleLineItemChange(index, 'markupPercent', e.target.value)}
                           className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                          step="1"
+                          step="0.01"
                           min="0"
                         />
                       </div>
@@ -781,13 +995,29 @@ export function JobFormModal({
                 })}
               </div>
 
-              {/* Bradford Partner Financials (Optional) - CPM Based */}
+              {/* Customer PO Total - Shows what customer is paying us (from parsed PO) */}
+              {initialData?.customerPOTotal > 0 && (
+                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-semibold text-blue-900">Customer PO Total</h4>
+                      <p className="text-xs text-blue-700">Amount from customer's purchase order</p>
+                    </div>
+                    <p className="text-2xl font-bold text-blue-900">
+                      ${initialData.customerPOTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Bradford Partner Financials (Optional) - CPM Based - Only for Bradford vendors */}
+              {isBradfordVendor && (
               <div className="mt-6 border border-gray-300 rounded-lg p-4 bg-gray-50">
                 <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                  Bradford Partner Financials (Optional)
+                  Bradford Partner Financials
                 </h3>
                 <p className="text-sm text-gray-600 mb-2">
-                  Only fill out these fields if this is a Bradford partner job. Leave blank for standard jobs.
+                  CPM-based pricing for Bradford partner jobs.
                 </p>
                 <p className="text-xs text-blue-600 mb-4">
                   Enter CPM (Cost Per Thousand) values. Totals will auto-calculate based on quantity: <strong>{totalQuantity.toLocaleString()}</strong>
@@ -808,6 +1038,7 @@ export function JobFormModal({
                           ...bradfordFinancials,
                           impactCustomerTotal: calculateFromCPM(cpm)
                         });
+                        setManualOverrides(prev => new Set(prev).add('customerCPM').add('impactCustomerTotal'));
                       }}
                       className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="0.00"
@@ -831,6 +1062,7 @@ export function JobFormModal({
                           ...bradfordFinancials,
                           jdServicesTotal: calculateFromCPM(cpm)
                         });
+                        setManualOverrides(prev => new Set(prev).add('jdServicesCPM').add('jdServicesTotal'));
                       }}
                       className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="0.00"
@@ -854,6 +1086,7 @@ export function JobFormModal({
                           ...bradfordFinancials,
                           bradfordPaperCost: calculateFromCPM(cpm)
                         });
+                        setManualOverrides(prev => new Set(prev).add('bradfordPaperCostCPM').add('bradfordPaperCost'));
                       }}
                       className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="0.00"
@@ -877,6 +1110,7 @@ export function JobFormModal({
                           ...bradfordFinancials,
                           paperMarkupAmount: calculateFromCPM(cpm)
                         });
+                        setManualOverrides(prev => new Set(prev).add('paperMarkupCPM').add('paperMarkupAmount'));
                       }}
                       className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="0.00"
@@ -912,40 +1146,115 @@ export function JobFormModal({
                 )}
 
                 {/* Paper Usage (lbs) - For Bradford jobs */}
-                {isBradfordVendor && (
-                  <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <label className="block text-sm font-semibold text-orange-900 mb-1">
-                          Paper Usage (lbs)
-                        </label>
-                        <p className="text-xs text-orange-700 mb-2">
-                          {specs.finishedSize && !useCustomSize ? (
-                            <>Auto-calculated from size. Override if needed.</>
-                          ) : (
-                            <>Enter paper weight in pounds</>
-                          )}
+                <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <label className="block text-sm font-semibold text-orange-900 mb-1">
+                        Paper Usage (lbs)
+                      </label>
+                      <p className="text-xs text-orange-700 mb-2">
+                        {specs.finishedSize && !useCustomSize ? (
+                          <>Auto-calculated from size. Override if needed.</>
+                        ) : (
+                          <>Enter paper weight in pounds</>
+                        )}
+                      </p>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={specs.paperLbs}
+                        onChange={(e) => {
+                          setSpecs({ ...specs, paperLbs: e.target.value });
+                          setManualOverrides(prev => new Set(prev).add('paperLbs'));
+                        }}
+                        className="w-32 px-3 py-2 border border-orange-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    {specs.paperLbs && (
+                      <div className="text-right ml-4">
+                        <p className="text-2xl font-bold text-orange-900">
+                          {parseFloat(specs.paperLbs as any).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} lbs
                         </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              )}
+
+              {/* Bradford's Cut - For Non-Bradford Vendor Jobs */}
+              {!isBradfordVendor && (
+                <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <label className="block text-sm font-semibold text-amber-900 mb-1">
+                        Bradford's Cut
+                      </label>
+                      <p className="text-xs text-amber-700 mb-2">
+                        Payment back to Bradford for this job (deducted from profit)
+                      </p>
+
+                      {/* 35% Auto-Calculate Checkbox */}
+                      <label className="flex items-center gap-2 mb-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={useBradford35Percent}
+                          onChange={(e) => {
+                            setUseBradford35Percent(e.target.checked);
+                            if (!e.target.checked) {
+                              // Reset to 0 when unchecked
+                              setBradfordCut(0);
+                            }
+                          }}
+                          className="h-4 w-4 text-amber-600 border-amber-300 rounded focus:ring-amber-500"
+                        />
+                        <span className="text-sm text-amber-800">
+                          Use 35% of Net Profit
+                        </span>
+                        {useBradford35Percent && (
+                          <span className="text-xs text-amber-600 ml-1">
+                            (${((totalRevenue - totalCost) * 0.35).toFixed(2)} of ${(totalRevenue - totalCost).toFixed(2)} profit)
+                          </span>
+                        )}
+                      </label>
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-600">$</span>
                         <input
                           type="number"
                           step="0.01"
-                          value={specs.paperLbs}
-                          onChange={(e) => setSpecs({ ...specs, paperLbs: e.target.value })}
-                          className="w-32 px-3 py-2 border border-orange-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+                          min="0"
+                          value={bradfordCut}
+                          onChange={(e) => {
+                            setBradfordCut(parseFloat(e.target.value) || 0);
+                            // Uncheck auto-calculate if user manually edits
+                            if (useBradford35Percent) {
+                              setUseBradford35Percent(false);
+                            }
+                          }}
+                          disabled={useBradford35Percent}
+                          className={`w-32 px-3 py-2 border border-amber-300 rounded focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+                            useBradford35Percent ? 'bg-amber-100 cursor-not-allowed' : ''
+                          }`}
                           placeholder="0.00"
                         />
+                        {useBradford35Percent && (
+                          <span className="text-xs text-amber-600 italic">Auto-calculated</span>
+                        )}
                       </div>
-                      {specs.paperLbs && (
-                        <div className="text-right ml-4">
-                          <p className="text-2xl font-bold text-orange-900">
-                            {parseFloat(specs.paperLbs as any).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} lbs
-                          </p>
-                        </div>
-                      )}
                     </div>
+                    {bradfordCut > 0 && (
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-amber-900">
+                          -${bradfordCut.toFixed(2)}
+                        </p>
+                        <p className="text-xs text-amber-700">from profit</p>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* Totals */}
               <div className="mt-4 bg-gray-900 text-white rounded-lg p-4">
@@ -963,6 +1272,11 @@ export function JobFormModal({
                     <p className={`text-lg font-bold ${totalProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       ${totalProfit.toFixed(2)}
                     </p>
+                    {!isBradfordVendor && bradfordCut > 0 && (
+                      <p className="text-xs text-amber-400 mt-1">
+                        (after ${bradfordCut.toFixed(2)} Bradford cut)
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>

@@ -9,6 +9,7 @@ import {
   PaperSource,
 } from '../services/pricingService';
 import { normalizeSize, getSelfMailerPricing } from '../utils/bradfordPricing';
+import { sendArtworkFollowUpEmail } from '../services/emailService';
 
 /**
  * Check if a job meets criteria for Impact→Bradford PO creation
@@ -275,8 +276,8 @@ function transformJob(job: any) {
       bradfordShareAmount: profit.bradfordTotal,
       impactCostFromBradford: profit.totalCost,
     },
-    // Create lineItems from quantity for frontend compatibility
-    lineItems: quantity > 0 ? [{
+    // Use stored lineItems from specs if available, otherwise create default from quantity
+    lineItems: job.specs?.lineItems ? job.specs.lineItems : (quantity > 0 ? [{
       id: 'main',
       description: job.title || 'Main Item',
       quantity: quantity,
@@ -290,7 +291,7 @@ function transformJob(job: any) {
       unitCost: 0,
       markupPercent: 0,
       unitPrice: revenue,
-    }] : []),
+    }] : [])),
   };
 }
 
@@ -374,6 +375,8 @@ export const createJob = async (req: Request, res: Response) => {
       isBradfordJob,
       bradfordPricing,
       quantity: inputQuantity,
+      bradfordCut,  // Bradford's cut for non-Bradford vendor jobs
+      jdSuppliesPaper,  // Paper source: true = vendor supplies, false = Bradford supplies
       ...rest
     } = req.body;
 
@@ -406,8 +409,10 @@ export const createJob = async (req: Request, res: Response) => {
     const rawSizeName = inputSizeName || specs?.finishedSize;
     const sizeName = rawSizeName ? normalizeSize(rawSizeName) : null;
 
-    // Determine paper source (default to BRADFORD)
-    const paperSource = inputPaperSource || 'BRADFORD';
+    // Determine paper source from jdSuppliesPaper flag
+    // jdSuppliesPaper = true means VENDOR supplies paper
+    // jdSuppliesPaper = false means BRADFORD supplies paper
+    const paperSource = jdSuppliesPaper === true ? 'VENDOR' : (inputPaperSource || 'BRADFORD');
 
     // Use sellPrice if provided, otherwise calculate from financials or line items
     const sellPrice = inputSellPrice || financials?.impactCustomerTotal || lineItemTotal;
@@ -468,6 +473,9 @@ export const createJob = async (req: Request, res: Response) => {
       ...(specs || {}),
       isStandardSize,
       isBradfordJob: !!isBradfordJob,
+      bradfordCut: bradfordCut || null,  // Bradford's cut for non-Bradford vendor jobs
+      jdSuppliesPaper: jdSuppliesPaper === true,  // true = Vendor supplies paper, false = Bradford supplies
+      lineItems: lineItems || null,  // Preserve user-entered line items (unitCost, markupPercent, unitPrice)
     };
 
     const job = await prisma.job.create({
@@ -567,6 +575,43 @@ export const createJob = async (req: Request, res: Response) => {
       });
     } else if (routingType === 'BRADFORD_JD') {
       console.log(`Skipping PO creation for job ${jobNo}: ${poValidation.reason}`);
+    }
+
+    // Auto-create vendor PO for non-Bradford vendors
+    // If a vendor is selected and it's NOT a Bradford partner job, create a PO
+    if (vendorId && !isBradfordJob) {
+      const vendor = await prisma.vendor.findUnique({
+        where: { id: vendorId },
+      });
+
+      // Check if vendor exists and is NOT a Bradford partner
+      if (vendor && !vendor.isPartner) {
+        const timestamp = Date.now();
+        const vendorTotalCost = lineItems?.reduce((sum: number, item: any) => {
+          return sum + ((parseInt(item.quantity) || 0) * (parseFloat(item.unitCost) || 0));
+        }, 0) || 0;
+
+        // Create PO: Impact Direct → Vendor
+        const vendorPO = await prisma.purchaseOrder.create({
+          data: {
+            id: crypto.randomUUID(),
+            jobId,
+            originCompanyId: 'impact-direct',
+            targetVendorId: vendorId,
+            poNumber: `PO-${jobNo}-IV-${timestamp}`,
+            description: `Impact to ${vendor.name} - ${title || 'Job'} x ${quantity}`,
+            buyCost: vendorTotalCost > 0 ? vendorTotalCost : null,
+            status: 'PENDING',
+            updatedAt: new Date(),
+          },
+        });
+
+        console.log(`📋 Auto-created Vendor PO for job ${jobNo}:`, {
+          vendorName: vendor.name,
+          vendorTotalCost,
+          poNumber: vendorPO.poNumber,
+        });
+      }
     }
 
     // Create ProfitSplit record for this job
@@ -672,7 +717,16 @@ export const updateJob = async (req: Request, res: Response) => {
     if (dueDate !== undefined) updateData.deliveryDate = dueDate ? new Date(dueDate) : null;
     if (customerId !== undefined) updateData.customerId = customerId;
     if (vendorId !== undefined) updateData.vendorId = vendorId;
-    if (specs !== undefined) updateData.specs = specs;
+
+    // Handle specs - merge lineItems into specs if either changed
+    if (specs !== undefined || lineItems !== undefined) {
+      const existingSpecs = (existingJob.specs as any) || {};
+      updateData.specs = {
+        ...existingSpecs,
+        ...(specs || {}),
+        lineItems: lineItems !== undefined ? lineItems : existingSpecs.lineItems,
+      };
+    }
 
     // Handle sizeName
     if (inputSizeName !== undefined) {
@@ -838,6 +892,69 @@ export const updateJob = async (req: Request, res: Response) => {
           ProfitSplit: true,
         },
       }) as any;
+    }
+
+    // ===== ARTWORK URL CHANGE DETECTION =====
+    // Check if artwork URL was just added to a job with "artwork to follow" flag
+    const existingSpecs = (existingJob.specs as any) || {};
+    const newSpecs = (updateData.specs as any) || existingSpecs;
+    const oldArtworkUrl = existingSpecs.artworkUrl || '';
+    const newArtworkUrl = newSpecs.artworkUrl || '';
+
+    if (!oldArtworkUrl && newArtworkUrl && existingSpecs.artworkToFollow) {
+      // Artwork was just added to a job that had "artwork to follow" checked
+      // Find ALL POs that were previously emailed to vendors
+      const emailedPOs = (job.PurchaseOrder || []).filter((po: any) => po.emailedTo);
+
+      if (emailedPOs.length > 0) {
+        console.log(`📎 Artwork URL added to job ${job.jobNo} - sending follow-up emails to ${emailedPOs.length} vendor(s)`);
+
+        // Prepare job data for PDF generation
+        const jobDataForPDF = {
+          id: job.id,
+          jobNo: job.jobNo,
+          number: job.jobNo,
+          title: job.title || '',
+          specs: newSpecs,
+          customer: job.Company ? {
+            name: job.Company.name,
+            email: job.Company.email || '',
+            phone: job.Company.phone || '',
+            address: job.Company.address || '',
+          } : { name: 'N/A', email: '', phone: '', address: '' },
+          vendor: job.Vendor ? {
+            name: job.Vendor.name,
+            email: job.Vendor.email || '',
+            phone: job.Vendor.phone || '',
+            address: [job.Vendor.streetAddress, job.Vendor.city, job.Vendor.state, job.Vendor.zip].filter(Boolean).join(', '),
+          } : { name: 'N/A', email: '', phone: '', address: '' },
+        };
+
+        // Send follow-up emails to all flagged POs
+        for (const po of emailedPOs) {
+          const vendorName = po.Vendor?.name || 'Vendor';
+          try {
+            const result = await sendArtworkFollowUpEmail(
+              po,
+              jobDataForPDF,
+              po.emailedTo!, // We know emailedTo exists because we filtered for it above
+              vendorName,
+              newArtworkUrl,
+              'brandon@impactdirectprinting.com'
+            );
+
+            if (result.success) {
+              // Log the activity
+              await logJobChange(id, 'ARTWORK_FOLLOWUP_SENT', 'artworkUrl', '', newArtworkUrl);
+              console.log(`✅ Artwork follow-up sent for PO ${po.poNumber} to ${po.emailedTo}`);
+            } else {
+              console.error(`❌ Failed to send artwork follow-up for PO ${po.poNumber}:`, result.error);
+            }
+          } catch (err) {
+            console.error(`❌ Error sending artwork follow-up for PO ${po.poNumber}:`, err);
+          }
+        }
+      }
     }
 
     // Update ProfitSplit record if sell price or pricing-related fields changed
@@ -1548,6 +1665,9 @@ export const getJobPOs = async (req: Request, res: Response) => {
       issuedAt: po.issuedAt,
       paidAt: po.paidAt,
       createdAt: po.createdAt,
+      // Email tracking
+      emailedAt: po.emailedAt,
+      emailedTo: po.emailedTo,
       vendor: po.Vendor ? {
         id: po.Vendor.id,
         name: po.Vendor.name,

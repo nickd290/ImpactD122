@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Toaster } from 'sonner';
+import { Toaster, toast } from 'sonner';
 import { jobsApi, entitiesApi } from './lib/api';
 import { SpecParser } from './components/SpecParser';
 import { POUploader } from './components/POUploader';
@@ -20,7 +20,9 @@ import { AccountingDashboardView } from './components/AccountingDashboardView';
 import { JobFormModal } from './components/JobFormModal';
 import { JobExcelImporter } from './components/JobExcelImporter';
 import { JobImportPreviewModal } from './components/JobImportPreviewModal';
+import { NewJobChoiceModal } from './components/NewJobChoiceModal';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { AppLoadingSkeleton } from './components/LoadingSkeleton';
 
 type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING';
 
@@ -50,7 +52,9 @@ function App() {
   const [showEmailDraft, setShowEmailDraft] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [showJobFormModal, setShowJobFormModal] = useState(false);
+  const [showNewJobChoiceModal, setShowNewJobChoiceModal] = useState(false);
   const [parsedJobData, setParsedJobData] = useState<any>(null);
+  const [jobFormInitialData, setJobFormInitialData] = useState<any>(null);
 
   // Excel Import Modals
   const [showExcelImporter, setShowExcelImporter] = useState(false);
@@ -105,6 +109,19 @@ function App() {
   };
 
   const handleCreateJob = () => {
+    setShowNewJobChoiceModal(true);
+  };
+
+  // Choice modal handlers
+  const handleChooseUploadAndParse = () => {
+    setShowNewJobChoiceModal(false);
+    setShowPOUploader(true);
+  };
+
+  const handleChooseManualEntry = () => {
+    setShowNewJobChoiceModal(false);
+    setJobFormInitialData(null); // Clear any previous data
+    setEditingJob(null);
     setShowJobFormModal(true);
   };
 
@@ -113,9 +130,10 @@ function App() {
       const newJob = await jobsApi.create(jobData);
       setJobs([newJob, ...jobs]);
       setSelectedJob(newJob);
+      toast.success('Job created successfully');
     } catch (error) {
       console.error('Failed to create job:', error);
-      alert('Failed to create job. Please try again.');
+      toast.error('Failed to create job. Please try again.');
     }
   };
 
@@ -133,15 +151,106 @@ function App() {
 
   // AI Feature Handlers
   const handleSpecsParsed = (parsedData: any) => {
-    setParsedJobData(parsedData);
+    // Transform parsed data to form format for JobFormModal
+    const formData = transformParsedDataToFormData(parsedData);
+    setJobFormInitialData(formData);
+    setEditingJob(null);
     setShowSpecParser(false);
-    setShowReviewModal(true);
+    setShowJobFormModal(true);
   };
 
   const handlePOParsed = (parsedData: any) => {
-    setParsedJobData(parsedData);
+    // Transform parsed data to form format for JobFormModal
+    const formData = transformParsedDataToFormData(parsedData);
+    setJobFormInitialData(formData);
+    setEditingJob(null);
     setShowPOUploader(false);
-    setShowReviewModal(true);
+    setShowJobFormModal(true);
+  };
+
+  // Helper to transform parsed AI data to form-compatible format
+  const transformParsedDataToFormData = (parsedData: any) => {
+    // Find Bradford vendor if size matches Bradford sizes
+    const bradfordSizes = ['6 x 9', '6 x 11', '7 1/4 x 16 3/8', '8 1/2 x 17 1/2', '9 3/4 x 22 1/8', '9 3/4 x 26'];
+    const finishedSize = parsedData.specs?.finishedSize || '';
+    const isBradfordSize = bradfordSizes.some(size =>
+      finishedSize.toLowerCase().replace(/\s+/g, '') === size.toLowerCase().replace(/\s+/g, '')
+    );
+
+    // Find Bradford vendor
+    const bradfordVendor = isBradfordSize
+      ? vendors.find(v => v.isPartner === true || v.name?.toLowerCase().includes('bradford'))
+      : null;
+
+    return {
+      title: parsedData.title || 'New Print Job',
+      customerId: '', // User must select
+      vendorId: bradfordVendor?.id || '',
+      customerPONumber: parsedData.customerPONumber || '',
+      dueDate: parsedData.dueDate || '',
+      status: 'ACTIVE',
+      specs: {
+        productType: parsedData.specs?.productType || 'OTHER',
+        paperType: parsedData.specs?.paperType || '',
+        paperWeight: parsedData.specs?.paperWeight || '',
+        colors: parsedData.specs?.colors || '',
+        coating: parsedData.specs?.coating || '',
+        finishing: parsedData.specs?.finishing || '',
+        flatSize: parsedData.specs?.flatSize || '',
+        finishedSize: finishedSize,
+        pageCount: parsedData.specs?.pageCount || '',
+        bindingStyle: parsedData.specs?.bindingStyle || '',
+        coverType: parsedData.specs?.coverType || '',
+        coverPaperType: parsedData.specs?.coverPaperType || '',
+        // Additional print specs
+        folds: parsedData.specs?.folds || '',
+        perforations: parsedData.specs?.perforations || '',
+        dieCut: parsedData.specs?.dieCut || '',
+        bleed: parsedData.specs?.bleed || '',
+        proofType: parsedData.specs?.proofType || '',
+        // Ship-to information
+        shipToName: parsedData.shipToName || '',
+        shipToAddress: parsedData.shipToAddress || '',
+        shipVia: parsedData.shipVia || '',
+        // All parsed notes/instructions - CRITICAL for vendor PO
+        specialInstructions: parsedData.specs?.specialInstructions || parsedData.specialInstructions || '',
+        artworkInstructions: parsedData.artworkInstructions || '',
+        packingInstructions: parsedData.packingInstructions || '',
+        labelingInstructions: parsedData.labelingInstructions || '',
+        additionalNotes: parsedData.notes || '',
+        artworkUrl: '',
+        // ===== PHASE 15: Enhanced Universal PO Parsing =====
+        // Multiple Product Versions
+        versions: parsedData.versions || [],
+        // Language breakdown
+        languageBreakdown: parsedData.languageBreakdown || [],
+        totalVersionQuantity: parsedData.totalVersionQuantity || 0,
+        // Timeline/Milestones
+        timeline: parsedData.timeline || {},
+        // Mailing details
+        mailing: parsedData.mailing || {},
+        // Responsibility matrix
+        responsibilities: parsedData.responsibilities || { vendorTasks: [], customerTasks: [] },
+        // Special handling
+        specialHandling: parsedData.specialHandling || {},
+        // Payment terms
+        paymentTerms: parsedData.paymentTerms || '',
+        fob: parsedData.fob || '',
+        accountNumber: parsedData.accountNumber || '',
+      },
+      lineItems: parsedData.lineItems?.length > 0
+        ? parsedData.lineItems.map((item: any) => ({
+            description: item.description || '',
+            quantity: item.quantity || 0,
+            unitCost: item.unitCost || 0,
+            markupPercent: item.markupPercent || 20,
+            unitPrice: item.unitPrice || item.pricePerM || 0,
+          }))
+        : [{ description: '', quantity: 0, unitCost: 0, markupPercent: 20, unitPrice: 0 }],
+      notes: parsedData.notes || '',
+      // Flag that this is from parsed data (for potential Bradford auto-detection)
+      _isParsedData: true,
+    };
   };
 
   const handleCreateJobFromParsed = async (jobData: any) => {
@@ -179,13 +288,13 @@ function App() {
     try {
       setIsSaving(true);
       const result = await jobsApi.importBatch(jobs, entityMappings);
-      await loadData(); // Refresh all data
+      await loadData(); // Refresh all data - needed for batch import
       setShowImportPreview(false);
       setParsedExcelJobs([]);
-      alert(`Successfully imported ${result.created} jobs!`);
+      toast.success(`Successfully imported ${result.created} jobs!`);
     } catch (error) {
       console.error('Failed to import jobs:', error);
-      alert('Failed to import jobs. Please try again.');
+      toast.error('Failed to import jobs. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -207,10 +316,10 @@ function App() {
       }
       setShowJobFormModal(false);
       setEditingJob(null);
-      await loadData(); // Refresh to get complete data with relations
+      toast.success('Job updated successfully');
     } catch (error) {
       console.error('Failed to update job:', error);
-      alert('Failed to update job. Please try again.');
+      toast.error('Failed to update job. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -241,10 +350,10 @@ function App() {
       }
 
       setShowEntityCreateModal(false);
-      await loadData(); // Refresh data
+      toast.success(`${entityCreateType === 'customer' ? 'Customer' : 'Vendor'} created successfully`);
     } catch (error) {
       console.error('Failed to create entity:', error);
-      alert('Failed to create entity. Please try again.');
+      toast.error('Failed to create entity. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -268,10 +377,10 @@ function App() {
 
       setShowEntityEditModal(false);
       setEntityToEdit(null);
-      await loadData(); // Refresh data
+      toast.success(`${entityToEdit?.type === 'CUSTOMER' ? 'Customer' : 'Vendor'} updated successfully`);
     } catch (error) {
       console.error('Failed to update entity:', error);
-      alert('Failed to update entity. Please try again.');
+      toast.error('Failed to update entity. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -305,9 +414,10 @@ function App() {
 
       setShowDeleteModal(false);
       setDeleteTarget(null);
+      toast.success(`${deleteTarget.type.charAt(0).toUpperCase() + deleteTarget.type.slice(1)} deleted successfully`);
     } catch (error) {
       console.error('Failed to delete:', error);
-      alert('Failed to delete. This item may be in use by other records.');
+      toast.error('Failed to delete. This item may be in use by other records.');
     } finally {
       setIsDeleting(false);
     }
@@ -322,14 +432,7 @@ function App() {
   });
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-impact-red mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
-        </div>
-      </div>
-    );
+    return <AppLoadingSkeleton />;
   }
 
   return (
@@ -343,7 +446,6 @@ function App() {
         vendorsCount={vendors.length}
         partnerJobsCount={jobs.filter(j => j.vendor?.isPartner).length}
         onShowSpecParser={() => setShowSpecParser(true)}
-        onShowPOUploader={() => setShowPOUploader(true)}
         onCreateJob={handleCreateJob}
         onShowSearch={() => setShowSearchModal(true)}
       />
@@ -479,12 +581,21 @@ function App() {
         />
       )}
 
+      {/* New Job Choice Modal */}
+      <NewJobChoiceModal
+        isOpen={showNewJobChoiceModal}
+        onClose={() => setShowNewJobChoiceModal(false)}
+        onChooseUpload={handleChooseUploadAndParse}
+        onChooseManual={handleChooseManualEntry}
+      />
+
       {/* Job Form Modal (Create and Edit) */}
       <JobFormModal
         isOpen={showJobFormModal}
         onClose={() => {
           setShowJobFormModal(false);
           setEditingJob(null);
+          setJobFormInitialData(null);
         }}
         onSubmit={async (jobData) => {
           if (editingJob) {
@@ -492,11 +603,12 @@ function App() {
           } else {
             await handleSubmitJobForm(jobData);
             setShowJobFormModal(false);
+            setJobFormInitialData(null);
           }
         }}
         customers={customers}
         vendors={vendors}
-        initialData={editingJob}
+        initialData={editingJob || jobFormInitialData}
       />
 
       {/* CRUD Modals */}

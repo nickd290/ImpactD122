@@ -4,11 +4,15 @@ import { generateQuotePDF, generateInvoicePDF, generateVendorPOPDF, generatePOPD
 
 // Helper to transform job to PDF-compatible format
 function transformJobForPDF(job: any) {
-  // Calculate revenue from customerTotal or impactCustomerTotal
-  const revenue = job.impactCustomerTotal ? Number(job.impactCustomerTotal) :
+  // Calculate revenue from sellPrice or customerTotal
+  const revenue = job.sellPrice ? Number(job.sellPrice) :
+                  job.impactCustomerTotal ? Number(job.impactCustomerTotal) :
                   job.customerTotal ? Number(job.customerTotal) : 0;
   const quantity = job.quantity || 0;
   const unitPrice = quantity > 0 ? (revenue / quantity) : 0;
+
+  // Get stored lineItems from specs if available
+  const storedLineItems = job.specs?.lineItems;
 
   return {
     id: job.id,
@@ -40,13 +44,13 @@ function transformJobForPDF(job: any) {
     } : { name: 'N/A', email: '', phone: '', address: '', contactPerson: '' },
     // Specs from JSON field
     specs: job.specs || {},
-    // Create synthetic lineItems from job-level data
-    lineItems: quantity > 0 ? [{
+    // Use stored lineItems from specs, or create from job-level data
+    lineItems: storedLineItems || (quantity > 0 ? [{
       description: job.title || 'Print Job',
       quantity: quantity,
-      unitCost: job.paperCostCPM ? Number(job.paperCostCPM) : 0,
+      unitCost: 0,
       unitPrice: unitPrice,
-    }] : [],
+    }] : []),
     // Financials
     financials: {
       impactCustomerTotal: revenue,
@@ -281,7 +285,31 @@ export const generatePurchaseOrderPDF = async (req: Request, res: Response) => {
         pageCount: jobSpecs.pageCount || '',
         folds: jobSpecs.folds || '',
         perforations: jobSpecs.perforations || '',
+        bleed: jobSpecs.bleed || '',
+        proofType: jobSpecs.proofType || '',
+        dieCut: jobSpecs.dieCut || '',
+        // Ship-to information
+        shipToName: jobSpecs.shipToName || '',
+        shipToAddress: jobSpecs.shipToAddress || '',
+        shipVia: jobSpecs.shipVia || '',
+        // All parsed notes/instructions
         specialInstructions: jobSpecs.specialInstructions || '',
+        artworkInstructions: jobSpecs.artworkInstructions || '',
+        packingInstructions: jobSpecs.packingInstructions || '',
+        labelingInstructions: jobSpecs.labelingInstructions || '',
+        additionalNotes: jobSpecs.additionalNotes || '',
+        artworkUrl: jobSpecs.artworkUrl || '',
+        // ===== PHASE 15: Enhanced Universal PO Parsing =====
+        versions: jobSpecs.versions || [],
+        languageBreakdown: jobSpecs.languageBreakdown || [],
+        totalVersionQuantity: jobSpecs.totalVersionQuantity || 0,
+        timeline: jobSpecs.timeline || {},
+        mailing: jobSpecs.mailing || {},
+        responsibilities: jobSpecs.responsibilities || { vendorTasks: [], customerTasks: [] },
+        specialHandling: jobSpecs.specialHandling || {},
+        paymentTerms: jobSpecs.paymentTerms || '',
+        fob: jobSpecs.fob || '',
+        accountNumber: jobSpecs.accountNumber || '',
       },
 
       // Vendor info (target of the PO)
@@ -303,7 +331,29 @@ export const generatePurchaseOrderPDF = async (req: Request, res: Response) => {
       mfgCost: po.mfgCost ? Number(po.mfgCost) : undefined,
       printCPM: po.printCPM ? Number(po.printCPM) : undefined,
       paperCPM: po.paperCPM ? Number(po.paperCPM) : undefined,
+
+      // Artwork to follow flag (from Job specs)
+      artworkToFollow: jobSpecs.artworkToFollow || false,
+
+      // Line items from job specs (for cost display on PO)
+      lineItems: jobSpecs.lineItems || [{
+        description: po.Job?.title || 'Print Services',
+        quantity: po.Job?.quantity || 0,
+        unitCost: po.buyCost ? Number(po.buyCost) / (po.Job?.quantity || 1) : 0,
+        unitPrice: po.buyCost ? Number(po.buyCost) / (po.Job?.quantity || 1) : 0,
+      }],
     };
+
+    // Debug logging for Phase 15 fields
+    console.log('📄 PDF Generation - Phase 15 Data:', {
+      versionsCount: poData.specs?.versions?.length || 0,
+      versions: poData.specs?.versions,
+      languageBreakdownCount: poData.specs?.languageBreakdown?.length || 0,
+      mailingIsDirectMail: poData.specs?.mailing?.isDirectMail,
+      timelineMailDate: poData.specs?.timeline?.mailDate,
+      responsibilitiesVendorCount: poData.specs?.responsibilities?.vendorTasks?.length || 0,
+      specialHandlingRequired: poData.specs?.specialHandling?.handSortRequired,
+    });
 
     const pdfBuffer = generatePOPDF(poData);
 
