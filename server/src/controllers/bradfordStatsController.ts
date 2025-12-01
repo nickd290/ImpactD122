@@ -352,6 +352,7 @@ export const updateBradfordPO = async (req: Request, res: Response) => {
           buyCost: 0,
           paperCost: 0,
           paperMarkup: 0,
+          createdAt: new Date(),
           updatedAt: new Date(),
         },
       });
