@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import crypto from 'crypto';
 import { prisma } from '../utils/prisma';
 import { generateQuotePDF, generateInvoicePDF, generateVendorPOPDF, generatePOPDF } from '../services/pdfService';
 
