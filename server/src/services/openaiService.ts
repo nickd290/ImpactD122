@@ -1,5 +1,4 @@
 import OpenAI from 'openai';
-import { pdf } from 'pdf-to-img';
 
 // Lazy-initialize OpenAI Client to ensure env vars are loaded
 let openai: OpenAI | null = null;
@@ -12,8 +11,11 @@ function getOpenAIClient(): OpenAI {
 }
 
 // Helper to convert PDF buffer to base64 images
+// Uses dynamic import for ESM-only pdf-to-img package
 async function convertPdfToImages(pdfBuffer: Buffer): Promise<string[]> {
   const images: string[] = [];
+  // Dynamic import for ESM-only module
+  const { pdf } = await import('pdf-to-img');
   const document = await pdf(pdfBuffer, { scale: 2 });
 
   for await (const image of document) {
