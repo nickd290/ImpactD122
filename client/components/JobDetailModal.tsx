@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   X, Calendar, User, Package, FileText, Edit2, Mail, Printer, Receipt,
-  DollarSign, Plus, Trash2, Building2, Check, Save, Download, AlertTriangle, Send, ChevronDown
+  DollarSign, Plus, Trash2, Building2, Check, Save, Download, AlertTriangle, Send, ChevronDown, Link, ExternalLink
 } from 'lucide-react';
 import { EditableField } from './EditableField';
-import { pdfApi } from '../lib/api';
+import { pdfApi, emailApi } from '../lib/api';
 import { SendEmailModal } from './SendEmailModal';
 
 interface Job {
@@ -20,6 +20,7 @@ interface Job {
   dueDate?: string;
   customerPONumber?: string;
   bradfordRefNumber?: string;
+  bradfordPaperLbs?: number | null;
   description?: string;
   // Payment tracking
   customerPaymentAmount?: number;
@@ -158,6 +159,8 @@ interface Job {
   invoiceEmailedAt?: string;
   invoiceEmailedTo?: string;
   invoiceEmailedCount?: number;
+  artworkEmailedAt?: string;
+  artworkEmailedTo?: string;
 }
 
 interface JobDetailModalProps {
@@ -223,6 +226,11 @@ export function JobDetailModal({
   const [showEmailDropdown, setShowEmailDropdown] = useState(false);
   const [emailType, setEmailType] = useState<'invoice' | 'po' | null>(null);
   const [selectedPOForEmail, setSelectedPOForEmail] = useState<{id: string; poNumber: string; vendorName: string; vendorEmail?: string} | null>(null);
+
+  // Artwork notification state
+  const [artworkUrl, setArtworkUrl] = useState('');
+  const [showArtworkConfirmModal, setShowArtworkConfirmModal] = useState(false);
+  const [isSendingArtworkNotification, setIsSendingArtworkNotification] = useState(false);
 
   // Fetch vendors when edit mode is enabled OR when adding PO
   useEffect(() => {
@@ -843,10 +851,10 @@ export function JobDetailModal({
               emptyText="—"
             />
             <EditableField
-              label="Paper Weight (lbs)"
-              value={getSpecValue('paperLbs')}
+              label="Bradford Paper (lbs)"
+              value={job.bradfordPaperLbs ?? getSpecValue('paperLbs') ?? ''}
               isEditing={isEditMode}
-              onChange={(val) => updateEditedSpec('paperLbs', parseFloat(val) || 0)}
+              onChange={(val) => updateEditedField('bradfordPaperLbs', parseFloat(val) || null)}
               type="number"
               emptyText="—"
             />
@@ -986,6 +994,73 @@ export function JobDetailModal({
             Paper Markup: {formatCurrency(paperMarkup)}
           </p>
         )}
+      </div>
+
+      {/* Artwork Link Section */}
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Link className="w-4 h-4 text-gray-400" />
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Artwork Link</h3>
+          </div>
+          {job.artworkEmailedAt && (
+            <span className="text-xs text-green-600 flex items-center gap-1">
+              <Check className="w-3 h-3" />
+              Sent {new Date(job.artworkEmailedAt).toLocaleDateString()}
+            </span>
+          )}
+        </div>
+        <div className="p-4">
+          {/* Show existing artwork URL if present */}
+          {job.specs?.artworkUrl && (
+            <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-xs text-blue-600 font-medium mb-1">Current Artwork Link:</p>
+              <a
+                href={job.specs.artworkUrl as string}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-blue-700 hover:underline flex items-center gap-1 break-all"
+              >
+                {job.specs.artworkUrl as string}
+                <ExternalLink className="w-3 h-3 flex-shrink-0" />
+              </a>
+            </div>
+          )}
+
+          {/* Input and send button */}
+          <div className="flex gap-2">
+            <input
+              type="url"
+              placeholder="Paste artwork link here..."
+              value={artworkUrl}
+              onChange={(e) => setArtworkUrl(e.target.value)}
+              className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+            <button
+              onClick={() => setShowArtworkConfirmModal(true)}
+              disabled={!artworkUrl.trim() || !job.vendor?.email || isSendingArtworkNotification}
+              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <Send className="w-4 h-4" />
+              Send
+            </button>
+          </div>
+
+          {/* Warning if no vendor email */}
+          {!job.vendor?.email && (
+            <p className="mt-2 text-xs text-amber-600 flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" />
+              No vendor email - assign a vendor with email to send notifications
+            </p>
+          )}
+
+          {/* Info about who will receive */}
+          {job.vendor?.email && (
+            <p className="mt-2 text-xs text-gray-500">
+              Will send to: {job.vendor.name} ({job.vendor.email}) + internal team
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Paper Details (for standard sizes with snapshotted data) */}
@@ -2331,6 +2406,88 @@ export function JobDetailModal({
             onRefresh?.();
           }}
         />
+      )}
+
+      {/* Artwork Notification Confirmation Modal */}
+      {showArtworkConfirmModal && job && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[80]">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">Send Artwork Notification</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <p className="text-sm text-gray-600 mb-2">Artwork link to send:</p>
+                <p className="text-sm font-medium text-blue-600 break-all bg-blue-50 p-2 rounded">
+                  {artworkUrl}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600 mb-2">This email will be sent to:</p>
+                <ul className="text-sm space-y-1">
+                  <li className="flex items-center gap-2">
+                    <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                    <strong>{job.vendor?.name}</strong> ({job.vendor?.email})
+                  </li>
+                  <li className="text-gray-500 ml-4">CC:</li>
+                  <li className="flex items-center gap-2 ml-4">
+                    <span className="w-2 h-2 bg-gray-400 rounded-full"></span>
+                    brandon@impactdirectprinting.com
+                  </li>
+                  <li className="flex items-center gap-2 ml-4">
+                    <span className="w-2 h-2 bg-gray-400 rounded-full"></span>
+                    nick@jdgraphic.com
+                  </li>
+                  <li className="flex items-center gap-2 ml-4">
+                    <span className="w-2 h-2 bg-gray-400 rounded-full"></span>
+                    devin@jdgraphic.com
+                  </li>
+                </ul>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => setShowArtworkConfirmModal(false)}
+                disabled={isSendingArtworkNotification}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  setIsSendingArtworkNotification(true);
+                  try {
+                    await emailApi.sendArtworkNotification(job.id, artworkUrl);
+                    setShowArtworkConfirmModal(false);
+                    setArtworkUrl('');
+                    onRefresh?.();
+                  } catch (error: any) {
+                    alert(error.message || 'Failed to send artwork notification');
+                  } finally {
+                    setIsSendingArtworkNotification(false);
+                  }
+                }}
+                disabled={isSendingArtworkNotification}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-blue-400 flex items-center gap-2"
+              >
+                {isSendingArtworkNotification ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" />
+                    Send Notification
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

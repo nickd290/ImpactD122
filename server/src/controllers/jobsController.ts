@@ -378,6 +378,7 @@ export const createJob = async (req: Request, res: Response) => {
       bradfordCut,  // Bradford's cut for non-Bradford vendor jobs
       jdSuppliesPaper,  // Paper source: true = vendor supplies, false = Bradford supplies
       bradfordRefNumber,  // Bradford reference number (for all jobs)
+      bradfordPaperLbs,  // Bradford paper weight in lbs
       ...rest
     } = req.body;
 
@@ -492,6 +493,7 @@ export const createJob = async (req: Request, res: Response) => {
         sellPrice,
         sizeName,
         paperSource,
+        bradfordPaperLbs: bradfordPaperLbs ? parseFloat(bradfordPaperLbs) : null,
         customerPONumber: customerPONumber || null,
         partnerPONumber: bradfordRefNumber || null,
         deliveryDate: dueDate ? new Date(dueDate) : null,
@@ -682,6 +684,7 @@ export const updateJob = async (req: Request, res: Response) => {
       sizeName: inputSizeName,
       paperSource: inputPaperSource,
       bradfordRefNumber,  // Bradford reference number (for all jobs)
+      bradfordPaperLbs: inputBradfordPaperLbs,  // Bradford paper weight in lbs
       ...rest
     } = req.body;
 
@@ -742,6 +745,11 @@ export const updateJob = async (req: Request, res: Response) => {
       updateData.paperSource = inputPaperSource;
     }
 
+    // Handle bradfordPaperLbs
+    if (inputBradfordPaperLbs !== undefined) {
+      updateData.bradfordPaperLbs = inputBradfordPaperLbs ? parseFloat(inputBradfordPaperLbs) : null;
+    }
+
     // Handle sellPrice directly
     if (inputSellPrice !== undefined) {
       updateData.sellPrice = inputSellPrice;
@@ -796,6 +804,9 @@ export const updateJob = async (req: Request, res: Response) => {
     }
     if (inputPaperSource !== undefined && inputPaperSource !== existingJob.paperSource) {
       activityPromises.push(logJobChange(id, 'JOB_UPDATED', 'paperSource', existingJob.paperSource, inputPaperSource));
+    }
+    if (inputBradfordPaperLbs !== undefined && Number(inputBradfordPaperLbs) !== Number(existingJob.bradfordPaperLbs)) {
+      activityPromises.push(logJobChange(id, 'JOB_UPDATED', 'bradfordPaperLbs', existingJob.bradfordPaperLbs, inputBradfordPaperLbs));
     }
 
     // Execute all activity logs in parallel

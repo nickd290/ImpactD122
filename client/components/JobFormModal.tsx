@@ -64,7 +64,7 @@ export function JobFormModal({
         bindingStyle: initialData?.specs?.bindingStyle || '',
         coverType: initialData?.specs?.coverType || 'SELF',
         coverPaperType: initialData?.specs?.coverPaperType || '',
-        paperLbs: initialData?.specs?.paperLbs || '',
+        paperLbs: initialData?.bradfordPaperLbs || initialData?.specs?.paperLbs || '',
         // Additional print specs
         folds: initialData?.specs?.folds || '',
         perforations: initialData?.specs?.perforations || '',
@@ -136,7 +136,7 @@ export function JobFormModal({
     bindingStyle: initialData?.specs?.bindingStyle || '',
     coverType: initialData?.specs?.coverType || 'SELF',
     coverPaperType: initialData?.specs?.coverPaperType || '',
-    paperLbs: initialData?.specs?.paperLbs || '',
+    paperLbs: initialData?.bradfordPaperLbs || initialData?.specs?.paperLbs || '',
     // Additional print specs
     folds: initialData?.specs?.folds || '',
     perforations: initialData?.specs?.perforations || '',
@@ -396,6 +396,7 @@ export function JobFormModal({
       lineItems: validLineItems,
       financials: financialsData,
       bradfordCut: !isBradfordVendor && bradfordCut > 0 ? bradfordCut : null,
+      bradfordPaperLbs: specs.paperLbs ? parseFloat(specs.paperLbs as any) : null,
     });
     onClose();
   };

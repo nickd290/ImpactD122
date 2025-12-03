@@ -130,6 +130,11 @@ export const emailApi = {
       method: 'POST',
       body: JSON.stringify({ recipientEmail }),
     }),
+  sendArtworkNotification: (jobId: string, artworkUrl: string) =>
+    apiFetch(`/email/artwork/${jobId}`, {
+      method: 'POST',
+      body: JSON.stringify({ artworkUrl }),
+    }),
 };
 
 // Financials API

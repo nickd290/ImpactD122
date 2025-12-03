@@ -7,9 +7,10 @@ export const getAllEntities = async (req: Request, res: Response) => {
     const { type } = req.query;
 
     if (type === 'VENDOR') {
-      // Get vendors
+      // Get vendors with contacts
       const vendors = await prisma.vendor.findMany({
         where: { isActive: true },
+        include: { contacts: true },
         orderBy: { name: 'asc' },
       });
       // Transform to match expected Entity shape
@@ -20,10 +21,16 @@ export const getAllEntities = async (req: Request, res: Response) => {
         email: v.email || '',
         phone: v.phone || '',
         address: `${v.streetAddress || ''}, ${v.city || ''}, ${v.state || ''} ${v.zip || ''}`.trim(),
-        contactPerson: '',
+        contactPerson: v.contacts.find(c => c.isPrimary)?.name || v.contacts[0]?.name || '',
         isPartner: v.vendorCode === 'BRADFORD' || v.name?.toLowerCase().includes('bradford'),
         notes: '',
-        contacts: [],
+        contacts: v.contacts.map(c => ({
+          id: c.id,
+          name: c.name,
+          email: c.email,
+          title: c.title || '',
+          isPrimary: c.isPrimary,
+        })),
         createdAt: v.createdAt,
         updatedAt: v.updatedAt,
       }));
@@ -75,6 +82,7 @@ export const getAllEntities = async (req: Request, res: Response) => {
         }),
         prisma.vendor.findMany({
           where: { isActive: true },
+          include: { contacts: true },
           orderBy: { name: 'asc' },
         }),
       ]);
@@ -107,10 +115,16 @@ export const getAllEntities = async (req: Request, res: Response) => {
         email: v.email || '',
         phone: v.phone || '',
         address: `${v.streetAddress || ''}, ${v.city || ''}, ${v.state || ''} ${v.zip || ''}`.trim(),
-        contactPerson: '',
+        contactPerson: v.contacts?.find(c => c.isPrimary)?.name || v.contacts?.[0]?.name || '',
         isPartner: v.vendorCode === 'BRADFORD' || v.name?.toLowerCase().includes('bradford'),
         notes: '',
-        contacts: [],
+        contacts: v.contacts?.map(c => ({
+          id: c.id,
+          name: c.name,
+          email: c.email,
+          title: c.title || '',
+          isPrimary: c.isPrimary,
+        })) || [],
         createdAt: v.createdAt,
         updatedAt: v.updatedAt,
       }));
@@ -160,6 +174,7 @@ export const getEntity = async (req: Request, res: Response) => {
     // Try vendor
     const vendor = await prisma.vendor.findUnique({
       where: { id },
+      include: { contacts: true },
     });
 
     if (vendor) {
@@ -170,10 +185,16 @@ export const getEntity = async (req: Request, res: Response) => {
         email: vendor.email || '',
         phone: vendor.phone || '',
         address: `${vendor.streetAddress || ''}, ${vendor.city || ''}, ${vendor.state || ''} ${vendor.zip || ''}`.trim(),
-        contactPerson: '',
+        contactPerson: vendor.contacts?.find(c => c.isPrimary)?.name || vendor.contacts?.[0]?.name || '',
         isPartner: vendor.vendorCode === 'BRADFORD' || vendor.name.toLowerCase().includes('bradford'),
         notes: '',
-        contacts: [],
+        contacts: vendor.contacts?.map(c => ({
+          id: c.id,
+          name: c.name,
+          email: c.email,
+          title: c.title || '',
+          isPrimary: c.isPrimary,
+        })) || [],
         createdAt: vendor.createdAt,
         updatedAt: vendor.updatedAt,
       });
@@ -200,7 +221,16 @@ export const createEntity = async (req: Request, res: Response) => {
           phone: phone || null,
           streetAddress: address || null,
           updatedAt: new Date(),
+          contacts: contacts?.length ? {
+            create: contacts.map((c: any) => ({
+              name: c.name,
+              email: c.email,
+              title: c.title || null,
+              isPrimary: c.isPrimary || false,
+            })),
+          } : undefined,
         },
+        include: { contacts: true },
       });
 
       return res.status(201).json({
@@ -210,10 +240,16 @@ export const createEntity = async (req: Request, res: Response) => {
         email: vendor.email || '',
         phone: vendor.phone || '',
         address: vendor.streetAddress || '',
-        contactPerson: '',
+        contactPerson: vendor.contacts?.find(c => c.isPrimary)?.name || vendor.contacts?.[0]?.name || '',
         isPartner: false,
         notes: '',
-        contacts: [],
+        contacts: vendor.contacts?.map(c => ({
+          id: c.id,
+          name: c.name,
+          email: c.email,
+          title: c.title || '',
+          isPrimary: c.isPrimary,
+        })) || [],
         createdAt: vendor.createdAt,
         updatedAt: vendor.updatedAt,
       });
@@ -278,7 +314,8 @@ export const updateEntity = async (req: Request, res: Response) => {
     // Check if it's a vendor
     const existingVendor = await prisma.vendor.findUnique({ where: { id } });
     if (existingVendor) {
-      const vendor = await prisma.vendor.update({
+      // Update vendor data
+      await prisma.vendor.update({
         where: { id },
         data: {
           name,
@@ -289,19 +326,48 @@ export const updateEntity = async (req: Request, res: Response) => {
         },
       });
 
+      // Update vendor contacts if provided
+      if (contacts) {
+        // Delete existing contacts and recreate
+        await prisma.vendorContact.deleteMany({ where: { vendorId: id } });
+        if (contacts.length > 0) {
+          await prisma.vendorContact.createMany({
+            data: contacts.map((c: any) => ({
+              vendorId: id,
+              name: c.name,
+              email: c.email,
+              title: c.title || null,
+              isPrimary: c.isPrimary || false,
+            })),
+          });
+        }
+      }
+
+      // Fetch updated vendor with contacts
+      const updatedVendor = await prisma.vendor.findUnique({
+        where: { id },
+        include: { contacts: true },
+      });
+
       return res.json({
-        id: vendor.id,
-        name: vendor.name,
+        id: updatedVendor!.id,
+        name: updatedVendor!.name,
         type: 'VENDOR',
-        email: vendor.email || '',
-        phone: vendor.phone || '',
-        address: vendor.streetAddress || '',
-        contactPerson: '',
-        isPartner: vendor.vendorCode === 'BRADFORD' || vendor.name.toLowerCase().includes('bradford'),
+        email: updatedVendor!.email || '',
+        phone: updatedVendor!.phone || '',
+        address: updatedVendor!.streetAddress || '',
+        contactPerson: updatedVendor!.contacts?.find(c => c.isPrimary)?.name || updatedVendor!.contacts?.[0]?.name || '',
+        isPartner: updatedVendor!.vendorCode === 'BRADFORD' || updatedVendor!.name.toLowerCase().includes('bradford'),
         notes: '',
-        contacts: [],
-        createdAt: vendor.createdAt,
-        updatedAt: vendor.updatedAt,
+        contacts: updatedVendor!.contacts?.map(c => ({
+          id: c.id,
+          name: c.name,
+          email: c.email,
+          title: c.title || '',
+          isPrimary: c.isPrimary,
+        })) || [],
+        createdAt: updatedVendor!.createdAt,
+        updatedAt: updatedVendor!.updatedAt,
       });
     }
 

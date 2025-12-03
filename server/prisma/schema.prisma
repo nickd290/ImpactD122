@@ -173,6 +173,8 @@ model Job {
   invoiceEmailedAt          DateTime?        // Last time invoice was emailed to customer
   invoiceEmailedTo          String?          // Email address invoice was sent to
   invoiceEmailedCount       Int              @default(0)  // How many times invoice was emailed
+  artworkEmailedAt          DateTime?        // Last time artwork notification was emailed
+  artworkEmailedTo          String?          // Email address artwork notification was sent to
 
   requiresApproval          Boolean          @default(false)
   approvedBy                String?
@@ -191,6 +193,7 @@ model Job {
   paperInventoryId          String?          // Optional link to PaperInventory when Bradford supplies paper
   routingType               RoutingType      @default(BRADFORD_JD)
   paperSource               PaperSource      @default(BRADFORD)  // Who supplies paper
+  bradfordPaperLbs          Decimal?         @db.Decimal(10, 2)  // lbs of paper supplied by Bradford
   vendorId                  String?
   deletedAt                 DateTime?
   deletedBy                 String?
@@ -574,10 +577,25 @@ model Vendor {
   zip           String?
   Job           Job[]
   PurchaseOrder PurchaseOrder[]
+  contacts      VendorContact[]
 
   @@index([isActive])
   @@index([name])
-  @@index([vendorCode])
+}
+
+model VendorContact {
+  id        String   @id @default(cuid())
+  vendorId  String
+  name      String
+  email     String
+  title     String?  // e.g., "CSR", "Account Manager", "Production"
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  Vendor    Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@index([vendorId])
 }
 
 model WebhookEvent {

@@ -5,7 +5,12 @@ let openai: OpenAI | null = null;
 
 function getOpenAIClient(): OpenAI {
   if (!openai) {
-    openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
+    const apiKey = process.env.OPENAI_API_KEY || '';
+    console.log(`🔑 OpenAI API Key present: ${apiKey ? 'YES (' + apiKey.substring(0, 10) + '...)' : 'NO'}`);
+    if (!apiKey) {
+      console.error('❌ OPENAI_API_KEY environment variable is not set!');
+    }
+    openai = new OpenAI({ apiKey });
   }
   return openai;
 }
@@ -76,8 +81,9 @@ export const parsePrintSpecs = async (text: string): Promise<any> => {
       ]
     };
 
-  } catch (error) {
-    console.error("OpenAI parsing error:", error);
+  } catch (error: any) {
+    console.error("❌ OpenAI parsing error:", error?.message || error);
+    console.error("❌ Full error:", JSON.stringify(error, null, 2));
     return {};
   }
 };

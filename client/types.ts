@@ -8,8 +8,10 @@ export interface Contact {
   id: string;
   name: string;
   role?: string;
+  title?: string;
   email: string;
-  phone: string;
+  phone?: string;
+  isPrimary?: boolean;
 }
 
 export interface Entity {
@@ -20,6 +22,7 @@ export interface Entity {
   phone: string;
   address: string;
   contactPerson: string;
+  contacts?: Contact[];
   additionalContacts?: Contact[];
   isPartner?: boolean; // True for Bradford
   notes?: string;
@@ -82,6 +85,7 @@ export interface Job {
   customerId: string;
   vendorId: string; // Could be Bradford, Third Party
   bradfordRefNumber?: string; // Internal Reference / PO to JD
+  bradfordPaperLbs?: number | null; // Bradford paper weight in lbs
 
   // Documents
   customerPONumber?: string; // External PO Number

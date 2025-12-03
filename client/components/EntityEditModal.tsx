@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Building2, Users } from 'lucide-react';
-import { Entity, EntityType } from '../types';
+import { X, Building2, Users, Plus, Trash2, Star } from 'lucide-react';
+import { Entity, EntityType, Contact } from '../types';
 
 interface EntityEditModalProps {
   isOpen: boolean;
@@ -18,6 +18,7 @@ export interface UpdateEntityData {
   address: string;
   notes: string;
   isPartner?: boolean;
+  contacts?: { name: string; email: string; title?: string; isPrimary?: boolean }[];
 }
 
 export default function EntityEditModal({
@@ -37,6 +38,7 @@ export default function EntityEditModal({
     isPartner: false
   });
 
+  const [contacts, setContacts] = useState<{ name: string; email: string; title?: string; isPrimary?: boolean }[]>([]);
   const [errors, setErrors] = useState<Partial<Record<keyof UpdateEntityData, string>>>({});
 
   useEffect(() => {
@@ -50,6 +52,17 @@ export default function EntityEditModal({
         notes: entity.notes || '',
         isPartner: entity.isPartner || false
       });
+      // Initialize contacts for vendors
+      if (entity.type === EntityType.VENDOR && entity.contacts) {
+        setContacts(entity.contacts.map(c => ({
+          name: c.name,
+          email: c.email,
+          title: c.title || '',
+          isPrimary: c.isPrimary || false
+        })));
+      } else {
+        setContacts([]);
+      }
       setErrors({});
     }
   }, [entity, isOpen]);
@@ -84,8 +97,33 @@ export default function EntityEditModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (validate()) {
-      onSubmit(entity.id, formData);
+      const submitData = { ...formData };
+      // Include contacts for vendors
+      if (entity.type === EntityType.VENDOR) {
+        submitData.contacts = contacts;
+      }
+      onSubmit(entity.id, submitData);
     }
+  };
+
+  const addContact = () => {
+    setContacts([...contacts, { name: '', email: '', title: '', isPrimary: false }]);
+  };
+
+  const removeContact = (index: number) => {
+    setContacts(contacts.filter((_, i) => i !== index));
+  };
+
+  const updateContact = (index: number, field: string, value: string | boolean) => {
+    const newContacts = [...contacts];
+    newContacts[index] = { ...newContacts[index], [field]: value };
+    // If setting isPrimary to true, set all others to false
+    if (field === 'isPrimary' && value === true) {
+      newContacts.forEach((c, i) => {
+        if (i !== index) c.isPrimary = false;
+      });
+    }
+    setContacts(newContacts);
   };
 
   const handleClose = () => {
@@ -243,6 +281,97 @@ export default function EntityEditModal({
                     </p>
                   </div>
                 </label>
+              </div>
+            )}
+
+            {/* Vendor Contacts Section */}
+            {entity.type === EntityType.VENDOR && (
+              <div className="border border-gray-200 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-900">Contacts / CSRs</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">Add multiple contacts for this vendor</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addContact}
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm bg-impact-red text-white rounded-lg hover:bg-impact-orange transition-colors"
+                    disabled={isSaving}
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Contact
+                  </button>
+                </div>
+
+                {contacts.length === 0 ? (
+                  <p className="text-sm text-gray-500 italic text-center py-4">
+                    No contacts added yet. Click "Add Contact" to add CSRs for this vendor.
+                  </p>
+                ) : (
+                  <div className="space-y-4">
+                    {contacts.map((contact, index) => (
+                      <div key={index} className="bg-gray-50 rounded-lg p-4 relative">
+                        <button
+                          type="button"
+                          onClick={() => removeContact(index)}
+                          className="absolute top-2 right-2 p-1 text-gray-400 hover:text-red-600 transition-colors"
+                          disabled={isSaving}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
+                            <input
+                              type="text"
+                              value={contact.name}
+                              onChange={(e) => updateContact(index, 'name', e.target.value)}
+                              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-impact-red focus:border-transparent"
+                              placeholder="Contact name"
+                              disabled={isSaving}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+                            <input
+                              type="email"
+                              value={contact.email}
+                              onChange={(e) => updateContact(index, 'email', e.target.value)}
+                              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-impact-red focus:border-transparent"
+                              placeholder="email@example.com"
+                              disabled={isSaving}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Title/Role</label>
+                            <input
+                              type="text"
+                              value={contact.title || ''}
+                              onChange={(e) => updateContact(index, 'title', e.target.value)}
+                              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-impact-red focus:border-transparent"
+                              placeholder="e.g., CSR, Account Manager"
+                              disabled={isSaving}
+                            />
+                          </div>
+                          <div className="flex items-end">
+                            <label className="flex items-center gap-2 cursor-pointer pb-1.5">
+                              <input
+                                type="checkbox"
+                                checked={contact.isPrimary || false}
+                                onChange={(e) => updateContact(index, 'isPrimary', e.target.checked)}
+                                className="w-4 h-4 text-impact-red border-gray-300 rounded focus:ring-impact-red"
+                                disabled={isSaving}
+                              />
+                              <Star className={`w-4 h-4 ${contact.isPrimary ? 'text-yellow-500 fill-yellow-500' : 'text-gray-400'}`} />
+                              <span className="text-xs font-medium text-gray-600">Primary Contact</span>
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>

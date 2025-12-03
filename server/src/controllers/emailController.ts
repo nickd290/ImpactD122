@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
-import { sendInvoiceEmail, sendPOEmail } from '../services/emailService';
+import { sendInvoiceEmail, sendPOEmail, sendArtworkNotificationEmail } from '../services/emailService';
 
 // Helper to transform job to PDF-compatible format (same as pdfController)
 function transformJobForPDF(job: any) {
@@ -188,5 +188,120 @@ export const emailPO = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Error emailing PO:', error);
     res.status(500).json({ error: error.message || 'Failed to email PO' });
+  }
+};
+
+// Email artwork notification to vendor
+export const emailArtworkNotification = async (req: Request, res: Response) => {
+  try {
+    const { jobId } = req.params;
+    const { artworkUrl } = req.body;
+
+    console.log('📧 Sending artwork notification:', { jobId, artworkUrl });
+
+    if (!artworkUrl) {
+      return res.status(400).json({ error: 'Artwork URL is required' });
+    }
+
+    // Validate URL format
+    try {
+      new URL(artworkUrl);
+    } catch {
+      return res.status(400).json({ error: 'Invalid artwork URL format' });
+    }
+
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      include: {
+        Company: true,
+        Vendor: {
+          include: {
+            contacts: true,  // Include vendor contacts
+          },
+        },
+      },
+    });
+
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    if (!job.Vendor) {
+      return res.status(400).json({ error: 'Job has no vendor assigned' });
+    }
+
+    // Collect all vendor emails (main + contacts)
+    const vendorEmails: string[] = [];
+
+    // Add primary vendor email if exists
+    if (job.Vendor.email) {
+      vendorEmails.push(job.Vendor.email);
+    }
+
+    // Add all vendor contact emails
+    if (job.Vendor.contacts && job.Vendor.contacts.length > 0) {
+      for (const contact of job.Vendor.contacts) {
+        if (contact.email && !vendorEmails.includes(contact.email)) {
+          vendorEmails.push(contact.email);
+        }
+      }
+    }
+
+    if (vendorEmails.length === 0) {
+      return res.status(400).json({ error: 'Vendor has no email addresses' });
+    }
+
+    const vendorName = job.Vendor.name || 'Vendor';
+    // Use the first email as primary (usually the main vendor email or primary contact)
+    const primaryEmail = vendorEmails[0];
+    // Additional contacts go in the TO field as well
+    const additionalVendorEmails = vendorEmails.slice(1);
+
+    const jobData = transformJobForPDF(job);
+
+    // Send the email (to primary vendor, CC to additional contacts and internal team)
+    const result = await sendArtworkNotificationEmail(
+      jobData,
+      primaryEmail,
+      vendorName,
+      artworkUrl,
+      additionalVendorEmails  // Pass additional vendor contacts
+    );
+
+    if (!result.success) {
+      return res.status(500).json({ error: result.error || 'Failed to send email' });
+    }
+
+    // Update job specs with artwork URL and clear artworkToFollow flag
+    const currentSpecs = (job.specs as any) || {};
+    const updatedJob = await prisma.job.update({
+      where: { id: jobId },
+      data: {
+        specs: {
+          ...currentSpecs,
+          artworkUrl: artworkUrl,
+          artworkToFollow: false,
+        },
+        artworkEmailedAt: result.emailedAt,
+        artworkEmailedTo: vendorEmails.join(', '),  // Store all recipients
+      },
+    });
+
+    res.json({
+      success: true,
+      message: `Artwork notification emailed to ${vendorEmails.length} vendor recipient(s)`,
+      emailedAt: result.emailedAt,
+      recipients: {
+        to: vendorEmails,
+        cc: ['brandon@impactdirectprinting.com', 'nick@jdgraphic.com', 'devin@jdgraphic.com'],
+      },
+      job: {
+        id: updatedJob.id,
+        artworkUrl: artworkUrl,
+      },
+    });
+  } catch (error: any) {
+    console.error('Error emailing artwork notification:', error);
+    res.status(500).json({ error: error.message || 'Failed to email artwork notification' });
   }
 };

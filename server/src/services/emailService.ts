@@ -243,6 +243,114 @@ function getArtworkFollowUpEmailBody(po: any, vendorName: string, job: any, artw
   `;
 }
 
+// CC list for artwork notifications
+const ARTWORK_CC_EMAILS = [
+  'brandon@impactdirectprinting.com',
+  'nick@jdgraphic.com',
+  'devin@jdgraphic.com',
+];
+
+// Generate email body for artwork notification (new job-based notification)
+function getArtworkNotificationEmailBody(job: any, artworkUrl: string): string {
+  const jobNo = job.jobNo || job.number || job.id;
+  const specs = job.specs || {};
+
+  // Format delivery date
+  const deliveryDate = job.dueDate || job.deliveryDate;
+  const formattedDate = deliveryDate ? new Date(deliveryDate).toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }) : 'TBD';
+
+  // Build specs table rows
+  const specsRows = [];
+  if (specs.productType) specsRows.push(`<tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Product Type</td><td style="padding: 8px; border-bottom: 1px solid #eee; font-weight: 500;">${specs.productType}</td></tr>`);
+  if (job.sizeName || specs.finishedSize) specsRows.push(`<tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Size</td><td style="padding: 8px; border-bottom: 1px solid #eee; font-weight: 500;">${job.sizeName || specs.finishedSize}</td></tr>`);
+  if (job.quantity) specsRows.push(`<tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Quantity</td><td style="padding: 8px; border-bottom: 1px solid #eee; font-weight: 500;">${Number(job.quantity).toLocaleString()}</td></tr>`);
+  if (specs.paperType || specs.paperStock) specsRows.push(`<tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Paper Stock</td><td style="padding: 8px; border-bottom: 1px solid #eee; font-weight: 500;">${specs.paperType || specs.paperStock}</td></tr>`);
+  if (specs.colors) specsRows.push(`<tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Colors</td><td style="padding: 8px; border-bottom: 1px solid #eee; font-weight: 500;">${specs.colors}</td></tr>`);
+  if (specs.coating) specsRows.push(`<tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Coating</td><td style="padding: 8px; border-bottom: 1px solid #eee; font-weight: 500;">${specs.coating}</td></tr>`);
+  if (specs.finishing) specsRows.push(`<tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Finishing</td><td style="padding: 8px; border-bottom: 1px solid #eee; font-weight: 500;">${specs.finishing}</td></tr>`);
+  specsRows.push(`<tr><td style="padding: 8px; color: #666;">Delivery Date</td><td style="padding: 8px; font-weight: 500;">${formattedDate}</td></tr>`);
+
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <div style="background-color: #FF8C42; padding: 20px; text-align: center;">
+        <h1 style="color: white; margin: 0; font-size: 24px;">Artwork Now Available</h1>
+      </div>
+
+      <div style="padding: 20px;">
+        <p style="font-size: 16px; color: #333;">The artwork for <strong>Job #${jobNo}</strong> is now ready for production.</p>
+
+        <div style="background-color: #dbeafe; border: 2px solid #3b82f6; border-radius: 8px; padding: 20px; margin: 25px 0; text-align: center;">
+          <p style="margin: 0 0 10px 0; font-weight: bold; color: #1e40af; font-size: 14px;">ARTWORK LINK</p>
+          <a href="${artworkUrl}" style="display: inline-block; background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Download Artwork</a>
+          <p style="margin: 15px 0 0 0; font-size: 12px; color: #666; word-break: break-all;">${artworkUrl}</p>
+        </div>
+
+        <h3 style="color: #1A1A1A; border-bottom: 2px solid #FF8C42; padding-bottom: 8px;">Job Specifications</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+          ${specsRows.join('')}
+        </table>
+
+        <p style="color: #666;">Please confirm receipt and let us know if you have any questions.</p>
+
+        <p>Thank you!</p>
+      </div>
+
+      <hr style="border: none; border-top: 1px solid #ccc; margin: 20px 0;" />
+
+      <p style="color: #666; font-size: 12px; text-align: center;">
+        Impact Direct Printing<br />
+        brandon@impactdirectprinting.com
+      </p>
+    </div>
+  `;
+}
+
+// Send artwork notification email (job-based, no PO required)
+export async function sendArtworkNotificationEmail(
+  job: any,
+  vendorEmail: string,
+  vendorName: string,
+  artworkUrl: string,
+  additionalVendorEmails: string[] = []  // Additional vendor contact emails
+): Promise<EmailResult> {
+  try {
+    const jobNo = job.jobNo || job.number || job.id;
+    const subject = `Artwork Available - Job #${jobNo} | Impact Direct Printing`;
+    const body = getArtworkNotificationEmailBody(job, artworkUrl);
+
+    // Combine all vendor emails for the TO field
+    const allVendorEmails = [vendorEmail, ...additionalVendorEmails];
+    // Combine with internal CC emails (ensure no duplicates)
+    const allCcEmails = ARTWORK_CC_EMAILS.filter(email => !allVendorEmails.includes(email));
+
+    const result = await sendEmail({
+      to: allVendorEmails.join(','),  // Send to primary + all additional vendor contacts
+      cc: allCcEmails,  // Internal team
+      subject,
+      body,
+    });
+
+    if (result.success) {
+      console.log('📧 Artwork notification email sent:', {
+        vendors: allVendorEmails,
+        cc: allCcEmails,
+        jobNo,
+        artworkUrl,
+      });
+    }
+
+    return result;
+  } catch (error: any) {
+    console.error('Error sending artwork notification email:', error);
+    return { success: false, error: error.message || 'Failed to send artwork notification email' };
+  }
+}
+
 // Send artwork follow-up email when artwork becomes available
 export async function sendArtworkFollowUpEmail(
   po: any,
