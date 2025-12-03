@@ -1226,11 +1226,18 @@ export function JobDetailModal({
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Bradford Cost Breakdown</h3>
-          {job.sizeName && (
-            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded font-medium">
-              Size: {job.sizeName}
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {job.customerPONumber && (
+              <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-medium">
+                Customer PO: {job.customerPONumber}
+              </span>
+            )}
+            {job.sizeName && (
+              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded font-medium">
+                Size: {job.sizeName}
+              </span>
+            )}
+          </div>
         </div>
         <div className="p-4">
           {hasPOData ? (
@@ -1412,8 +1419,13 @@ export function JobDetailModal({
 
       {/* Profit Summary */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Profit Summary</h3>
+          {job.customerPONumber && (
+            <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-medium">
+              Customer PO: {job.customerPONumber}
+            </span>
+          )}
         </div>
         <div className="p-4 space-y-4">
           <div className="grid grid-cols-3 gap-4">
