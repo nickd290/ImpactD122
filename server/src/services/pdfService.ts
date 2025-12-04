@@ -382,7 +382,7 @@ export const generateQuotePDF = (jobData: any): Buffer => {
   doc.setFont('helvetica', 'bold');
   doc.text('QUOTE NUMBER:', 20, currentY);
   doc.setFont('helvetica', 'normal');
-  doc.text(jobData.number, 55, currentY);
+  doc.text(jobData.jobNo || 'N/A', 55, currentY);
 
   currentY += 6;
   doc.setFont('helvetica', 'bold');
@@ -597,7 +597,7 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
   doc.setFont('helvetica', 'bold');
   doc.text('INVOICE NUMBER:', 20, currentY);
   doc.setFont('helvetica', 'normal');
-  doc.text(jobData.invoiceNumber || jobData.number, 60, currentY);
+  doc.text(jobData.invoiceNumber || jobData.jobNo || 'N/A', 60, currentY);
 
   currentY += 6;
   doc.setFont('helvetica', 'bold');
@@ -609,7 +609,7 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
   doc.setFont('helvetica', 'bold');
   doc.text('JOB NUMBER:', 20, currentY);
   doc.setFont('helvetica', 'normal');
-  doc.text(jobData.number, 60, currentY);
+  doc.text(jobData.jobNo || 'N/A', 60, currentY);
 
   currentY += 6;
   doc.setFont('helvetica', 'bold');
@@ -827,7 +827,7 @@ export const generateVendorPOPDF = (jobData: any): Buffer => {
   doc.setFont('helvetica', 'bold');
   doc.text('PO NUMBER:', 20, currentY);
   doc.setFont('helvetica', 'normal');
-  doc.text(jobData.vendorPONumber || jobData.number, 50, currentY);
+  doc.text(jobData.vendorPONumber || jobData.jobNo || 'N/A', 50, currentY);
 
   currentY += 6;
   doc.setFont('helvetica', 'bold');
@@ -839,7 +839,7 @@ export const generateVendorPOPDF = (jobData: any): Buffer => {
   doc.setFont('helvetica', 'bold');
   doc.text('JOB NUMBER:', 20, currentY);
   doc.setFont('helvetica', 'normal');
-  doc.text(jobData.number, 50, currentY);
+  doc.text(jobData.jobNo || 'N/A', 50, currentY);
 
   currentY += 6;
   doc.setFont('helvetica', 'bold');
@@ -1686,6 +1686,348 @@ export const generatePOPDF = (poData: any): Buffer => {
       doc.line(20, pageHeight - 12, 190, pageHeight - 12);
     }
   }
+
+  return Buffer.from(doc.output('arraybuffer'));
+};
+
+// ============================================
+// JD GRAPHIC → BRADFORD INVOICE
+// ============================================
+
+// JD Graphic Brand Colors
+const JD_BLUE = '#1E40AF';      // JD Graphic primary blue
+const JD_LIGHT_BLUE = '#3B82F6'; // Accent blue
+
+// Draws the JD Graphic logo placeholder
+const drawJDLogo = (doc: any, x: number, y: number, size: number = 20) => {
+  const boxWidth = size * 3.5;
+  const boxHeight = size * 1.2;
+  const padding = 4;
+
+  // Draw complete grid box around logo
+  doc.setDrawColor(JD_BLUE);
+  doc.setLineWidth(0.8);
+  doc.rect(x - padding, y - padding, boxWidth, boxHeight);
+
+  // Draw "JD GRAPHIC" text
+  doc.setFontSize(size * 0.9);
+  doc.setTextColor(JD_BLUE);
+  doc.setFont('helvetica', 'bold');
+  doc.text('JD GRAPHIC', x, y + size * 0.6);
+};
+
+export const generateJDToBradfordInvoicePDF = (jobData: any): Buffer => {
+  const doc = new jsPDF();
+
+  // ===== CROSSHAIR REGISTRATION MARKS =====
+  drawCrosshairs(doc);
+
+  let currentY = 15;
+
+  // ===== JD GRAPHIC LOGO (Top Left) =====
+  drawJDLogo(doc, 20, currentY, 16);
+
+  // ===== HEADER SECTION (Right Side) =====
+  doc.setFontSize(24);
+  doc.setTextColor(JD_BLUE);
+  doc.setFont('helvetica', 'bold');
+  doc.text('JD GRAPHIC', 140, currentY + 8, { align: 'center' });
+
+  doc.setFontSize(10);
+  doc.setTextColor(TEXT_GRAY);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Manufacturing Invoice', 140, currentY + 14, { align: 'center' });
+
+  currentY += 28;
+
+  // ===== OUTLINED DOCUMENT TITLE =====
+  doc.setFontSize(22);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(JD_BLUE);
+  doc.text('INVOICE', 105, currentY, { align: 'center' });
+
+  // Heavy divider below title
+  currentY += 4;
+  doc.setDrawColor(JD_BLUE);
+  doc.setLineWidth(1.2);
+  doc.line(20, currentY, 190, currentY);
+
+  // Light accent line
+  doc.setLineWidth(0.8);
+  doc.setDrawColor(JD_LIGHT_BLUE);
+  doc.line(20, currentY + 1, 190, currentY + 1);
+
+  currentY += 10;
+
+  // ===== TWO-COLUMN LAYOUT =====
+  const infoStartY = currentY;
+
+  // Left Column - Invoice Info
+  doc.setFontSize(10);
+  doc.setTextColor(0, 0, 0);
+  doc.setFont('helvetica', 'bold');
+  doc.text('INVOICE NUMBER:', 20, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`JD-${jobData.jobNo || 'N/A'}`, 60, currentY);
+
+  currentY += 6;
+  doc.setFont('helvetica', 'bold');
+  doc.text('INVOICE DATE:', 20, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.text(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), 60, currentY);
+
+  currentY += 6;
+  doc.setFont('helvetica', 'bold');
+  doc.text('JOB NUMBER:', 20, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.text(jobData.jobNo || 'N/A', 60, currentY);
+
+  currentY += 6;
+  doc.setFont('helvetica', 'bold');
+  doc.text('BRADFORD PO:', 20, currentY);
+  doc.setFont('helvetica', 'normal');
+  // Get Bradford PO number - prefer PO's poNumber, fall back to job fields
+  const bradfordToJDPOForDisplay = (jobData.purchaseOrders || []).find(
+    (po: any) => po.originCompanyId === 'bradford' && po.targetCompanyId === 'jd-graphic'
+  );
+  const bradfordPONumber = bradfordToJDPOForDisplay?.poNumber
+    || jobData.bradfordPONumber
+    || jobData.partnerPONumber
+    || 'N/A';
+  doc.text(bradfordPONumber, 60, currentY);
+
+  // Right Column - Bradford Info with Grid Box
+  const bradfordY = infoStartY;
+  const bradfordBoxHeight = 28;
+
+  // Draw grid box around "BILL TO:" section
+  doc.setDrawColor(JD_BLUE);
+  doc.setLineWidth(0.6);
+  doc.rect(118, bradfordY - 4, 72, bradfordBoxHeight);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(JD_BLUE);
+  doc.text('BILL TO:', 120, bradfordY);
+  doc.setTextColor(0, 0, 0);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Bradford Direct', 120, bradfordY + 6);
+  doc.text('Steve Gustafson', 120, bradfordY + 12);
+  doc.text('steve.gustafson@bgeltd.com', 120, bradfordY + 18);
+
+  currentY += 10;
+
+  // ===== PROJECT TITLE =====
+  doc.setFillColor(240, 240, 240);
+  doc.rect(20, currentY, 170, 10, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('PROJECT:', 22, currentY + 6.5);
+  doc.setFont('helvetica', 'normal');
+  doc.text(jobData.title || 'Print Job', 45, currentY + 6.5);
+
+  currentY += 18;
+
+  // ===== LINE ITEMS TABLE =====
+  doc.setDrawColor(JD_BLUE);
+  doc.setLineWidth(0.6);
+  doc.rect(20, currentY, 170, 8);
+  doc.setFillColor(30, 64, 175); // JD Blue background
+  doc.rect(20, currentY, 170, 8, 'F');
+
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(255, 255, 255);
+  doc.text('MANUFACTURING CHARGES', 25, currentY + 5.5);
+
+  currentY += 10;
+
+  // Build line items
+  const lineItems: string[][] = [];
+
+  // Get manufacturing cost from Bradford→JD PO
+  const bradfordToJDPO = (jobData.purchaseOrders || []).find(
+    (po: any) => po.originCompanyId === 'bradford' && po.targetCompanyId === 'jd-graphic'
+  );
+
+  const quantity = jobData.quantity || 0;
+
+  // Try to get cost from PO first, then fall back to job-level fields
+  const poMfgCost = Number(bradfordToJDPO?.mfgCost) || 0;
+  const poBuyCost = Number(bradfordToJDPO?.buyCost) || 0;
+  const poPrintCPM = Number(bradfordToJDPO?.printCPM) || 0;
+  const jobPrintCPM = Number(jobData.bradfordPrintCPM) || 0;
+  const jobBuyCost = Number(jobData.bradfordBuyCost) || 0;
+
+  // Get CPM from suggestedPricing (most reliable - from standard pricing table)
+  const suggestedPrintCPM = Number(jobData.suggestedPricing?.printCPM) || 0;
+
+  // Determine the effective CPM - prioritize sources:
+  // 1. PO's explicit printCPM field (if set)
+  // 2. suggestedPricing.printCPM (from standard pricing table - most reliable)
+  // 3. Job-level printCPM field
+  let effectiveCPM = 0;
+  let cpmSource = 'none';
+  if (poPrintCPM > 0) {
+    effectiveCPM = poPrintCPM;
+    cpmSource = 'PO printCPM';
+  } else if (suggestedPrintCPM > 0) {
+    effectiveCPM = suggestedPrintCPM;
+    cpmSource = 'suggestedPricing.printCPM';
+  } else if (jobPrintCPM > 0) {
+    effectiveCPM = jobPrintCPM;
+    cpmSource = 'job printCPM';
+  }
+
+  // DEBUG: Log CPM calculation
+  console.log('📄 JD Invoice PDF - CPM Calculation Debug:');
+  console.log('  poPrintCPM:', poPrintCPM);
+  console.log('  suggestedPrintCPM:', suggestedPrintCPM);
+  console.log('  jobPrintCPM:', jobPrintCPM);
+  console.log('  poBuyCost:', poBuyCost);
+  console.log('  effectiveCPM:', effectiveCPM);
+  console.log('  cpmSource:', cpmSource);
+
+  // Calculate the actual manufacturing cost
+  let mfgCost = 0;
+  if (poMfgCost > 0) {
+    mfgCost = poMfgCost;
+  } else if (effectiveCPM > 0 && quantity > 0) {
+    // Calculate from CPM: CPM * (quantity / 1000)
+    mfgCost = effectiveCPM * (quantity / 1000);
+  } else if (poBuyCost > 0) {
+    // Use poBuyCost as total cost (last resort fallback)
+    mfgCost = poBuyCost;
+  } else if (jobBuyCost > 0) {
+    mfgCost = jobBuyCost;
+  }
+
+  // If we still don't have a CPM but have mfgCost, calculate it
+  if (effectiveCPM === 0 && mfgCost > 0 && quantity > 0) {
+    effectiveCPM = (mfgCost / quantity) * 1000;
+  }
+
+  // Round mfgCost to avoid floating point precision issues
+  const roundedMfgCost = Math.round(mfgCost * 100) / 100;
+  if (roundedMfgCost > 0) {
+    lineItems.push([
+      `Print/Manufacturing - ${quantity.toLocaleString()} pcs @ $${effectiveCPM.toFixed(2)}/M`,
+      quantity.toLocaleString(),
+      `$${effectiveCPM.toFixed(2)}/M`,
+      `$${roundedMfgCost.toFixed(2)}`
+    ]);
+  }
+
+  // Add paper usage if Bradford supplies paper
+  // Calculate paper lbs from suggestedPricing.paperLbsPerM (primary source)
+  const paperLbsPerM = jobData.suggestedPricing?.paperLbsPerM || 0;
+  const calculatedPaperLbs = paperLbsPerM > 0 && quantity > 0
+    ? paperLbsPerM * (quantity / 1000)
+    : 0;
+
+  // DEBUG: Log paper calculation values
+  console.log('📄 JD Invoice PDF - Paper Calculation Debug:');
+  console.log('  sizeName:', jobData.sizeName);
+  console.log('  suggestedPricing:', JSON.stringify(jobData.suggestedPricing));
+  console.log('  paperLbsPerM:', paperLbsPerM);
+  console.log('  quantity:', quantity);
+  console.log('  calculatedPaperLbs:', calculatedPaperLbs);
+  console.log('  bradfordPaperLbs (job field):', jobData.bradfordPaperLbs);
+
+  // Use job-level bradfordPaperLbs if set, otherwise use calculated value
+  let paperLbs = Number(jobData.bradfordPaperLbs) || calculatedPaperLbs;
+
+  // Fallback: try specs.paperLbsPerM if still no paper lbs
+  if (paperLbs === 0 && jobData.paperSource === 'BRADFORD') {
+    const specs = jobData.specs || {};
+    if (specs.paperLbsPerM && quantity > 0) {
+      paperLbs = specs.paperLbsPerM * (quantity / 1000);
+    }
+  }
+
+  if (paperLbs > 0) {
+    const lbsPerM = quantity > 0 ? (paperLbs / quantity) * 1000 : 0;
+    lineItems.push([
+      `Paper Usage - ${paperLbs.toFixed(1)} lbs${lbsPerM > 0 ? ` (${lbsPerM.toFixed(2)} lbs/M)` : ''}`,
+      `${paperLbs.toFixed(1)} lbs`,
+      '-',
+      '(Supplied by Bradford)'
+    ]);
+  }
+
+  // If no specific line items, show total from PO or job-level bradfordBuyCost
+  const fallbackCost = Number(bradfordToJDPO?.buyCost) || Number(jobData.bradfordBuyCost) || 0;
+  if (lineItems.length === 0 && fallbackCost > 0) {
+    lineItems.push([
+      'Manufacturing Services',
+      quantity > 0 ? quantity.toLocaleString() : '1',
+      '-',
+      `$${fallbackCost.toFixed(2)}`
+    ]);
+  }
+
+  autoTable(doc, {
+    startY: currentY,
+    head: [['Description', 'Qty', 'Rate', 'Amount']],
+    body: lineItems,
+    theme: 'striped',
+    headStyles: {
+      fillColor: [30, 64, 175], // JD Blue
+      fontSize: 9,
+      fontStyle: 'bold',
+    },
+    styles: {
+      fontSize: 9,
+    },
+    columnStyles: {
+      0: { cellWidth: 90 },
+      1: { cellWidth: 30, halign: 'center' },
+      2: { cellWidth: 30, halign: 'right' },
+      3: { cellWidth: 30, halign: 'right' },
+    },
+  });
+
+  const finalY = (doc as any).lastAutoTable.finalY || currentY + 20;
+
+  // ===== TOTAL DUE =====
+  // Round to 2 decimal places to avoid floating point precision issues
+  const totalAmount = Math.round((mfgCost || Number(bradfordToJDPO?.buyCost) || Number(jobData.bradfordBuyCost) || 0) * 100) / 100;
+
+  // Draw grid border around total box
+  doc.setDrawColor(JD_BLUE);
+  doc.setLineWidth(0.6);
+  doc.rect(118, finalY + 6, 74, 22);
+
+  // Total box
+  doc.setFillColor(30, 64, 175); // JD Blue
+  doc.rect(120, finalY + 8, 70, 18, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text('TOTAL DUE:', 125, finalY + 19.5);
+  doc.setFontSize(16);
+  doc.text(`$${totalAmount.toFixed(2)}`, 185, finalY + 19.5, { align: 'right' });
+
+  // ===== PAYMENT TERMS =====
+  currentY = finalY + 35;
+  doc.setFontSize(10);
+  doc.setTextColor(0, 0, 0);
+  doc.setFont('helvetica', 'bold');
+  doc.text('PAYMENT TERMS:', 20, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text('Net 30 days from invoice date.', 20, currentY + 5);
+
+  // ===== FOOTER =====
+  const pageHeight = doc.internal.pageSize.height;
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 100);
+  doc.setFont('helvetica', 'italic');
+  doc.text('Thank you for your business!', 105, pageHeight - 20, { align: 'center' });
+  doc.text('Questions? Contact JD Graphic', 105, pageHeight - 15, { align: 'center' });
+
+  doc.setDrawColor(JD_BLUE);
+  doc.setLineWidth(0.3);
+  doc.line(20, pageHeight - 10, 190, pageHeight - 10);
 
   return Buffer.from(doc.output('arraybuffer'));
 };

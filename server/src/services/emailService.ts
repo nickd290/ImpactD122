@@ -1,5 +1,5 @@
 import sgMail from '@sendgrid/mail';
-import { generateInvoicePDF, generateVendorPOPDF } from './pdfService';
+import { generateInvoicePDF, generateVendorPOPDF, generateJDToBradfordInvoicePDF } from './pdfService';
 
 // Initialize SendGrid
 const apiKey = process.env.SENDGRID_API_KEY;
@@ -407,5 +407,101 @@ export async function sendArtworkFollowUpEmail(
   } catch (error: any) {
     console.error('Error sending artwork follow-up email:', error);
     return { success: false, error: error.message || 'Failed to send artwork follow-up email' };
+  }
+}
+
+// Bradford contact for JD invoices
+const BRADFORD_INVOICE_EMAIL = 'steve.gustafson@bgeltd.com';
+const JD_INVOICE_CC_EMAIL = 'nick@jdgraphic.com';
+
+// Generate email body for JD → Bradford Invoice
+function getJDInvoiceEmailBody(job: any): string {
+  const jobNo = job.jobNo || job.id;
+  const bradfordPO = job.bradfordPONumber || job.customerPONumber || 'N/A';
+
+  // Calculate total from manufacturing + paper
+  let totalAmount = 0;
+  if (job.bradfordPrintCPM && job.quantity) {
+    totalAmount += (Number(job.bradfordPrintCPM) / 1000) * Number(job.quantity);
+  }
+  if (job.bradfordPaperLbs && job.bradfordPaperCostPerLb) {
+    totalAmount += Number(job.bradfordPaperLbs) * Number(job.bradfordPaperCostPerLb);
+  }
+
+  const formattedAmount = totalAmount > 0
+    ? `$${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : '';
+
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <div style="background-color: #1E40AF; padding: 20px; text-align: center;">
+        <h1 style="color: white; margin: 0; font-size: 24px;">JD Graphic</h1>
+        <p style="color: #93C5FD; margin: 5px 0 0 0; font-size: 14px;">Manufacturing Invoice</p>
+      </div>
+
+      <div style="padding: 20px;">
+        <p>Dear Steve,</p>
+
+        <p>Please find attached the manufacturing invoice for <strong>Job #${jobNo}</strong> (Bradford PO: ${bradfordPO}).</p>
+
+        ${formattedAmount ? `<p><strong>Invoice Total:</strong> ${formattedAmount}</p>` : ''}
+
+        <p>This invoice covers the manufacturing costs for the job completed through our facility.</p>
+
+        <p>Payment terms: Net 30</p>
+
+        <p>If you have any questions about this invoice, please don't hesitate to reach out.</p>
+
+        <p>Thank you for your business!</p>
+      </div>
+
+      <hr style="border: none; border-top: 1px solid #ccc; margin: 20px 0;" />
+
+      <p style="color: #666; font-size: 12px; text-align: center;">
+        JD Graphic<br />
+        nick@jdgraphic.com
+      </p>
+    </div>
+  `;
+}
+
+// Send JD Invoice to Bradford
+export async function sendJDInvoiceToBradfordEmail(
+  job: any
+): Promise<EmailResult & { emailedTo?: string }> {
+  try {
+    // Generate JD Invoice PDF
+    const pdfBuffer = generateJDToBradfordInvoicePDF(job);
+
+    const jobNo = job.jobNo || job.id;
+    const subject = `JD Graphic Invoice - Job #${jobNo}`;
+    const body = getJDInvoiceEmailBody(job);
+    const filename = `JD-Invoice-Job-${jobNo}.pdf`;
+
+    const result = await sendEmail({
+      to: BRADFORD_INVOICE_EMAIL,
+      cc: JD_INVOICE_CC_EMAIL,
+      subject,
+      body,
+      attachmentBuffer: pdfBuffer,
+      attachmentFilename: filename,
+    });
+
+    if (result.success) {
+      console.log('📧 JD Invoice sent to Bradford:', {
+        to: BRADFORD_INVOICE_EMAIL,
+        jobNo,
+        subject,
+      });
+      return {
+        ...result,
+        emailedTo: BRADFORD_INVOICE_EMAIL
+      };
+    }
+
+    return result;
+  } catch (error: any) {
+    console.error('Error sending JD invoice to Bradford:', error);
+    return { success: false, error: error.message || 'Failed to generate or send JD invoice' };
   }
 }

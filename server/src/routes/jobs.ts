@@ -20,6 +20,12 @@ import {
   createJobPO,
   updatePO,
   deletePO,
+  // Multi-step payment workflow (4-step process)
+  markCustomerPaid,
+  markImpactToBradfordPaid,
+  sendJDInvoice,
+  downloadJDInvoicePDF,
+  markJDPaid,
 } from '../controllers/jobsController';
 
 const router = Router();
@@ -42,6 +48,18 @@ router.patch('/:id/bradford-payment', updateBradfordPayment);
 // NEW: Payment tracking routes
 router.patch('/:id/payments', updatePayments);
 router.post('/batch-payment', batchUpdatePayments);
+
+// Multi-step payment workflow (4-step process)
+// Step 1: Customer → Impact (Financials tab)
+router.patch('/:id/customer-paid', markCustomerPaid);
+// Step 2: Impact → Bradford (Bradford Stats tab) - triggers JD Invoice
+router.patch('/:id/bradford-paid', markImpactToBradfordPaid);
+// Step 3: Send JD Invoice manually (can resend)
+router.post('/:id/send-jd-invoice', sendJDInvoice);
+// Download JD Invoice PDF
+router.get('/:id/jd-invoice-pdf', downloadJDInvoicePDF);
+// Step 4: Bradford → JD Paid (Bradford Stats tab)
+router.patch('/:id/jd-paid', markJDPaid);
 
 // PO management routes
 router.get('/:jobId/pos', getJobPOs);

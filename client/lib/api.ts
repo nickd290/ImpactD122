@@ -52,6 +52,31 @@ export const jobsApi = {
     method: 'POST',
     body: JSON.stringify({ jobs, entityMappings }),
   }),
+
+  // Multi-step Payment Workflow (4-step process)
+  // Step 1: Mark Customer Paid (Customer → Impact)
+  markCustomerPaid: (id: string, date?: string) => apiFetch(`/jobs/${id}/customer-paid`, {
+    method: 'PATCH',
+    body: JSON.stringify({ date }),
+  }),
+  // Step 2: Mark Bradford Paid (Impact → Bradford) - triggers JD Invoice
+  markBradfordPaid: (id: string, date?: string, sendInvoice?: boolean) => apiFetch(`/jobs/${id}/bradford-paid`, {
+    method: 'PATCH',
+    body: JSON.stringify({ date, sendInvoice }),
+  }),
+  // Step 3: Send JD Invoice manually (can resend)
+  sendJDInvoice: (id: string) => apiFetch(`/jobs/${id}/send-jd-invoice`, {
+    method: 'POST',
+  }),
+  // Step 4: Mark JD Paid (Bradford → JD)
+  markJDPaid: (id: string, date?: string) => apiFetch(`/jobs/${id}/jd-paid`, {
+    method: 'PATCH',
+    body: JSON.stringify({ date }),
+  }),
+  // Download JD Invoice PDF
+  downloadJDInvoicePDF: (id: string) => {
+    window.open(`${API_BASE_URL}/jobs/${id}/jd-invoice-pdf`, '_blank');
+  },
 };
 
 // Entities API

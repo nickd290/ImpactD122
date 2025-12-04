@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { toast } from 'sonner';
 import { StatusBadge } from './ui/StatusBadge';
 import { JobDetailModal } from './JobDetailModal';
 import { pdfApi, jobsApi } from '../lib/api';
 import { BradfordStats, BradfordJob } from '../types/bradford';
-import { AlertTriangle, Search, FileDown, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown, Pencil, Check, X } from 'lucide-react';
+import { AlertTriangle, Search, FileDown, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown, Pencil, Check, X, Mail, CheckCircle } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -20,7 +21,7 @@ interface BradfordStatsViewProps {
 
 type SortField = 'jobNo' | 'title' | 'bradfordRef' | 'status' | 'sizeName' | 'quantity' | 'paperPounds' | 'sellPrice' | 'totalCost' | 'spread' | 'paperCost' | 'paperMarkup' | 'bradfordShare' | 'marginPercent';
 type SortDirection = 'asc' | 'desc';
-type StatusFilter = 'all' | 'paid' | 'unpaid';
+type StatusFilter = 'all' | 'paid' | 'unpaid' | 'readyToPay';
 
 export function BradfordStatsView({
   jobs,
@@ -61,14 +62,30 @@ export function BradfordStatsView({
     fetchStats();
   }, [jobs]);
 
+  // Count jobs ready to pay Bradford (customer paid, Bradford not paid)
+  const readyToPayCount = useMemo(() => {
+    if (!stats?.jobs) return 0;
+    return stats.jobs.filter(job => {
+      const fullJob = jobs.find(j => j.id === job.id) || allJobs.find(j => j.id === job.id);
+      return fullJob?.customerPaymentDate && !fullJob?.bradfordPaymentPaid;
+    }).length;
+  }, [stats?.jobs, jobs, allJobs]);
+
   // Filter jobs by status
   const statusFilteredJobs = useMemo(() => {
     if (!stats?.jobs) return [];
 
     if (statusFilter === 'all') return stats.jobs;
     if (statusFilter === 'paid') return stats.jobs.filter(job => job.status === 'PAID');
+    if (statusFilter === 'readyToPay') {
+      // Jobs where customer paid but Bradford not yet paid
+      return stats.jobs.filter(job => {
+        const fullJob = jobs.find(j => j.id === job.id) || allJobs.find(j => j.id === job.id);
+        return fullJob?.customerPaymentDate && !fullJob?.bradfordPaymentPaid;
+      });
+    }
     return stats.jobs.filter(job => job.status !== 'PAID'); // unpaid
-  }, [stats?.jobs, statusFilter]);
+  }, [stats?.jobs, statusFilter, jobs, allJobs]);
 
   // Compute filtered stats based on status filter
   const filteredStats = useMemo(() => {
@@ -237,6 +254,78 @@ export function BradfordStatsView({
     } finally {
       setSavingPO(false);
     }
+  };
+
+  // Payment workflow handlers
+  const handleMarkBradfordPaid = async (e: React.MouseEvent, jobId: string) => {
+    e.stopPropagation();
+    try {
+      const result = await jobsApi.markBradfordPaid(jobId);
+      if (result.jdInvoiceSent) {
+        toast.success('Bradford Payment Recorded', {
+          description: (
+            <div className="mt-1 text-sm">
+              <p className="font-medium text-green-700">JD Invoice Email Sent!</p>
+              <p className="text-gray-600 mt-1">
+                <strong>To:</strong> steve.gustafson@bgeltd.com<br/>
+                <strong>CC:</strong> nick@jdgraphic.com
+              </p>
+            </div>
+          ),
+          duration: 5000,
+        });
+      } else {
+        toast.success('Bradford Payment Recorded', {
+          description: 'Payment marked as complete.',
+          duration: 3000,
+        });
+      }
+      onRefresh();
+    } catch (error) {
+      console.error('Failed to mark Bradford paid:', error);
+      toast.error('Failed to mark Bradford paid', {
+        description: 'Please try again.',
+      });
+    }
+  };
+
+  const handleMarkJDPaid = async (e: React.MouseEvent, jobId: string) => {
+    e.stopPropagation();
+    try {
+      await jobsApi.markJDPaid(jobId);
+      onRefresh();
+    } catch (error) {
+      console.error('Failed to mark JD paid:', error);
+      alert('Failed to mark JD paid. Please try again.');
+    }
+  };
+
+  const handleResendJDInvoice = async (e: React.MouseEvent, jobId: string) => {
+    e.stopPropagation();
+    try {
+      const result = await jobsApi.sendJDInvoice(jobId);
+      if (result.success) {
+        toast.success('JD Invoice Sent', {
+          description: `Email sent to ${result.emailedTo}`,
+          duration: 3000,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to send JD invoice:', error);
+      toast.error('Failed to send JD invoice', {
+        description: 'Please try again.',
+      });
+    }
+  };
+
+  const handleDownloadJDInvoice = (e: React.MouseEvent, jobId: string) => {
+    e.stopPropagation();
+    jobsApi.downloadJDInvoicePDF(jobId);
+  };
+
+  // Helper to get full job data (includes payment fields)
+  const getFullJobData = (jobId: string) => {
+    return jobs.find(j => j.id === jobId) || allJobs.find(j => j.id === jobId);
   };
 
   const formatCurrency = (value: number) => {
@@ -443,6 +532,16 @@ export function BradfordStatsView({
           All Jobs ({stats?.totalJobs || 0})
         </button>
         <button
+          onClick={() => setStatusFilter('readyToPay')}
+          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+            statusFilter === 'readyToPay'
+              ? 'bg-orange-600 text-white'
+              : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+          }`}
+        >
+          Ready to Pay ({readyToPayCount})
+        </button>
+        <button
           onClick={() => setStatusFilter('paid')}
           className={`px-4 py-2 rounded-lg font-medium transition-colors ${
             statusFilter === 'paid'
@@ -610,6 +709,11 @@ export function BradfordStatsView({
                     Status {getSortIcon('status')}
                   </div>
                 </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <div className="flex items-center">
+                    Payment Flow
+                  </div>
+                </th>
                 <th
                   className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('sizeName')}
@@ -687,7 +791,7 @@ export function BradfordStatsView({
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredAndSortedJobs.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={13} className="px-4 py-8 text-center text-gray-500">
                     {searchQuery ? 'No jobs match your search' : 'No Bradford jobs found'}
                   </td>
                 </tr>
@@ -759,6 +863,94 @@ export function BradfordStatsView({
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <StatusBadge status={job.status} />
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      {(() => {
+                        const fullJob = getFullJobData(job.id);
+                        const customerPaid = fullJob?.customerPaymentDate;
+                        const bradfordPaid = fullJob?.bradfordPaymentPaid;
+                        const jdPaid = fullJob?.jdPaymentPaid;
+                        const jdInvoiceSent = fullJob?.jdInvoiceEmailedAt;
+
+                        return (
+                          <div className="flex flex-col gap-1">
+                            {/* Badge 1: Customer → Impact */}
+                            {customerPaid ? (
+                              <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded inline-flex items-center gap-1 w-fit">
+                                <Check className="w-3 h-3" />
+                                Customer Paid
+                              </span>
+                            ) : (
+                              <span className="bg-gray-100 text-gray-500 text-xs px-2 py-0.5 rounded w-fit">
+                                ○ Awaiting Customer
+                              </span>
+                            )}
+
+                            {/* Badge 2: Impact → Bradford */}
+                            {bradfordPaid ? (
+                              <span className="bg-orange-100 text-orange-700 text-xs px-2 py-0.5 rounded inline-flex items-center gap-1 w-fit">
+                                <Check className="w-3 h-3" />
+                                Bradford Paid
+                              </span>
+                            ) : customerPaid ? (
+                              <button
+                                onClick={(e) => handleMarkBradfordPaid(e, job.id)}
+                                className="bg-orange-500 text-white text-xs px-2 py-0.5 rounded hover:bg-orange-600 transition-colors w-fit"
+                              >
+                                Pay Bradford
+                              </button>
+                            ) : (
+                              <span className="bg-gray-100 text-gray-400 text-xs px-2 py-0.5 rounded w-fit">
+                                ○ Pending
+                              </span>
+                            )}
+
+                            {/* Badge 3: Bradford → JD */}
+                            <div className="flex items-center gap-1">
+                              {jdPaid ? (
+                                <span className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded inline-flex items-center gap-1 w-fit">
+                                  <Check className="w-3 h-3" />
+                                  JD Paid
+                                </span>
+                              ) : bradfordPaid ? (
+                                <button
+                                  onClick={(e) => handleMarkJDPaid(e, job.id)}
+                                  className="bg-blue-500 text-white text-xs px-2 py-0.5 rounded hover:bg-blue-600 transition-colors w-fit"
+                                >
+                                  Mark JD Paid
+                                </button>
+                              ) : (
+                                <span className="bg-gray-100 text-gray-400 text-xs px-2 py-0.5 rounded w-fit">
+                                  ○ Pending
+                                </span>
+                              )}
+                              {/* JD Invoice actions */}
+                              {bradfordPaid && (
+                                <>
+                                  {/* Download PDF button */}
+                                  <button
+                                    onClick={(e) => handleDownloadJDInvoice(e, job.id)}
+                                    className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                    title="Download JD Invoice PDF"
+                                  >
+                                    <FileDown className="w-3.5 h-3.5" />
+                                  </button>
+                                  {/* Resend JD Invoice button */}
+                                  {jdInvoiceSent && !jdPaid && (
+                                    <button
+                                      onClick={(e) => handleResendJDInvoice(e, job.id)}
+                                      className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                      title="Resend JD Invoice"
+                                    >
+                                      <Mail className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
                       {job.sizeName || '-'}

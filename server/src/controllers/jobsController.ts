@@ -9,7 +9,7 @@ import {
   PaperSource,
 } from '../services/pricingService';
 import { normalizeSize, getSelfMailerPricing } from '../utils/bradfordPricing';
-import { sendArtworkFollowUpEmail } from '../services/emailService';
+import { sendArtworkFollowUpEmail, sendJDInvoiceToBradfordEmail } from '../services/emailService';
 
 /**
  * Check if a job meets criteria for Impact→Bradford PO creation
@@ -204,6 +204,14 @@ function transformJob(job: any) {
     bradfordPaymentAmount: job.bradfordPaymentAmount ? Number(job.bradfordPaymentAmount) : null,
     bradfordPaymentPaid: job.bradfordPaymentPaid || false,
     bradfordPaymentDate: job.bradfordPaymentDate,
+
+    // === JD PAYMENT TRACKING (NEW) ===
+    jdInvoiceGeneratedAt: job.jdInvoiceGeneratedAt,
+    jdInvoiceEmailedAt: job.jdInvoiceEmailedAt,
+    jdInvoiceEmailedTo: job.jdInvoiceEmailedTo,
+    jdPaymentPaid: job.jdPaymentPaid || false,
+    jdPaymentDate: job.jdPaymentDate,
+    jdPaymentAmount: job.jdPaymentAmount ? Number(job.jdPaymentAmount) : null,
 
     // === DOCUMENT GENERATION TRACKING ===
     quoteGeneratedAt: job.quoteGeneratedAt,
@@ -2020,5 +2028,383 @@ export const deletePO = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Delete PO error:', error);
     res.status(500).json({ error: 'Failed to delete PO' });
+  }
+};
+
+// ============================================
+// MULTI-STEP PAYMENT WORKFLOW (4-STEP PROCESS)
+// ============================================
+// Step 1: Customer → Impact (Financials tab)
+// Step 2: Impact → Bradford (Bradford Stats tab)
+// Step 3: JD Invoice auto-sent to Bradford (triggered by Step 2)
+// Step 4: Bradford → JD Paid (Bradford Stats tab)
+// ============================================
+
+// Step 1: Mark Customer Paid (Customer → Impact)
+export const markCustomerPaid = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { date } = req.body;
+
+    const existingJob = await prisma.job.findUnique({
+      where: { id },
+      select: {
+        sellPrice: true,
+        customerPaymentDate: true,
+        customerPaymentAmount: true,
+      },
+    });
+
+    if (!existingJob) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    const paymentDate = date ? new Date(date) : new Date();
+    const paymentAmount = Number(existingJob.sellPrice) || 0;
+
+    // Log the change
+    await logPaymentChange(id, 'customerPaymentDate', existingJob.customerPaymentDate, paymentDate, 'admin');
+
+    const job = await prisma.job.update({
+      where: { id },
+      data: {
+        customerPaymentDate: paymentDate,
+        customerPaymentAmount: paymentAmount,
+        updatedAt: new Date(),
+      },
+      include: {
+        Company: true,
+        Vendor: true,
+        PurchaseOrder: {
+          include: {
+            Vendor: true,
+          },
+        },
+        ProfitSplit: true,
+      },
+    });
+
+    res.json(transformJob(job));
+  } catch (error) {
+    console.error('Mark customer paid error:', error);
+    res.status(500).json({ error: 'Failed to mark customer paid' });
+  }
+};
+
+// Step 2: Mark Bradford Paid (Impact → Bradford) - triggers JD Invoice
+export const markImpactToBradfordPaid = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { date, sendInvoice = true } = req.body;
+
+    const existingJob = await prisma.job.findUnique({
+      where: { id },
+      include: {
+        Company: true,
+        ProfitSplit: true,
+        PurchaseOrder: true,
+      },
+    });
+
+    if (!existingJob) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    const paymentDate = date ? new Date(date) : new Date();
+
+    // Calculate Bradford payment amount from profit split
+    const profit = calculateProfit(existingJob);
+    const paymentAmount = profit.bradfordTotal || 0;
+
+    // Log the change
+    await logPaymentChange(id, 'bradfordPaymentDate', existingJob.bradfordPaymentDate, paymentDate, 'admin');
+
+    // Update the job with Bradford payment info
+    let updateData: any = {
+      bradfordPaymentPaid: true,
+      bradfordPaymentDate: paymentDate,
+      bradfordPaymentAmount: paymentAmount,
+      updatedAt: new Date(),
+    };
+
+    // If sendInvoice is true, generate and send JD invoice to Bradford
+    let emailResult = null;
+    if (sendInvoice) {
+      // Compute suggestedPricing from sizeName (not stored in DB, must be computed)
+      const basePricing = existingJob.sizeName ? getSelfMailerPricing(existingJob.sizeName) : null;
+      const suggestedPricingData = basePricing ? {
+        printCPM: basePricing.printCPM,
+        paperCPM: basePricing.paperCPM,
+        paperLbsPerM: basePricing.paperLbsPerM,
+      } : null;
+
+      // Prepare job data for JD invoice PDF
+      const jobDataForInvoice = {
+        id: existingJob.id,
+        jobNo: existingJob.jobNo,
+        customerPONumber: existingJob.customerPONumber,
+        bradfordPONumber: existingJob.partnerPONumber,
+        partnerPONumber: existingJob.partnerPONumber,
+        quantity: existingJob.quantity,
+        bradfordPrintCPM: existingJob.bradfordPrintCPM,
+        bradfordBuyCost: existingJob.bradfordBuyCost,
+        bradfordPaperLbs: existingJob.bradfordPaperLbs,
+        bradfordPaperCostPerLb: existingJob.bradfordPaperCostPerLb,
+        paperSource: existingJob.paperSource,
+        sizeName: existingJob.sizeName,
+        title: existingJob.title,
+        specs: existingJob.specs,
+        // Include POs for invoice amount calculation
+        purchaseOrders: existingJob.PurchaseOrder,
+        // Include suggestedPricing for paper lbs calculation
+        suggestedPricing: suggestedPricingData,
+      };
+
+      emailResult = await sendJDInvoiceToBradfordEmail(jobDataForInvoice);
+
+      if (emailResult.success) {
+        // Update JD invoice tracking fields
+        updateData.jdInvoiceGeneratedAt = new Date();
+        updateData.jdInvoiceEmailedAt = emailResult.emailedAt;
+        updateData.jdInvoiceEmailedTo = emailResult.emailedTo;
+
+        console.log(`📧 JD Invoice sent to Bradford for job ${existingJob.jobNo}`);
+      } else {
+        console.error(`❌ Failed to send JD invoice for job ${existingJob.jobNo}:`, emailResult.error);
+      }
+    }
+
+    const job = await prisma.job.update({
+      where: { id },
+      data: updateData,
+      include: {
+        Company: true,
+        Vendor: true,
+        PurchaseOrder: {
+          include: {
+            Vendor: true,
+          },
+        },
+        ProfitSplit: true,
+      },
+    });
+
+    res.json({
+      ...transformJob(job),
+      jdInvoiceSent: emailResult?.success || false,
+      jdInvoiceError: emailResult?.error || null,
+    });
+  } catch (error) {
+    console.error('Mark Bradford paid error:', error);
+    res.status(500).json({ error: 'Failed to mark Bradford paid' });
+  }
+};
+
+// Manual: Send JD Invoice to Bradford (can be used to resend)
+export const sendJDInvoice = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const job = await prisma.job.findUnique({
+      where: { id },
+      include: {
+        Company: true,
+        ProfitSplit: true,
+        PurchaseOrder: true,
+      },
+    });
+
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    // Compute suggestedPricing from sizeName (not stored in DB, must be computed)
+    const basePricing = job.sizeName ? getSelfMailerPricing(job.sizeName) : null;
+    const suggestedPricingData = basePricing ? {
+      printCPM: basePricing.printCPM,
+      paperCPM: basePricing.paperCPM,
+      paperLbsPerM: basePricing.paperLbsPerM,
+    } : null;
+
+    // Prepare job data for JD invoice PDF
+    const jobDataForInvoice = {
+      id: job.id,
+      jobNo: job.jobNo,
+      customerPONumber: job.customerPONumber,
+      bradfordPONumber: job.partnerPONumber,
+      partnerPONumber: job.partnerPONumber,
+      quantity: job.quantity,
+      bradfordPrintCPM: job.bradfordPrintCPM,
+      bradfordBuyCost: job.bradfordBuyCost,
+      bradfordPaperLbs: job.bradfordPaperLbs,
+      bradfordPaperCostPerLb: job.bradfordPaperCostPerLb,
+      paperSource: job.paperSource,
+      sizeName: job.sizeName,
+      title: job.title,
+      specs: job.specs,
+      // Include POs for invoice amount calculation
+      purchaseOrders: job.PurchaseOrder,
+      // Include suggestedPricing for paper lbs calculation
+      suggestedPricing: suggestedPricingData,
+    };
+
+    const emailResult = await sendJDInvoiceToBradfordEmail(jobDataForInvoice);
+
+    if (emailResult.success) {
+      // Update JD invoice tracking fields
+      await prisma.job.update({
+        where: { id },
+        data: {
+          jdInvoiceGeneratedAt: new Date(),
+          jdInvoiceEmailedAt: emailResult.emailedAt,
+          jdInvoiceEmailedTo: emailResult.emailedTo,
+          updatedAt: new Date(),
+        },
+      });
+
+      res.json({
+        success: true,
+        emailedAt: emailResult.emailedAt,
+        emailedTo: emailResult.emailedTo,
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: emailResult.error || 'Failed to send JD invoice',
+      });
+    }
+  } catch (error) {
+    console.error('Send JD invoice error:', error);
+    res.status(500).json({ error: 'Failed to send JD invoice' });
+  }
+};
+
+// Download JD Invoice PDF (for manual download)
+export const downloadJDInvoicePDF = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const job = await prisma.job.findUnique({
+      where: { id },
+      include: {
+        Company: true,
+        ProfitSplit: true,
+        PurchaseOrder: true,
+      },
+    });
+
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    // Compute suggestedPricing from sizeName (not stored in DB, must be computed)
+    const basePricing = job.sizeName ? getSelfMailerPricing(job.sizeName) : null;
+    const suggestedPricingData = basePricing ? {
+      printCPM: basePricing.printCPM,
+      paperCPM: basePricing.paperCPM,
+      paperLbsPerM: basePricing.paperLbsPerM,
+    } : null;
+
+    // Prepare job data for JD invoice PDF
+    const jobDataForInvoice = {
+      id: job.id,
+      jobNo: job.jobNo,
+      customerPONumber: job.customerPONumber,
+      bradfordPONumber: job.partnerPONumber,
+      partnerPONumber: job.partnerPONumber,
+      quantity: job.quantity,
+      bradfordPrintCPM: job.bradfordPrintCPM,
+      bradfordBuyCost: job.bradfordBuyCost,
+      bradfordPaperLbs: job.bradfordPaperLbs,
+      bradfordPaperCostPerLb: job.bradfordPaperCostPerLb,
+      paperSource: job.paperSource,
+      sizeName: job.sizeName,
+      title: job.title,
+      specs: job.specs,
+      purchaseOrders: job.PurchaseOrder,
+      // Include suggestedPricing for paper lbs calculation
+      suggestedPricing: suggestedPricingData,
+    };
+
+    // Import the PDF generator
+    const { generateJDToBradfordInvoicePDF } = await import('../services/pdfService');
+    const pdfBuffer = generateJDToBradfordInvoicePDF(jobDataForInvoice);
+
+    const filename = `JD-Invoice-Job-${job.jobNo}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Download JD invoice error:', error);
+    res.status(500).json({ error: 'Failed to generate JD invoice PDF' });
+  }
+};
+
+// Step 4: Mark JD Paid (Bradford → JD)
+export const markJDPaid = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { date } = req.body;
+
+    const existingJob = await prisma.job.findUnique({
+      where: { id },
+      include: {
+        ProfitSplit: true,
+        PurchaseOrder: true,
+      },
+    });
+
+    if (!existingJob) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    const paymentDate = date ? new Date(date) : new Date();
+
+    // Calculate JD payment amount (manufacturing cost)
+    // This is what Bradford pays JD for print manufacturing
+    let jdPaymentAmount = 0;
+
+    // Try to get from Bradford→JD PO
+    const bradfordJDPO = (existingJob.PurchaseOrder || []).find(
+      (po: any) => po.originCompanyId === 'bradford' && po.targetCompanyId === 'jd-graphic'
+    );
+
+    if (bradfordJDPO) {
+      jdPaymentAmount = Number(bradfordJDPO.buyCost) || Number(bradfordJDPO.mfgCost) || 0;
+    } else {
+      // Fallback: calculate from job fields
+      if (existingJob.bradfordPrintCPM && existingJob.quantity) {
+        jdPaymentAmount = (Number(existingJob.bradfordPrintCPM) / 1000) * Number(existingJob.quantity);
+      }
+    }
+
+    // Log the change
+    await logPaymentChange(id, 'jdPaymentDate', existingJob.jdPaymentDate, paymentDate, 'admin');
+
+    const job = await prisma.job.update({
+      where: { id },
+      data: {
+        jdPaymentPaid: true,
+        jdPaymentDate: paymentDate,
+        jdPaymentAmount: jdPaymentAmount,
+        updatedAt: new Date(),
+      },
+      include: {
+        Company: true,
+        Vendor: true,
+        PurchaseOrder: {
+          include: {
+            Vendor: true,
+          },
+        },
+        ProfitSplit: true,
+      },
+    });
+
+    res.json(transformJob(job));
+  } catch (error) {
+    console.error('Mark JD paid error:', error);
+    res.status(500).json({ error: 'Failed to mark JD paid' });
   }
 };

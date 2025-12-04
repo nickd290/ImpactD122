@@ -161,6 +161,16 @@ model Job {
   bradfordPaymentPaid       Boolean          @default(false)  // Has Bradford's 50% been paid?
   bradfordPaymentDate       DateTime?        // When was Bradford paid
 
+  // JD → Bradford Invoice tracking
+  jdInvoiceGeneratedAt      DateTime?        // When JD invoice PDF was generated
+  jdInvoiceEmailedAt        DateTime?        // When JD invoice was emailed to Bradford
+  jdInvoiceEmailedTo        String?          // Email address JD invoice was sent to
+
+  // Bradford → JD payment tracking
+  jdPaymentPaid             Boolean          @default(false)  // Has Bradford paid JD?
+  jdPaymentDate             DateTime?        // When was JD paid by Bradford
+  jdPaymentAmount           Decimal?         // Amount Bradford paid to JD
+
   // === DOCUMENT GENERATION TRACKING ===
   quoteGeneratedAt          DateTime?        // Last time quote PDF was generated
   quoteGeneratedCount       Int              @default(0)  // How many times quote was generated

@@ -87,6 +87,21 @@ export interface Job {
   bradfordRefNumber?: string; // Internal Reference / PO to JD
   bradfordPaperLbs?: number | null; // Bradford paper weight in lbs
 
+  // Payment Tracking
+  customerPaymentDate?: string;
+  customerPaymentAmount?: number | null;
+  bradfordPaymentPaid?: boolean;
+  bradfordPaymentDate?: string;
+  bradfordPaymentAmount?: number | null;
+
+  // JD Invoice/Payment Tracking (NEW)
+  jdInvoiceGeneratedAt?: string;
+  jdInvoiceEmailedAt?: string;
+  jdInvoiceEmailedTo?: string;
+  jdPaymentPaid?: boolean;
+  jdPaymentDate?: string;
+  jdPaymentAmount?: number | null;
+
   // Documents
   customerPONumber?: string; // External PO Number
   originalPOUrl?: string; // Base64 or URL of uploaded PO

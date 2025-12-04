@@ -10,7 +10,11 @@ const formatCurrency = (amount: number) => {
   }).format(amount);
 };
 
-export function FinancialsView() {
+interface FinancialsViewProps {
+  onRefresh?: () => void;
+}
+
+export function FinancialsView({ onRefresh }: FinancialsViewProps) {
   const [loading, setLoading] = useState(true);
   const [jobs, setJobs] = useState<any[]>([]);
   const [filter, setFilter] = useState<'all' | 'unpaid' | 'invoiced' | 'paid'>('all');
@@ -79,6 +83,20 @@ export function FinancialsView() {
     } catch (error) {
       console.error('Failed to update job statuses:', error);
       alert('Failed to update job statuses. Please try again.');
+    }
+  };
+
+  // Step 1: Mark Customer → Impact as paid
+  const handleMarkCustomerPaid = async (jobId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await jobsApi.markCustomerPaid(jobId);
+      await loadJobs();
+      // Trigger global refresh so Bradford Stats gets updated
+      onRefresh?.();
+    } catch (error) {
+      console.error('Failed to mark customer paid:', error);
+      alert('Failed to mark customer as paid. Please try again.');
     }
   };
 
@@ -293,14 +311,14 @@ export function FinancialsView() {
                 />
               </th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Job</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Customer PO #</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Customer</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Sell</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Cost</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Spread</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-orange-600 uppercase">Bradford</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-blue-600 uppercase">Impact</th>
-              <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Status</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Actions</th>
+              <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Customer Paid</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
@@ -330,6 +348,9 @@ export function FinancialsView() {
                     <p className="text-sm font-medium text-gray-900">{job.number}</p>
                     <p className="text-xs text-gray-500 truncate max-w-[150px]">{job.title}</p>
                   </td>
+                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-gray-600 cursor-pointer">
+                    {job.customerPONumber || '-'}
+                  </td>
                   <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-gray-900 cursor-pointer">
                     {job.customer?.name || '-'}
                   </td>
@@ -348,43 +369,21 @@ export function FinancialsView() {
                   <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-right font-semibold text-blue-600 cursor-pointer">
                     {formatCurrency(fin.impactTotal)}
                   </td>
-                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-center cursor-pointer">
-                    {job.status === 'PAID' ? (
-                      <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
-                        Paid
-                      </span>
-                    ) : job.status === 'INVOICED' ? (
-                      <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-xs font-medium">
-                        Invoiced
+                  <td className="px-4 py-3 text-sm text-center">
+                    {job.customerPaymentDate ? (
+                      <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium inline-flex items-center gap-1">
+                        <Check className="w-3 h-3" />
+                        Customer Paid
                       </span>
                     ) : (
-                      <span className="px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-medium">
-                        Unpaid
-                      </span>
+                      <button
+                        onClick={(e) => handleMarkCustomerPaid(job.id, e)}
+                        className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium hover:bg-green-100 hover:text-green-700 transition-colors"
+                        title="Mark Customer Paid"
+                      >
+                        Mark Paid
+                      </button>
                     )}
-                  </td>
-                  <td className="px-4 py-3 text-sm">
-                    <div className="flex gap-1">
-                      {job.status !== 'INVOICED' && job.status !== 'PAID' && (
-                        <button
-                          onClick={() => handleUpdateStatus(job.id, 'INVOICED')}
-                          className="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs font-medium hover:bg-orange-200"
-                          title="Mark as Invoiced"
-                        >
-                          Invoice
-                        </button>
-                      )}
-                      {job.status !== 'PAID' && (
-                        <button
-                          onClick={() => handleUpdateStatus(job.id, 'PAID')}
-                          className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium hover:bg-green-200 flex items-center gap-1"
-                          title="Mark as Paid"
-                        >
-                          <Check className="w-3 h-3" />
-                          Paid
-                        </button>
-                      )}
-                    </div>
                   </td>
                 </tr>
               );
@@ -393,13 +392,13 @@ export function FinancialsView() {
           <tfoot className="bg-gray-900 text-white">
             <tr>
               <td className="px-4 py-3"></td>
-              <td colSpan={2} className="px-4 py-3 text-sm font-bold">TOTALS ({filteredJobs.length} jobs)</td>
+              <td colSpan={3} className="px-4 py-3 text-sm font-bold">TOTALS ({filteredJobs.length} jobs)</td>
               <td className="px-4 py-3 text-sm text-right font-bold">{formatCurrency(totals.sellPrice)}</td>
               <td className="px-4 py-3 text-sm text-right font-bold">{formatCurrency(totals.totalCost)}</td>
               <td className="px-4 py-3 text-sm text-right font-bold text-blue-400">{formatCurrency(totals.spread)}</td>
               <td className="px-4 py-3 text-sm text-right font-bold text-orange-400">{formatCurrency(totals.bradfordTotal)}</td>
               <td className="px-4 py-3 text-sm text-right font-bold text-blue-400">{formatCurrency(totals.impactTotal)}</td>
-              <td colSpan={2} className="px-4 py-3"></td>
+              <td className="px-4 py-3"></td>
             </tr>
           </tfoot>
         </table>

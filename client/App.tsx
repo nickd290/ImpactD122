@@ -518,7 +518,7 @@ function App() {
             />
           )}
 
-          {currentView === 'FINANCIALS' && <FinancialsView />}
+          {currentView === 'FINANCIALS' && <FinancialsView onRefresh={loadData} />}
 
           {currentView === 'PARTNER_STATS' && (
             <BradfordStatsView
