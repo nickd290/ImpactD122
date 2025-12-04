@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import crypto from 'crypto';
 import { prisma } from '../utils/prisma';
 
 // Get all entities (companies for customers, vendors for vendors)
