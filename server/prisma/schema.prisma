@@ -204,6 +204,9 @@ model Job {
   routingType               RoutingType      @default(BRADFORD_JD)
   paperSource               PaperSource      @default(BRADFORD)  // Who supplies paper
   bradfordPaperLbs          Decimal?         @db.Decimal(10, 2)  // lbs of paper supplied by Bradford
+  bradfordPrintCPM          Decimal?         @db.Decimal(10, 4)  // Print cost per thousand from Bradford
+  bradfordBuyCost           Decimal?         @db.Decimal(10, 2)  // Total buy cost from Bradford
+  bradfordPaperCostPerLb    Decimal?         @db.Decimal(10, 4)  // Paper cost per lb from Bradford
   vendorId                  String?
   deletedAt                 DateTime?
   deletedBy                 String?
