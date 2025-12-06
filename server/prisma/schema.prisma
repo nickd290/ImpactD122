@@ -228,6 +228,7 @@ model Job {
   Quote                     Quote?           @relation(fields: [quoteId], references: [id])
   Vendor                    Vendor?          @relation(fields: [vendorId], references: [id])
   JobActivity               JobActivity[]
+  JobCommunication          JobCommunication[]  // Email relay communications
   Notification              Notification[]
   Proof                     Proof[]
   PurchaseOrder             PurchaseOrder[]
@@ -260,6 +261,93 @@ model JobActivity {
 
   @@index([createdAt])
   @@index([jobId])
+}
+
+// ============================================
+// JOB COMMUNICATION - Email Relay/Proxy System
+// ============================================
+model JobCommunication {
+  id              String                  @id @default(cuid())
+  jobId           String
+  job             Job                     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  // Direction and parties
+  direction       CommunicationDirection
+  senderType      SenderType              // Who originally sent: CUSTOMER, VENDOR, INTERNAL
+
+  // Original email details (stored for audit)
+  originalFrom    String                  // Original sender email
+  originalTo      String                  // Original recipient(s)
+  originalSubject String
+
+  // What recipient actually sees
+  maskedFrom      String?                 // What we show as sender (e.g., info@impactdirectprinting.com)
+  maskedSubject   String?                 // Modified subject if needed
+
+  // Content
+  textBody        String?                 @db.Text
+  htmlBody        String?                 @db.Text
+
+  // Attachments stored as File references
+  attachments     JobCommunicationAttachment[]
+
+  // Processing status
+  status          CommunicationStatus     @default(RECEIVED)
+  forwardedAt     DateTime?
+  forwardedTo     String?                 // Who we forwarded to
+  forwardedBy     String?                 // User who clicked forward (manual mode)
+
+  // SendGrid metadata
+  messageId       String?                 // SendGrid message ID
+  inReplyTo       String?                 // For threading
+
+  // Notes for internal use
+  internalNotes   String?
+
+  receivedAt      DateTime                @default(now())
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@index([jobId])
+  @@index([status])
+  @@index([receivedAt])
+  @@index([direction])
+}
+
+model JobCommunicationAttachment {
+  id                String            @id @default(cuid())
+  communicationId   String
+  communication     JobCommunication  @relation(fields: [communicationId], references: [id], onDelete: Cascade)
+
+  fileName          String
+  mimeType          String
+  size              Int
+  objectKey         String?           // S3/storage key if uploaded
+  contentBase64     String?           @db.Text  // For small attachments, store inline
+
+  createdAt         DateTime          @default(now())
+
+  @@index([communicationId])
+}
+
+enum CommunicationDirection {
+  CUSTOMER_TO_VENDOR    // Customer email that needs to go to vendor
+  VENDOR_TO_CUSTOMER    // Vendor reply that needs to go to customer
+  INTERNAL_NOTE         // Internal notes (not forwarded)
+}
+
+enum SenderType {
+  CUSTOMER
+  VENDOR
+  INTERNAL
+}
+
+enum CommunicationStatus {
+  RECEIVED              // Just received, not yet processed
+  PENDING_REVIEW        // Waiting for manual review before forwarding
+  FORWARDED             // Successfully forwarded to other party
+  FAILED                // Failed to forward
+  SKIPPED               // Manually marked as skip (don't forward)
 }
 
 model Notification {

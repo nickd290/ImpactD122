@@ -11,6 +11,7 @@ import exportRouter from './routes/export';
 import bradfordRouter from './routes/bradford';
 import paperInventoryRouter from './routes/paperInventory';
 import emailRouter from './routes/email';
+import communicationsRouter from './routes/communications';
 
 // Load environment variables
 // Use path relative to this file to find .env in the server directory
@@ -47,6 +48,7 @@ app.use('/api/export', exportRouter);
 app.use('/api/bradford', bradfordRouter);
 app.use('/api/paper-inventory', paperInventoryRouter);
 app.use('/api/email', emailRouter);
+app.use('/api/communications', communicationsRouter);
 
 // Serve frontend in production
 if (process.env.NODE_ENV === 'production') {

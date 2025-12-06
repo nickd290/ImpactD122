@@ -1,11 +1,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   X, Calendar, User, Package, FileText, Edit2, Mail, Printer, Receipt,
-  DollarSign, Plus, Trash2, Building2, Check, Save, Download, AlertTriangle, Send, ChevronDown, Link, ExternalLink
+  DollarSign, Plus, Trash2, Building2, Check, Save, Download, AlertTriangle, Send, ChevronDown, Link, ExternalLink, MessageSquare
 } from 'lucide-react';
 import { EditableField } from './EditableField';
-import { pdfApi, emailApi } from '../lib/api';
+import { pdfApi, emailApi, communicationsApi } from '../lib/api';
 import { SendEmailModal } from './SendEmailModal';
+import { CommunicationThread } from './CommunicationThread';
+import { useQuery } from '@tanstack/react-query';
 
 interface Job {
   id: string;
@@ -175,7 +177,7 @@ interface JobDetailModalProps {
   onRefresh?: () => void;
 }
 
-type TabType = 'overview' | 'pricing' | 'purchase-orders' | 'notes';
+type TabType = 'overview' | 'pricing' | 'purchase-orders' | 'communications' | 'notes';
 
 export function JobDetailModal({
   job,
@@ -2130,10 +2132,19 @@ export function JobDetailModal({
     </div>
   );
 
-  const tabs: { id: TabType; label: string }[] = [
+  // Fetch pending communications count for badge
+  const { data: commData } = useQuery({
+    queryKey: ['communications', job?.id],
+    queryFn: () => job?.id ? communicationsApi.getByJob(job.id) : Promise.resolve([]),
+    enabled: !!job?.id,
+  });
+  const pendingCommCount = (commData || []).filter((c: any) => c.status === 'PENDING_REVIEW').length;
+
+  const tabs: { id: TabType; label: string; badge?: number }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'pricing', label: 'Pricing' },
     { id: 'purchase-orders', label: 'Purchase Orders' },
+    { id: 'communications', label: 'Communications', badge: pendingCommCount },
     { id: 'notes', label: 'Notes' },
   ];
 
@@ -2361,16 +2372,22 @@ export function JobDetailModal({
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
                     activeTab === tab.id
                       ? 'text-blue-600 border-blue-600'
                       : 'text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
+                  {tab.id === 'communications' && <MessageSquare className="h-4 w-4" />}
                   {tab.label}
                   {tab.id === 'purchase-orders' && job.purchaseOrders && job.purchaseOrders.length > 0 && (
-                    <span className="ml-2 px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
+                    <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
                       {job.purchaseOrders.length}
+                    </span>
+                  )}
+                  {tab.badge && tab.badge > 0 && (
+                    <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-xs rounded-full font-semibold">
+                      {tab.badge}
                     </span>
                   )}
                 </button>
@@ -2383,6 +2400,16 @@ export function JobDetailModal({
             {activeTab === 'overview' && OverviewTab()}
             {activeTab === 'pricing' && PricingTab()}
             {activeTab === 'purchase-orders' && PurchaseOrdersTab()}
+            {activeTab === 'communications' && job && (
+              <CommunicationThread
+                jobId={job.id}
+                jobNo={job.jobNo || job.number || ''}
+                customerName={job.customer?.name}
+                customerEmail={job.customer?.email}
+                vendorName={job.vendor?.name}
+                vendorEmail={job.vendor?.email}
+              />
+            )}
             {activeTab === 'notes' && NotesTab()}
           </div>
         </div>

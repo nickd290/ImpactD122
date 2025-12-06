@@ -168,3 +168,53 @@ export const financialsApi = {
   getByCustomer: () => apiFetch('/financials/by-customer'),
   getByVendor: () => apiFetch('/financials/by-vendor'),
 };
+
+// Communications API - Email Relay System
+export const communicationsApi = {
+  // Get all communications for a job
+  getByJob: (jobId: string) => apiFetch(`/communications/job/${jobId}`),
+
+  // Get pending communications across all jobs
+  getPending: () => apiFetch('/communications/pending'),
+
+  // Get count of pending communications (for badge)
+  getPendingCount: () => apiFetch('/communications/pending/count'),
+
+  // Get single communication
+  getById: (id: string) => apiFetch(`/communications/${id}`),
+
+  // Forward a communication to the other party
+  forward: (id: string, customMessage?: string, forwardedBy?: string) =>
+    apiFetch(`/communications/${id}/forward`, {
+      method: 'POST',
+      body: JSON.stringify({ customMessage, forwardedBy }),
+    }),
+
+  // Skip a communication (don't forward)
+  skip: (id: string, reason?: string, skippedBy?: string) =>
+    apiFetch(`/communications/${id}/skip`, {
+      method: 'POST',
+      body: JSON.stringify({ reason, skippedBy }),
+    }),
+
+  // Update communication before forwarding
+  update: (id: string, data: { textBody?: string; htmlBody?: string; maskedSubject?: string; internalNotes?: string }) =>
+    apiFetch(`/communications/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  // Add internal note to a job's thread
+  addNote: (jobId: string, note: string, addedBy?: string) =>
+    apiFetch(`/communications/job/${jobId}/note`, {
+      method: 'POST',
+      body: JSON.stringify({ note, addedBy }),
+    }),
+
+  // Send new outbound communication
+  send: (jobId: string, to: 'customer' | 'vendor', subject: string, body: string, createdBy?: string) =>
+    apiFetch(`/communications/job/${jobId}/send`, {
+      method: 'POST',
+      body: JSON.stringify({ to, subject, body, createdBy }),
+    }),
+};
