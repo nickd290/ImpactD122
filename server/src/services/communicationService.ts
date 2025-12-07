@@ -489,29 +489,30 @@ export async function processInboundEmail(payload: InboundEmailPayload): Promise
       communicationId
     });
 
-    // Auto-forward customer artwork emails to vendor
-    // If sender is customer AND has attachments, auto-forward to vendor
-    if (senderType === SenderType.CUSTOMER && payload.attachments && payload.attachments.length > 0) {
-      console.log('📎 Customer email with attachments detected, auto-forwarding to vendor');
-      try {
-        const forwardResult = await forwardCommunication(
-          communicationId,
-          'system-autoforward',
-          undefined // Forward with original content
-        );
+    // Auto-forward ALL emails in both directions (blind relay)
+    // Customer emails → forward to Vendor (hide customer info)
+    // Vendor emails → forward to Customer (hide vendor info)
+    console.log(`📨 Auto-forwarding ${senderType} email to other party`);
+    try {
+      const forwardResult = await forwardCommunication(
+        communicationId,
+        'system-autoforward',
+        undefined // Forward with original content
+      );
 
-        if (forwardResult.success) {
-          console.log('✅ Auto-forwarded customer artwork to vendor:', {
-            communicationId,
-            attachmentCount: payload.attachments.length
-          });
-        } else {
-          console.warn('⚠️ Auto-forward failed:', forwardResult.error);
-        }
-      } catch (autoForwardError: any) {
-        console.error('Error in auto-forward:', autoForwardError.message);
-        // Don't fail the entire process, email is still stored
+      if (forwardResult.success) {
+        const targetParty = senderType === SenderType.CUSTOMER ? 'vendor' : 'customer';
+        console.log(`✅ Auto-forwarded to ${targetParty}:`, {
+          communicationId,
+          from: senderType,
+          attachmentCount: payload.attachments?.length || 0
+        });
+      } else {
+        console.warn('⚠️ Auto-forward failed:', forwardResult.error);
       }
+    } catch (autoForwardError: any) {
+      console.error('Error in auto-forward:', autoForwardError.message);
+      // Don't fail the entire process, email is still stored
     }
 
     return {
