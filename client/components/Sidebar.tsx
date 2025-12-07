@@ -1,10 +1,10 @@
 import React from 'react';
-import { BarChart3, Briefcase, Users, Building2, TrendingUp, DollarSign, Plus, Sparkles, Command, Package, Calculator } from 'lucide-react';
+import { BarChart3, Briefcase, Users, Building2, TrendingUp, DollarSign, Plus, Sparkles, Command, Package, Calculator, MessageSquare } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Button } from './ui';
 import { Badge } from './ui';
 
-type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING';
+type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS';
 
 interface SidebarProps {
   currentView: View;
@@ -13,6 +13,7 @@ interface SidebarProps {
   customersCount: number;
   vendorsCount: number;
   partnerJobsCount: number;
+  pendingCommunicationsCount: number;
   onShowSpecParser: () => void;
   onCreateJob: () => void;
   onShowSearch: () => void;
@@ -72,6 +73,7 @@ export function Sidebar({
   customersCount,
   vendorsCount,
   partnerJobsCount,
+  pendingCommunicationsCount,
   onShowSpecParser,
   onCreateJob,
   onShowSearch,
@@ -126,6 +128,14 @@ export function Sidebar({
             onClick={() => onViewChange('JOBS')}
             badge={jobsCount}
             shortcut="J"
+          />
+          <NavItem
+            icon={<MessageSquare className="w-5 h-5" />}
+            label="Communications"
+            active={currentView === 'COMMUNICATIONS'}
+            onClick={() => onViewChange('COMMUNICATIONS')}
+            badge={pendingCommunicationsCount}
+            shortcut="M"
           />
         </div>
 

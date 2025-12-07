@@ -581,31 +581,7 @@ export async function processInboundEmail(payload: InboundEmailPayload): Promise
       communicationId
     });
 
-    // Auto-forward ALL emails in both directions (blind relay)
-    // Customer emails → forward to Vendor (hide customer info)
-    // Vendor emails → forward to Customer (hide vendor info)
-    console.log(`📨 Auto-forwarding ${senderType} email to other party`);
-    try {
-      const forwardResult = await forwardCommunication(
-        communicationId,
-        'system-autoforward',
-        undefined // Forward with original content
-      );
-
-      if (forwardResult.success) {
-        const targetParty = senderType === SenderType.CUSTOMER ? 'vendor' : 'customer';
-        console.log(`✅ Auto-forwarded to ${targetParty}:`, {
-          communicationId,
-          from: senderType,
-          attachmentCount: payload.attachments?.length || 0
-        });
-      } else {
-        console.warn('⚠️ Auto-forward failed:', forwardResult.error);
-      }
-    } catch (autoForwardError: any) {
-      console.error('Error in auto-forward:', autoForwardError.message);
-      // Don't fail the entire process, email is still stored
-    }
+    // Email stored as PENDING_REVIEW - user will manually forward via dashboard
 
     return {
       success: true,

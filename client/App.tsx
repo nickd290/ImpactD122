@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Toaster, toast } from 'sonner';
-import { jobsApi, entitiesApi } from './lib/api';
+import { jobsApi, entitiesApi, communicationsApi } from './lib/api';
 import { SpecParser } from './components/SpecParser';
 import { POUploader } from './components/POUploader';
 import { EmailDraftModal } from './components/EmailDraftModal';
@@ -17,6 +17,7 @@ import { BradfordStatsView } from './components/BradfordStatsView';
 import { FinancialsView } from './components/FinancialsView';
 import { PaperInventoryView } from './components/PaperInventoryView';
 import { AccountingDashboardView } from './components/AccountingDashboardView';
+import { CommunicationsView } from './components/CommunicationsView';
 import { JobFormModal } from './components/JobFormModal';
 import { JobExcelImporter } from './components/JobExcelImporter';
 import { JobImportPreviewModal } from './components/JobImportPreviewModal';
@@ -24,7 +25,7 @@ import { NewJobChoiceModal } from './components/NewJobChoiceModal';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { AppLoadingSkeleton } from './components/LoadingSkeleton';
 
-type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING';
+type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS';
 
 // Impact Direct entity for PDF generation
 const IMPACT_DIRECT_ENTITY = {
@@ -45,6 +46,7 @@ function App() {
   const [vendors, setVendors] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedJob, setSelectedJob] = useState<any | null>(null);
+  const [pendingCommunicationsCount, setPendingCommunicationsCount] = useState(0);
 
   // AI Feature Modals
   const [showSpecParser, setShowSpecParser] = useState(false);
@@ -83,6 +85,15 @@ function App() {
     loadData();
   }, []);
 
+  const loadPendingCount = async () => {
+    try {
+      const { count } = await communicationsApi.getPendingCount();
+      setPendingCommunicationsCount(count);
+    } catch (error) {
+      console.error('Failed to load pending count:', error);
+    }
+  };
+
   const loadData = async () => {
     try {
       setLoading(true);
@@ -94,6 +105,8 @@ function App() {
       setJobs(jobsData);
       setCustomers(customersData);
       setVendors(vendorsData);
+      // Also load pending communications count
+      loadPendingCount();
       // Update selectedJob with fresh data if one is currently selected
       if (selectedJob) {
         const updatedJob = jobsData.find((j: any) => j.id === selectedJob.id);
@@ -445,6 +458,7 @@ function App() {
         customersCount={customers.length}
         vendorsCount={vendors.length}
         partnerJobsCount={jobs.filter(j => j.vendor?.isPartner).length}
+        pendingCommunicationsCount={pendingCommunicationsCount}
         onShowSpecParser={() => setShowSpecParser(true)}
         onCreateJob={handleCreateJob}
         onShowSearch={() => setShowSearchModal(true)}
@@ -538,6 +552,19 @@ function App() {
           {currentView === 'PAPER_INVENTORY' && <PaperInventoryView />}
 
           {currentView === 'ACCOUNTING' && <AccountingDashboardView />}
+
+          {currentView === 'COMMUNICATIONS' && (
+            <CommunicationsView
+              onGoToJob={(jobId) => {
+                const job = jobs.find(j => j.id === jobId);
+                if (job) {
+                  setSelectedJob(job);
+                  setCurrentView('JOBS');
+                }
+              }}
+              onRefreshCount={loadPendingCount}
+            />
+          )}
         </div>
       </div>
 
