@@ -144,29 +144,76 @@ export async function determineSenderType(
 }
 
 /**
- * Sanitize email content - remove identifying information
+ * Strip email signatures and identifying info from content
+ * Handles both HTML and plain text emails
  */
-export function sanitizeEmailForForwarding(
-  content: string,
-  stripPatterns: string[]
-): string {
-  let sanitized = content;
+export function stripEmailSignature(content: string, isHtml: boolean = false): string {
+  if (!content) return '';
 
-  // Remove each pattern
-  for (const pattern of stripPatterns) {
-    const regex = new RegExp(pattern, 'gi');
-    sanitized = sanitized.replace(regex, '[REDACTED]');
+  let stripped = content;
+
+  if (isHtml) {
+    // HTML email signature stripping
+
+    // Remove common signature divider patterns in HTML
+    // Matches: <div>--</div>, <p>--</p>, <br>--<br>, etc.
+    stripped = stripped.replace(/<(div|p|span)[^>]*>\s*--\s*<\/\1>[\s\S]*$/gi, '');
+    stripped = stripped.replace(/<br\s*\/?>\s*--\s*<br\s*\/?>[\s\S]*$/gi, '');
+
+    // Remove everything after signature delimiter in content
+    stripped = stripped.replace(/(<br\s*\/?>\s*){1,2}--\s*(<br\s*\/?>)?[\s\S]*$/gi, '');
+
+    // Remove "Sent from" mobile signatures
+    stripped = stripped.replace(/<(div|p|span)[^>]*>.*?Sent from my (iPhone|iPad|Android|Samsung|Galaxy|Mobile).*?<\/\1>/gi, '');
+    stripped = stripped.replace(/Sent from my (iPhone|iPad|Android|Samsung|Galaxy|Mobile)[^<]*/gi, '');
+
+    // Remove common signature wrapper divs (Gmail, Outlook)
+    stripped = stripped.replace(/<div[^>]*class="[^"]*gmail_signature[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '');
+    stripped = stripped.replace(/<div[^>]*class="[^"]*signature[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '');
+    stripped = stripped.replace(/<table[^>]*class="[^"]*signature[^"]*"[^>]*>[\s\S]*?<\/table>/gi, '');
+
+    // Remove quoted reply sections that might contain original sender info
+    stripped = stripped.replace(/<div[^>]*class="[^"]*gmail_quote[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '');
+    stripped = stripped.replace(/<blockquote[^>]*>[\s\S]*?<\/blockquote>/gi, '');
+
+    // Remove "On [date] [person] wrote:" patterns
+    stripped = stripped.replace(/<div[^>]*>On .{1,100} wrote:[\s\S]*?<\/div>/gi, '');
+    stripped = stripped.replace(/On .{1,50} at .{1,20}, .{1,50} wrote:/gi, '');
+
+    // Remove lines starting with "From:" "To:" "Subject:" "Date:" (forwarded headers)
+    stripped = stripped.replace(/<(div|p)[^>]*>\s*(From|To|Subject|Date|Sent|Cc):\s*[^<]*<\/\1>/gi, '');
+
+    // Clean up empty divs/paragraphs left behind
+    stripped = stripped.replace(/<(div|p|span)[^>]*>\s*<\/\1>/gi, '');
+    stripped = stripped.replace(/(<br\s*\/?>\s*){3,}/gi, '<br><br>');
+
+  } else {
+    // Plain text signature stripping
+
+    // Standard signature delimiter: line starting with --
+    stripped = stripped.replace(/^--\s*$[\s\S]*/gm, '');
+    stripped = stripped.replace(/\n--\s*\n[\s\S]*$/g, '');
+
+    // "Sent from" mobile signatures
+    stripped = stripped.replace(/\n*Sent from my (iPhone|iPad|Android|Samsung|Galaxy|Mobile)[\s\S]*/gi, '');
+
+    // Common sign-off patterns followed by name/contact (be careful not to strip legitimate content)
+    // Only strip if followed by what looks like contact info (email, phone, company name patterns)
+    stripped = stripped.replace(/\n+(Best regards?|Kind regards?|Regards|Thanks|Thank you|Cheers|Sincerely|Best),?\s*\n+[A-Z][a-z]+ [A-Z][a-z]+\s*\n+[\s\S]*$/gi, '');
+
+    // Remove quoted replies
+    stripped = stripped.replace(/\n*On .{1,100} wrote:\s*\n[\s\S]*$/gi, '');
+    stripped = stripped.replace(/\n*-+\s*Original Message\s*-+[\s\S]*$/gi, '');
+    stripped = stripped.replace(/\n*_{5,}[\s\S]*$/g, ''); // Outlook separator
+
+    // Remove forwarded email headers
+    stripped = stripped.replace(/\n*(From|To|Subject|Date|Sent|Cc):\s*[^\n]+/gi, '');
+
+    // Clean up excessive newlines
+    stripped = stripped.replace(/\n{3,}/g, '\n\n');
   }
 
-  // Remove common email signature patterns that might reveal identity
-  // This is a basic implementation - can be enhanced
-  sanitized = sanitized
-    // Remove "Sent from" signatures
-    .replace(/Sent from my (iPhone|iPad|Android|Samsung|Galaxy).*/gi, '')
-    // Remove common email footers
-    .replace(/--+\s*\n[\s\S]*$/gm, '');
-
-  return sanitized;
+  return stripped.trim();
 }
 
 /**
@@ -272,8 +319,17 @@ export async function forwardCommunication(
   // Build the email
   const subject = `Re: ${communication.originalSubject.replace(/^Re:\s*/i, '')}`;
 
-  // Use custom message or forward original content
-  const body = customMessage || communication.htmlBody || communication.textBody || '';
+  // Use custom message or forward original content (strip signatures to hide sender identity)
+  let body: string;
+  if (customMessage) {
+    body = customMessage;
+  } else if (communication.htmlBody) {
+    body = stripEmailSignature(communication.htmlBody, true); // HTML content
+  } else if (communication.textBody) {
+    body = stripEmailSignature(communication.textBody, false); // Plain text
+  } else {
+    body = '';
+  }
 
   // Build email message with Reply-To for thread management
   const jobEmailAddress = getJobEmailAddress(communication.job.jobNo);
