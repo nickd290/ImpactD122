@@ -238,6 +238,17 @@ export async function storeInboundEmail(
     attachmentCount: payload.attachments?.length || 0
   });
 
+  // Strip email signatures before storing
+  const cleanedText = payload.text ? stripEmailSignature(payload.text, false) : null;
+  const cleanedHtml = payload.html ? stripEmailSignature(payload.html, true) : null;
+
+  console.log('🧹 Stripped signatures:', {
+    originalTextLength: payload.text?.length || 0,
+    cleanedTextLength: cleanedText?.length || 0,
+    originalHtmlLength: payload.html?.length || 0,
+    cleanedHtmlLength: cleanedHtml?.length || 0
+  });
+
   const communication = await prisma.jobCommunication.create({
     data: {
       jobId,
@@ -246,8 +257,8 @@ export async function storeInboundEmail(
       originalFrom: payload.from,
       originalTo: payload.to,
       originalSubject: payload.subject,
-      textBody: payload.text || null,
-      htmlBody: payload.html || null,
+      textBody: cleanedText,
+      htmlBody: cleanedHtml,
       status: CommunicationStatus.PENDING_REVIEW, // Manual mode: wait for review
       receivedAt: new Date(),
       // Store attachments

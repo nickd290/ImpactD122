@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { simpleParser } from 'mailparser';
 import {
   processInboundEmail,
   getJobCommunications,
@@ -15,69 +16,44 @@ import {
 import { prisma } from '../utils/prisma';
 
 /**
- * Parse raw MIME email to extract text and html content
+ * Parse raw MIME email using mailparser
+ * Handles quoted-printable decoding, base64, charset conversion, etc.
  */
-function parseRawEmail(rawEmail: string): { text: string; html: string; from: string; to: string; subject: string } {
-  const result = { text: '', html: '', from: '', to: '', subject: '' };
-
+async function parseRawEmail(rawEmail: string): Promise<{ text: string; html: string; from: string; to: string; subject: string }> {
   try {
-    // Split headers from body
-    const headerBodySplit = rawEmail.indexOf('\r\n\r\n') !== -1
-      ? rawEmail.split('\r\n\r\n')
-      : rawEmail.split('\n\n');
+    const parsed = await simpleParser(rawEmail);
 
-    const headerSection = headerBodySplit[0] || '';
-    const bodySection = headerBodySplit.slice(1).join('\n\n');
-
-    // Parse headers
-    const fromMatch = headerSection.match(/^From:\s*(.+)$/mi);
-    const toMatch = headerSection.match(/^To:\s*(.+)$/mi);
-    const subjectMatch = headerSection.match(/^Subject:\s*(.+)$/mi);
-
-    if (fromMatch) result.from = fromMatch[1].trim();
-    if (toMatch) result.to = toMatch[1].trim();
-    if (subjectMatch) result.subject = subjectMatch[1].trim();
-
-    // Check if multipart
-    const boundaryMatch = headerSection.match(/boundary="?([^"\s;]+)"?/i);
-
-    if (boundaryMatch) {
-      // Multipart email - extract parts
-      const boundary = boundaryMatch[1];
-      const parts = bodySection.split(`--${boundary}`);
-
-      for (const part of parts) {
-        if (part.includes('Content-Type: text/plain')) {
-          // Extract text content
-          const contentStart = part.indexOf('\r\n\r\n') !== -1
-            ? part.indexOf('\r\n\r\n') + 4
-            : part.indexOf('\n\n') + 2;
-          result.text = part.substring(contentStart).trim();
-        } else if (part.includes('Content-Type: text/html')) {
-          // Extract HTML content
-          const contentStart = part.indexOf('\r\n\r\n') !== -1
-            ? part.indexOf('\r\n\r\n') + 4
-            : part.indexOf('\n\n') + 2;
-          result.html = part.substring(contentStart).trim();
-        }
+    // Handle 'to' field which can be a single AddressObject or an array
+    let toAddress = '';
+    if (parsed.to) {
+      if (Array.isArray(parsed.to)) {
+        toAddress = parsed.to[0]?.text || '';
+      } else {
+        toAddress = parsed.to.text || '';
       }
-    } else {
-      // Simple email - body is the text
-      result.text = bodySection.trim();
     }
 
-    console.log('📨 Parsed raw email:', {
+    const result = {
+      text: parsed.text || '',
+      html: typeof parsed.html === 'string' ? parsed.html : '',
+      from: parsed.from?.text || '',
+      to: toAddress,
+      subject: parsed.subject || ''
+    };
+
+    console.log('📨 Parsed raw email with mailparser:', {
       from: result.from,
       to: result.to,
       subject: result.subject,
       textLength: result.text.length,
       htmlLength: result.html.length
     });
-  } catch (e) {
-    console.error('Error parsing raw email:', e);
-  }
 
-  return result;
+    return result;
+  } catch (e) {
+    console.error('Error parsing raw email with mailparser:', e);
+    return { text: '', html: '', from: '', to: '', subject: '' };
+  }
 }
 
 /**
@@ -114,8 +90,8 @@ export async function handleInboundEmailWebhook(req: Request, res: Response) {
 
     // Check if this is a "raw" email (SendGrid sends full MIME in 'email' field)
     if (req.body.email && (!payload.text && !payload.html)) {
-      console.log('📧 Raw email mode detected, parsing MIME...');
-      const parsed = parseRawEmail(req.body.email);
+      console.log('📧 Raw email mode detected, parsing MIME with mailparser...');
+      const parsed = await parseRawEmail(req.body.email);
       if (!payload.from && parsed.from) payload.from = parsed.from;
       if (!payload.to && parsed.to) payload.to = parsed.to;
       if (!payload.subject && parsed.subject) payload.subject = parsed.subject;
