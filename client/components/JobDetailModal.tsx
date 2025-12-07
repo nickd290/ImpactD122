@@ -309,6 +309,14 @@ export function JobDetailModal({
     }
   }, [job?.id]);
 
+  // Fetch pending communications count for badge - MUST be before early return
+  const { data: commData } = useQuery({
+    queryKey: ['communications', job?.id],
+    queryFn: () => job?.id ? communicationsApi.getByJob(job.id) : Promise.resolve([]),
+    enabled: !!job?.id,
+  });
+  const pendingCommCount = (commData || []).filter((c: any) => c.status === 'PENDING_REVIEW').length;
+
   if (!job) return null;
 
   const jobNumber = job.number || job.jobNo || 'Unknown';
@@ -2131,14 +2139,6 @@ export function JobDetailModal({
       </div>
     </div>
   );
-
-  // Fetch pending communications count for badge
-  const { data: commData } = useQuery({
-    queryKey: ['communications', job?.id],
-    queryFn: () => job?.id ? communicationsApi.getByJob(job.id) : Promise.resolve([]),
-    enabled: !!job?.id,
-  });
-  const pendingCommCount = (commData || []).filter((c: any) => c.status === 'PENDING_REVIEW').length;
 
   const tabs: { id: TabType; label: string; badge?: number }[] = [
     { id: 'overview', label: 'Overview' },
