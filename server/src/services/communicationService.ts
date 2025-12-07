@@ -225,6 +225,19 @@ export async function storeInboundEmail(
   senderType: SenderType,
   direction: CommunicationDirection
 ): Promise<string> {
+  console.log('💾 Storing inbound email:', {
+    jobId,
+    senderType,
+    direction,
+    hasText: !!(payload.text && payload.text.length > 0),
+    textLength: payload.text?.length || 0,
+    textPreview: payload.text?.substring(0, 300) || '(none)',
+    hasHtml: !!(payload.html && payload.html.length > 0),
+    htmlLength: payload.html?.length || 0,
+    htmlPreview: payload.html?.substring(0, 300) || '(none)',
+    attachmentCount: payload.attachments?.length || 0
+  });
+
   const communication = await prisma.jobCommunication.create({
     data: {
       jobId,
@@ -252,6 +265,7 @@ export async function storeInboundEmail(
     }
   });
 
+  console.log('✅ Communication stored with ID:', communication.id);
   return communication.id;
 }
 
@@ -321,13 +335,35 @@ export async function forwardCommunication(
 
   // Use custom message or forward original content (strip signatures to hide sender identity)
   let body: string;
+  console.log('📝 Forward body source check:', {
+    communicationId,
+    hasCustomMessage: !!customMessage,
+    htmlBodyLength: communication.htmlBody?.length || 0,
+    textBodyLength: communication.textBody?.length || 0,
+    htmlPreview: communication.htmlBody?.substring(0, 200) || '(none)',
+    textPreview: communication.textBody?.substring(0, 200) || '(none)'
+  });
+
   if (customMessage) {
     body = customMessage;
   } else if (communication.htmlBody) {
-    body = stripEmailSignature(communication.htmlBody, true); // HTML content
+    const stripped = stripEmailSignature(communication.htmlBody, true);
+    console.log('📝 HTML stripped result:', {
+      original: communication.htmlBody.length,
+      stripped: stripped.length,
+      preview: stripped.substring(0, 200)
+    });
+    body = stripped; // HTML content
   } else if (communication.textBody) {
-    body = stripEmailSignature(communication.textBody, false); // Plain text
+    const stripped = stripEmailSignature(communication.textBody, false);
+    console.log('📝 Text stripped result:', {
+      original: communication.textBody.length,
+      stripped: stripped.length,
+      preview: stripped.substring(0, 200)
+    });
+    body = stripped; // Plain text
   } else {
+    console.log('⚠️ No body content found for communication');
     body = '';
   }
 
