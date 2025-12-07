@@ -11,6 +11,7 @@ import {
 } from '../services/pricingService';
 import { normalizeSize, getSelfMailerPricing } from '../utils/bradfordPricing';
 import { sendArtworkFollowUpEmail, sendJDInvoiceToBradfordEmail } from '../services/emailService';
+import { initiateBothThreads } from '../services/communicationService';
 
 /**
  * Check if a job meets criteria for Impact→Bradford PO creation
@@ -649,6 +650,17 @@ export const createJob = async (req: Request, res: Response) => {
         },
       });
 
+      // Auto-initiate email threads with customer and vendor (fire and forget)
+      // This sends welcome emails to both parties with Reply-To set to job-specific email
+      initiateBothThreads(jobId).then(({ customerResult, vendorResult }) => {
+        console.log(`📧 Thread initiation for job ${jobNo}:`, {
+          customer: customerResult.success ? 'sent' : customerResult.error,
+          vendor: vendorResult.success ? 'sent' : vendorResult.error,
+        });
+      }).catch((err) => {
+        console.error(`Failed to initiate threads for job ${jobNo}:`, err.message);
+      });
+
       // Re-fetch job with ProfitSplit
       const jobWithSplit = await prisma.job.findUnique({
         where: { id: jobId },
@@ -666,6 +678,16 @@ export const createJob = async (req: Request, res: Response) => {
 
       return res.status(201).json(transformJob(jobWithSplit));
     }
+
+    // For jobs without ProfitSplit, still initiate threads
+    initiateBothThreads(jobId).then(({ customerResult, vendorResult }) => {
+      console.log(`📧 Thread initiation for job ${jobNo}:`, {
+        customer: customerResult.success ? 'sent' : customerResult.error,
+        vendor: vendorResult.success ? 'sent' : vendorResult.error,
+      });
+    }).catch((err) => {
+      console.error(`Failed to initiate threads for job ${jobNo}:`, err.message);
+    });
 
     res.status(201).json(transformJob(job));
   } catch (error) {

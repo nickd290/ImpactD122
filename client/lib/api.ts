@@ -217,4 +217,23 @@ export const communicationsApi = {
       method: 'POST',
       body: JSON.stringify({ to, subject, body, createdBy }),
     }),
+
+  // Thread initiation - manually trigger welcome emails
+  initiateCustomerThread: (jobId: string, customMessage?: string) =>
+    apiFetch(`/communications/job/${jobId}/initiate-customer`, {
+      method: 'POST',
+      body: JSON.stringify({ customMessage }),
+    }),
+
+  initiateVendorThread: (jobId: string, customMessage?: string) =>
+    apiFetch(`/communications/job/${jobId}/initiate-vendor`, {
+      method: 'POST',
+      body: JSON.stringify({ customMessage }),
+    }),
+
+  initiateBothThreads: (jobId: string, customMessage?: string) =>
+    apiFetch(`/communications/job/${jobId}/initiate-both`, {
+      method: 'POST',
+      body: JSON.stringify({ customMessage }),
+    }),
 };

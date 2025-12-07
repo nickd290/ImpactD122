@@ -7,7 +7,10 @@ import {
   forwardCommunication,
   skipCommunication,
   addInternalNote,
-  createOutboundCommunication
+  createOutboundCommunication,
+  initiateCustomerThread,
+  initiateVendorThread,
+  initiateBothThreads
 } from '../services/communicationService';
 import { prisma } from '../utils/prisma';
 
@@ -278,6 +281,72 @@ export async function updateCommunicationHandler(req: Request, res: Response) {
     res.json(updated);
   } catch (error: any) {
     console.error('Error updating communication:', error);
+    res.status(500).json({ error: error.message });
+  }
+}
+
+/**
+ * Initiate customer thread (send welcome email)
+ * POST /api/communications/job/:jobId/initiate-customer
+ */
+export async function initiateCustomerThreadHandler(req: Request, res: Response) {
+  try {
+    const { jobId } = req.params;
+    const { customMessage } = req.body;
+
+    const result = await initiateCustomerThread(jobId, { customMessage });
+
+    if (result.success) {
+      res.json({ success: true, communicationId: result.communicationId });
+    } else {
+      res.status(400).json({ success: false, error: result.error });
+    }
+  } catch (error: any) {
+    console.error('Error initiating customer thread:', error);
+    res.status(500).json({ error: error.message });
+  }
+}
+
+/**
+ * Initiate vendor thread (send job notification email)
+ * POST /api/communications/job/:jobId/initiate-vendor
+ */
+export async function initiateVendorThreadHandler(req: Request, res: Response) {
+  try {
+    const { jobId } = req.params;
+    const { customMessage } = req.body;
+
+    const result = await initiateVendorThread(jobId, { customMessage });
+
+    if (result.success) {
+      res.json({ success: true, communicationId: result.communicationId });
+    } else {
+      res.status(400).json({ success: false, error: result.error });
+    }
+  } catch (error: any) {
+    console.error('Error initiating vendor thread:', error);
+    res.status(500).json({ error: error.message });
+  }
+}
+
+/**
+ * Initiate both customer and vendor threads
+ * POST /api/communications/job/:jobId/initiate-both
+ */
+export async function initiateBothThreadsHandler(req: Request, res: Response) {
+  try {
+    const { jobId } = req.params;
+    const { customMessage } = req.body;
+
+    const { customerResult, vendorResult } = await initiateBothThreads(jobId, { customMessage });
+
+    res.json({
+      success: customerResult.success || vendorResult.success,
+      customer: customerResult,
+      vendor: vendorResult
+    });
+  } catch (error: any) {
+    console.error('Error initiating both threads:', error);
     res.status(500).json({ error: error.message });
   }
 }

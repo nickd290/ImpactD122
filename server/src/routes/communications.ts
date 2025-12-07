@@ -10,7 +10,10 @@ import {
   addInternalNoteHandler,
   sendCommunicationHandler,
   getCommunicationHandler,
-  updateCommunicationHandler
+  updateCommunicationHandler,
+  initiateCustomerThreadHandler,
+  initiateVendorThreadHandler,
+  initiateBothThreadsHandler
 } from '../controllers/communicationController';
 
 const router = Router();
@@ -39,6 +42,11 @@ router.post('/job/:jobId/note', addInternalNoteHandler);
 
 // Send a new outbound communication
 router.post('/job/:jobId/send', sendCommunicationHandler);
+
+// Thread initiation endpoints
+router.post('/job/:jobId/initiate-customer', initiateCustomerThreadHandler);
+router.post('/job/:jobId/initiate-vendor', initiateVendorThreadHandler);
+router.post('/job/:jobId/initiate-both', initiateBothThreadsHandler);
 
 // Get/update/forward/skip a specific communication
 router.get('/:id', getCommunicationHandler);

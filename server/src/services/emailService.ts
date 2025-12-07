@@ -16,6 +16,12 @@ interface SendEmailOptions {
   body: string;
   attachmentBuffer?: Buffer;
   attachmentFilename?: string;
+  replyTo?: string; // Job-specific email for thread management
+}
+
+// Helper to generate job-specific email address for thread management
+export function getJobEmailAddress(jobNo: string): string {
+  return `job-${jobNo}@jobs.impactdirectprinting.com`;
 }
 
 interface EmailResult {
@@ -46,6 +52,11 @@ async function sendEmail(options: SendEmailOptions): Promise<EmailResult> {
   // Add CC if provided
   if (options.cc) {
     msg.cc = options.cc;
+  }
+
+  // Add Reply-To for thread management (job-specific email address)
+  if (options.replyTo) {
+    msg.replyTo = options.replyTo;
   }
 
   // Add attachment if provided
@@ -157,6 +168,7 @@ export async function sendInvoiceEmail(
     const subject = `Invoice for Job #${jobNo} - Impact Direct Printing`;
     const body = getInvoiceEmailBody(job, customerName);
     const filename = `Invoice-${jobNo}.pdf`;
+    const replyTo = getJobEmailAddress(jobNo);
 
     return await sendEmail({
       to: recipientEmail,
@@ -164,6 +176,7 @@ export async function sendInvoiceEmail(
       body,
       attachmentBuffer: pdfBuffer,
       attachmentFilename: filename,
+      replyTo,
     });
   } catch (error: any) {
     console.error('Error sending invoice email:', error);
@@ -190,10 +203,12 @@ export async function sendPOEmail(
     };
     const pdfBuffer = generateVendorPOPDF(jobWithPOData);
 
+    const jobNo = job.jobNo || job.id;
     const poNumber = po.poNumber || po.id;
     const subject = `Purchase Order #${poNumber} - Impact Direct Printing`;
     const body = getPOEmailBody(po, vendorName, job);
     const filename = `PO-${poNumber}.pdf`;
+    const replyTo = getJobEmailAddress(jobNo);
 
     return await sendEmail({
       to: recipientEmail,
@@ -202,6 +217,7 @@ export async function sendPOEmail(
       body,
       attachmentBuffer: pdfBuffer,
       attachmentFilename: filename,
+      replyTo,
     });
   } catch (error: any) {
     console.error('Error sending PO email:', error);
@@ -327,12 +343,14 @@ export async function sendArtworkNotificationEmail(
     const allVendorEmails = [vendorEmail, ...additionalVendorEmails];
     // Combine with internal CC emails (ensure no duplicates)
     const allCcEmails = ARTWORK_CC_EMAILS.filter(email => !allVendorEmails.includes(email));
+    const replyTo = getJobEmailAddress(jobNo);
 
     const result = await sendEmail({
       to: allVendorEmails.join(','),  // Send to primary + all additional vendor contacts
       cc: allCcEmails,  // Internal team
       subject,
       body,
+      replyTo,
     });
 
     if (result.success) {
@@ -383,6 +401,7 @@ export async function sendArtworkFollowUpEmail(
     if (additionalCcEmail && additionalCcEmail !== VENDOR_PO_CC_EMAIL) {
       ccList.push(additionalCcEmail);
     }
+    const replyTo = getJobEmailAddress(jobNo);
 
     // Send to vendor with CC
     const result = await sendEmail({
@@ -392,6 +411,7 @@ export async function sendArtworkFollowUpEmail(
       body,
       attachmentBuffer: pdfBuffer,
       attachmentFilename: filename,
+      replyTo,
     });
 
     if (result.success) {

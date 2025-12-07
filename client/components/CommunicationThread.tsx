@@ -216,6 +216,40 @@ export function CommunicationThread({
     },
   });
 
+  // Thread initiation mutations
+  const initiateCustomerMutation = useMutation({
+    mutationFn: () => communicationsApi.initiateCustomerThread(jobId),
+    onSuccess: () => {
+      toast.success('Welcome email sent to customer');
+      queryClient.invalidateQueries({ queryKey: ['communications', jobId] });
+    },
+    onError: (error: Error) => {
+      toast.error(`Failed to send: ${error.message}`);
+    },
+  });
+
+  const initiateVendorMutation = useMutation({
+    mutationFn: () => communicationsApi.initiateVendorThread(jobId),
+    onSuccess: () => {
+      toast.success('Job notification sent to vendor');
+      queryClient.invalidateQueries({ queryKey: ['communications', jobId] });
+    },
+    onError: (error: Error) => {
+      toast.error(`Failed to send: ${error.message}`);
+    },
+  });
+
+  const initiateBothMutation = useMutation({
+    mutationFn: () => communicationsApi.initiateBothThreads(jobId),
+    onSuccess: () => {
+      toast.success('Welcome emails sent to both parties');
+      queryClient.invalidateQueries({ queryKey: ['communications', jobId] });
+    },
+    onError: (error: Error) => {
+      toast.error(`Failed to send: ${error.message}`);
+    },
+  });
+
   const toggleExpand = (id: string) => {
     const newExpanded = new Set(expandedIds);
     if (newExpanded.has(id)) {
@@ -392,9 +426,35 @@ export function CommunicationThread({
         <div className="p-8 text-center text-gray-500 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
           <Mail className="h-12 w-12 mx-auto mb-3 text-gray-400" />
           <p className="font-medium">No communications yet</p>
-          <p className="text-sm mt-1">
-            Messages sent to job-{jobNo}@impactdirectprinting.com will appear here
+          <p className="text-sm mt-1 mb-4">
+            Messages sent to job-{jobNo}@jobs.impactdirectprinting.com will appear here
           </p>
+          <div className="flex justify-center gap-2">
+            <button
+              onClick={() => initiateCustomerMutation.mutate()}
+              disabled={initiateCustomerMutation.isPending || !customerEmail}
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-lg disabled:opacity-50"
+            >
+              <User className="h-4 w-4" />
+              Send Customer Welcome
+            </button>
+            <button
+              onClick={() => initiateVendorMutation.mutate()}
+              disabled={initiateVendorMutation.isPending || !vendorEmail}
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-orange-700 bg-orange-100 hover:bg-orange-200 rounded-lg disabled:opacity-50"
+            >
+              <Building className="h-4 w-4" />
+              Send Vendor Notification
+            </button>
+            <button
+              onClick={() => initiateBothMutation.mutate()}
+              disabled={initiateBothMutation.isPending || (!customerEmail && !vendorEmail)}
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-white bg-green-600 hover:bg-green-700 rounded-lg disabled:opacity-50"
+            >
+              <Send className="h-4 w-4" />
+              Start Both Threads
+            </button>
+          </div>
         </div>
       ) : (
         <div className="space-y-3">

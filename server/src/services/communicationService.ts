@@ -1,6 +1,7 @@
 import sgMail from '@sendgrid/mail';
 import { prisma } from '../utils/prisma';
 import { CommunicationDirection, SenderType, CommunicationStatus } from '@prisma/client';
+import { getJobEmailAddress } from './emailService';
 
 // Initialize SendGrid
 const apiKey = process.env.SENDGRID_API_KEY;
@@ -274,13 +275,15 @@ export async function forwardCommunication(
   // Use custom message or forward original content
   const body = customMessage || communication.htmlBody || communication.textBody || '';
 
-  // Build email message
+  // Build email message with Reply-To for thread management
+  const jobEmailAddress = getJobEmailAddress(communication.job.jobNo);
   const msg: any = {
     to: recipientEmail,
     from: {
       email: FROM_EMAIL,
       name: FROM_NAME
     },
+    replyTo: jobEmailAddress,
     subject,
     html: `
       <div style="font-family: Arial, sans-serif;">
@@ -486,6 +489,31 @@ export async function processInboundEmail(payload: InboundEmailPayload): Promise
       communicationId
     });
 
+    // Auto-forward customer artwork emails to vendor
+    // If sender is customer AND has attachments, auto-forward to vendor
+    if (senderType === SenderType.CUSTOMER && payload.attachments && payload.attachments.length > 0) {
+      console.log('📎 Customer email with attachments detected, auto-forwarding to vendor');
+      try {
+        const forwardResult = await forwardCommunication(
+          communicationId,
+          'system-autoforward',
+          undefined // Forward with original content
+        );
+
+        if (forwardResult.success) {
+          console.log('✅ Auto-forwarded customer artwork to vendor:', {
+            communicationId,
+            attachmentCount: payload.attachments.length
+          });
+        } else {
+          console.warn('⚠️ Auto-forward failed:', forwardResult.error);
+        }
+      } catch (autoForwardError: any) {
+        console.error('Error in auto-forward:', autoForwardError.message);
+        // Don't fail the entire process, email is still stored
+      }
+    }
+
     return {
       success: true,
       jobId: job.id,
@@ -618,4 +646,398 @@ export async function createOutboundCommunication(
 
     return { success: false, error: error.message };
   }
+}
+
+/**
+ * Thread Initiation Options
+ */
+interface ThreadInitOptions {
+  includeJobSpecs?: boolean;
+  customMessage?: string;
+}
+
+/**
+ * Generate customer welcome email HTML
+ */
+function getCustomerWelcomeEmailHtml(job: any, jobEmailAddress: string, options?: ThreadInitOptions): string {
+  const jobNo = job.jobNo;
+  const specs = job.specs || {};
+
+  // Build specs table if requested
+  let specsHtml = '';
+  if (options?.includeJobSpecs) {
+    const specsRows = [];
+    if (job.description) specsRows.push(`<tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Description</td><td style="padding: 8px; border-bottom: 1px solid #eee;">${job.description}</td></tr>`);
+    if (job.sizeName || specs.finishedSize) specsRows.push(`<tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Size</td><td style="padding: 8px; border-bottom: 1px solid #eee;">${job.sizeName || specs.finishedSize}</td></tr>`);
+    if (job.quantity) specsRows.push(`<tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Quantity</td><td style="padding: 8px; border-bottom: 1px solid #eee;">${Number(job.quantity).toLocaleString()}</td></tr>`);
+    if (job.dueDate) specsRows.push(`<tr><td style="padding: 8px; color: #666;">Due Date</td><td style="padding: 8px;">${new Date(job.dueDate).toLocaleDateString()}</td></tr>`);
+
+    if (specsRows.length > 0) {
+      specsHtml = `
+        <h3 style="color: #1A1A1A; margin-top: 20px;">Your Order Details</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; background-color: #f9fafb; border-radius: 8px;">
+          ${specsRows.join('')}
+        </table>
+      `;
+    }
+  }
+
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <div style="background-color: #FF8C42; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+        <h1 style="color: white; margin: 0; font-size: 24px;">Your Print Order</h1>
+        <p style="color: white; margin: 10px 0 0 0; font-size: 18px;">Job #${jobNo}</p>
+      </div>
+
+      <div style="padding: 25px; background-color: #ffffff;">
+        <p style="font-size: 16px; color: #333;">Thank you for your order with Impact Direct Printing!</p>
+
+        ${options?.customMessage ? `<p style="font-size: 16px; color: #333;">${options.customMessage}</p>` : ''}
+
+        ${specsHtml}
+
+        <div style="background-color: #dbeafe; border: 2px solid #3b82f6; border-radius: 8px; padding: 20px; margin: 25px 0;">
+          <h3 style="margin: 0 0 10px 0; color: #1e40af; font-size: 16px;">Important - How to Contact Us</h3>
+          <p style="margin: 0 0 15px 0; color: #333;">
+            For all questions, artwork submissions, and updates about this order, please reply to this email or send to:
+          </p>
+          <p style="margin: 0; text-align: center;">
+            <a href="mailto:${jobEmailAddress}" style="display: inline-block; background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px;">
+              ${jobEmailAddress}
+            </a>
+          </p>
+        </div>
+
+        <p style="color: #666; font-size: 14px;">We'll keep you updated on the progress of your order through this thread.</p>
+      </div>
+
+      <hr style="border: none; border-top: 1px solid #ccc; margin: 0;" />
+
+      <div style="padding: 20px; text-align: center;">
+        <p style="color: #666; font-size: 12px; margin: 0;">
+          Impact Direct Printing<br />
+          brandon@impactdirectprinting.com
+        </p>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Generate vendor job notification email HTML
+ */
+function getVendorJobEmailHtml(job: any, jobEmailAddress: string, options?: ThreadInitOptions): string {
+  const jobNo = job.jobNo;
+  const specs = job.specs || {};
+
+  // Build specs table
+  const specsRows = [];
+  if (job.description) specsRows.push(`<tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666; width: 40%;">Description</td><td style="padding: 8px; border-bottom: 1px solid #eee;">${job.description}</td></tr>`);
+  if (job.sizeName || specs.finishedSize) specsRows.push(`<tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Size</td><td style="padding: 8px; border-bottom: 1px solid #eee;">${job.sizeName || specs.finishedSize}</td></tr>`);
+  if (job.quantity) specsRows.push(`<tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Quantity</td><td style="padding: 8px; border-bottom: 1px solid #eee;">${Number(job.quantity).toLocaleString()}</td></tr>`);
+  if (specs.paperType || specs.paperStock) specsRows.push(`<tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Paper Stock</td><td style="padding: 8px; border-bottom: 1px solid #eee;">${specs.paperType || specs.paperStock}</td></tr>`);
+  if (specs.colors) specsRows.push(`<tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Colors</td><td style="padding: 8px; border-bottom: 1px solid #eee;">${specs.colors}</td></tr>`);
+  if (specs.coating) specsRows.push(`<tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Coating</td><td style="padding: 8px; border-bottom: 1px solid #eee;">${specs.coating}</td></tr>`);
+  if (specs.finishing) specsRows.push(`<tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Finishing</td><td style="padding: 8px; border-bottom: 1px solid #eee;">${specs.finishing}</td></tr>`);
+  if (job.dueDate) specsRows.push(`<tr><td style="padding: 8px; color: #666;">Due Date</td><td style="padding: 8px; font-weight: bold; color: #dc2626;">${new Date(job.dueDate).toLocaleDateString()}</td></tr>`);
+
+  const specsHtml = specsRows.length > 0 ? `
+    <h3 style="color: #1A1A1A; margin-top: 20px; border-bottom: 2px solid #FF8C42; padding-bottom: 8px;">Job Specifications</h3>
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+      ${specsRows.join('')}
+    </table>
+  ` : '';
+
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <div style="background-color: #1E40AF; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+        <h1 style="color: white; margin: 0; font-size: 24px;">New Print Job</h1>
+        <p style="color: #93C5FD; margin: 10px 0 0 0; font-size: 18px;">Impact Direct #${jobNo}</p>
+      </div>
+
+      <div style="padding: 25px; background-color: #ffffff;">
+        <p style="font-size: 16px; color: #333;">You have a new print job from Impact Direct Printing.</p>
+
+        ${options?.customMessage ? `<p style="font-size: 16px; color: #333;">${options.customMessage}</p>` : ''}
+
+        ${specsHtml}
+
+        <div style="background-color: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; padding: 20px; margin: 25px 0;">
+          <h3 style="margin: 0 0 10px 0; color: #92400e; font-size: 16px;">Important - Communication Instructions</h3>
+          <p style="margin: 0 0 15px 0; color: #333;">
+            For all proofs, questions, and updates about this job, send emails to:
+          </p>
+          <p style="margin: 0 0 15px 0; text-align: center;">
+            <a href="mailto:${jobEmailAddress}" style="display: inline-block; background-color: #f59e0b; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px;">
+              ${jobEmailAddress}
+            </a>
+          </p>
+          <p style="margin: 0; color: #92400e; font-size: 14px; text-align: center;">
+            <strong>Do NOT use brandon@impactdirectprinting.com for this job.</strong>
+          </p>
+        </div>
+
+        <p style="color: #666; font-size: 14px;">Please confirm receipt of this job notification.</p>
+      </div>
+
+      <hr style="border: none; border-top: 1px solid #ccc; margin: 0;" />
+
+      <div style="padding: 20px; text-align: center;">
+        <p style="color: #666; font-size: 12px; margin: 0;">
+          Impact Direct Printing<br />
+          brandon@impactdirectprinting.com
+        </p>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Initiate email thread with customer
+ * Sends a welcome email that establishes the job-specific reply-to address
+ */
+export async function initiateCustomerThread(
+  jobId: string,
+  options?: ThreadInitOptions
+): Promise<ForwardResult> {
+  try {
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      include: {
+        Company: true
+      }
+    });
+
+    if (!job) {
+      return { success: false, error: 'Job not found' };
+    }
+
+    if (!job.Company?.email) {
+      return { success: false, error: 'No customer email configured for this job' };
+    }
+
+    const jobEmailAddress = getJobEmailAddress(job.jobNo);
+    const subject = `Your Print Order - Job #${job.jobNo} | Impact Direct Printing`;
+    const body = getCustomerWelcomeEmailHtml(job, jobEmailAddress, {
+      includeJobSpecs: true,
+      ...options
+    });
+
+    // Create communication record
+    const communication = await prisma.jobCommunication.create({
+      data: {
+        jobId,
+        direction: CommunicationDirection.VENDOR_TO_CUSTOMER,
+        senderType: SenderType.INTERNAL,
+        originalFrom: FROM_EMAIL,
+        originalTo: job.Company.email,
+        originalSubject: subject,
+        htmlBody: body,
+        status: CommunicationStatus.PENDING_REVIEW,
+        receivedAt: new Date(),
+        internalNotes: 'Thread initiation email - Customer welcome'
+      }
+    });
+
+    // Send the email
+    const msg = {
+      to: job.Company.email,
+      from: {
+        email: FROM_EMAIL,
+        name: FROM_NAME
+      },
+      replyTo: jobEmailAddress,
+      subject,
+      html: body
+    };
+
+    await sgMail.send(msg);
+
+    // Update status to forwarded (sent)
+    await prisma.jobCommunication.update({
+      where: { id: communication.id },
+      data: {
+        status: CommunicationStatus.FORWARDED,
+        forwardedAt: new Date(),
+        forwardedTo: job.Company.email,
+        forwardedBy: 'system'
+      }
+    });
+
+    console.log('📧 Customer thread initiated:', {
+      jobNo: job.jobNo,
+      customerEmail: job.Company.email,
+      communicationId: communication.id
+    });
+
+    return { success: true, communicationId: communication.id };
+  } catch (error: any) {
+    console.error('Error initiating customer thread:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Initiate email thread with vendor
+ * Sends a job notification email that establishes the job-specific reply-to address
+ */
+export async function initiateVendorThread(
+  jobId: string,
+  options?: ThreadInitOptions
+): Promise<ForwardResult> {
+  try {
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      include: {
+        Vendor: {
+          include: {
+            contacts: true
+          }
+        }
+      }
+    });
+
+    if (!job) {
+      return { success: false, error: 'Job not found' };
+    }
+
+    // Determine vendor email
+    let vendorEmail: string | null = null;
+    let vendorName: string = 'Vendor';
+
+    if (job.Vendor?.email) {
+      vendorEmail = job.Vendor.email;
+      vendorName = job.Vendor.name;
+    } else if (job.Vendor?.contacts.length) {
+      const primary = job.Vendor.contacts.find(c => c.isPrimary);
+      const contact = primary || job.Vendor.contacts[0];
+      vendorEmail = contact.email;
+      vendorName = contact.name;
+    }
+
+    if (!vendorEmail) {
+      return { success: false, error: 'No vendor email configured for this job' };
+    }
+
+    const jobEmailAddress = getJobEmailAddress(job.jobNo);
+    const subject = `New Print Job - Impact Direct #${job.jobNo}`;
+    const body = getVendorJobEmailHtml(job, jobEmailAddress, {
+      includeJobSpecs: true,
+      ...options
+    });
+
+    // Create communication record
+    const communication = await prisma.jobCommunication.create({
+      data: {
+        jobId,
+        direction: CommunicationDirection.CUSTOMER_TO_VENDOR,
+        senderType: SenderType.INTERNAL,
+        originalFrom: FROM_EMAIL,
+        originalTo: vendorEmail,
+        originalSubject: subject,
+        htmlBody: body,
+        status: CommunicationStatus.PENDING_REVIEW,
+        receivedAt: new Date(),
+        internalNotes: 'Thread initiation email - Vendor notification'
+      }
+    });
+
+    // Send the email
+    const msg = {
+      to: vendorEmail,
+      from: {
+        email: FROM_EMAIL,
+        name: FROM_NAME
+      },
+      replyTo: jobEmailAddress,
+      subject,
+      html: body
+    };
+
+    await sgMail.send(msg);
+
+    // Update status to forwarded (sent)
+    await prisma.jobCommunication.update({
+      where: { id: communication.id },
+      data: {
+        status: CommunicationStatus.FORWARDED,
+        forwardedAt: new Date(),
+        forwardedTo: vendorEmail,
+        forwardedBy: 'system'
+      }
+    });
+
+    console.log('📧 Vendor thread initiated:', {
+      jobNo: job.jobNo,
+      vendorEmail,
+      communicationId: communication.id
+    });
+
+    return { success: true, communicationId: communication.id };
+  } catch (error: any) {
+    console.error('Error initiating vendor thread:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Initiate threads with both customer and vendor
+ * Convenience wrapper that sends welcome emails to both parties
+ */
+export async function initiateBothThreads(
+  jobId: string,
+  options?: ThreadInitOptions
+): Promise<{
+  customerResult: ForwardResult;
+  vendorResult: ForwardResult;
+}> {
+  const [customerResult, vendorResult] = await Promise.all([
+    initiateCustomerThread(jobId, options),
+    initiateVendorThread(jobId, options)
+  ]);
+
+  return { customerResult, vendorResult };
+}
+
+/**
+ * Record proof activity in the communication thread
+ * Creates an internal note that shows up in the thread for tracking
+ */
+export async function recordProofActivity(
+  jobId: string,
+  proofVersion: number | string,
+  action: 'uploaded' | 'approved' | 'changes_requested',
+  details?: string
+): Promise<string> {
+  const actionLabels = {
+    uploaded: 'Proof Uploaded',
+    approved: 'Proof Approved',
+    changes_requested: 'Changes Requested'
+  };
+
+  const noteContent = `${actionLabels[action]} - Version ${proofVersion}${details ? `\n\n${details}` : ''}`;
+
+  const communication = await prisma.jobCommunication.create({
+    data: {
+      jobId,
+      direction: CommunicationDirection.INTERNAL_NOTE,
+      senderType: SenderType.INTERNAL,
+      originalFrom: 'system',
+      originalTo: 'internal',
+      originalSubject: actionLabels[action],
+      textBody: noteContent,
+      status: CommunicationStatus.SKIPPED,
+      receivedAt: new Date(),
+      internalNotes: `Proof activity: ${action}`
+    }
+  });
+
+  console.log('Proof activity recorded:', {
+    jobId,
+    proofVersion,
+    action,
+    communicationId: communication.id
+  });
+
+  return communication.id;
 }
