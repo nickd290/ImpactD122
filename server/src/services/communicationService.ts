@@ -697,18 +697,13 @@ function getCustomerWelcomeEmailHtml(job: any, jobEmailAddress: string, options?
         ${specsHtml}
 
         <div style="background-color: #dbeafe; border: 2px solid #3b82f6; border-radius: 8px; padding: 20px; margin: 25px 0;">
-          <h3 style="margin: 0 0 10px 0; color: #1e40af; font-size: 16px;">Important - How to Contact Us</h3>
-          <p style="margin: 0 0 15px 0; color: #333;">
-            For all questions, artwork submissions, and updates about this order, please reply to this email or send to:
-          </p>
-          <p style="margin: 0; text-align: center;">
-            <a href="mailto:${jobEmailAddress}" style="display: inline-block; background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px;">
-              ${jobEmailAddress}
-            </a>
+          <h3 style="margin: 0 0 10px 0; color: #1e40af; font-size: 16px;">Communication for This Project</h3>
+          <p style="margin: 0; color: #333;">
+            <strong>Please keep all communication on this email thread</strong> regarding your project. This includes artwork submissions, questions, status updates, change requests, and any other correspondence about this job.
           </p>
         </div>
 
-        <p style="color: #666; font-size: 14px;">We'll keep you updated on the progress of your order through this thread.</p>
+        <p style="color: #666; font-size: 14px;">Simply reply to this email and we'll receive your message. We'll keep you updated on the progress of your order through this thread.</p>
       </div>
 
       <hr style="border: none; border-top: 1px solid #ccc; margin: 0;" />
@@ -763,21 +758,13 @@ function getVendorJobEmailHtml(job: any, jobEmailAddress: string, options?: Thre
         ${specsHtml}
 
         <div style="background-color: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; padding: 20px; margin: 25px 0;">
-          <h3 style="margin: 0 0 10px 0; color: #92400e; font-size: 16px;">Important - Communication Instructions</h3>
-          <p style="margin: 0 0 15px 0; color: #333;">
-            For all proofs, questions, and updates about this job, send emails to:
-          </p>
-          <p style="margin: 0 0 15px 0; text-align: center;">
-            <a href="mailto:${jobEmailAddress}" style="display: inline-block; background-color: #f59e0b; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px;">
-              ${jobEmailAddress}
-            </a>
-          </p>
-          <p style="margin: 0; color: #92400e; font-size: 14px; text-align: center;">
-            <strong>Do NOT use brandon@impactdirectprinting.com for this job.</strong>
+          <h3 style="margin: 0 0 10px 0; color: #92400e; font-size: 16px;">Communication for This Project</h3>
+          <p style="margin: 0; color: #333;">
+            <strong>Please keep all communication on this email thread</strong> regarding this job. This includes proofs, status updates, questions, change requests, shipping confirmations, and any other correspondence about this project.
           </p>
         </div>
 
-        <p style="color: #666; font-size: 14px;">Please confirm receipt of this job notification.</p>
+        <p style="color: #666; font-size: 14px;">Simply reply to this email for any job-related communication. Please confirm receipt of this job notification.</p>
       </div>
 
       <hr style="border: none; border-top: 1px solid #ccc; margin: 0;" />
