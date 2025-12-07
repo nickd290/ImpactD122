@@ -51,7 +51,7 @@ export async function handleInboundEmailWebhook(req: Request, res: Response) {
 
     if (result.success) {
       console.log('✅ Inbound email processed:', result);
-      res.status(200).json({ success: true, ...result });
+      res.status(200).json(result);
     } else {
       // Still return 200 to SendGrid to prevent retries
       console.warn('⚠️ Inbound email not processed:', result.error);
