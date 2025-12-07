@@ -20,24 +20,62 @@ import { prisma } from '../utils/prisma';
  */
 export async function handleInboundEmailWebhook(req: Request, res: Response) {
   try {
-    // SendGrid sends form data, parse it
+    // Log incoming request for debugging
+    console.log('📬 Inbound email webhook received:', {
+      contentType: req.headers['content-type'],
+      bodyKeys: Object.keys(req.body || {}),
+      hasFiles: !!(req.files && Array.isArray(req.files) && req.files.length > 0),
+    });
+
+    // Log the raw body fields for debugging
+    console.log('📧 Email fields:', {
+      from: req.body.from,
+      to: req.body.to,
+      subject: req.body.subject,
+      textLength: req.body.text?.length || 0,
+      htmlLength: req.body.html?.length || 0,
+      hasEnvelope: !!req.body.envelope,
+      allFields: Object.keys(req.body || {}).join(', ')
+    });
+
+    // SendGrid sends form data with these fields:
+    // - from, to, subject, text, html
+    // - envelope (JSON string with from/to)
+    // - headers, dkim, SPF, spam_score, etc.
     const payload = {
-      from: req.body.from || req.body.envelope?.from,
-      to: req.body.to || req.body.envelope?.to?.[0],
+      from: req.body.from || '',
+      to: req.body.to || '',
       subject: req.body.subject || '',
-      text: req.body.text,
-      html: req.body.html,
+      text: req.body.text || '',
+      html: req.body.html || '',
       attachments: [] as any[]
     };
 
-    // Parse attachments if present
+    // Try parsing envelope if from/to are missing
+    if ((!payload.from || !payload.to) && req.body.envelope) {
+      try {
+        const envelope = typeof req.body.envelope === 'string'
+          ? JSON.parse(req.body.envelope)
+          : req.body.envelope;
+        if (!payload.from && envelope.from) payload.from = envelope.from;
+        if (!payload.to && envelope.to) {
+          payload.to = Array.isArray(envelope.to) ? envelope.to[0] : envelope.to;
+        }
+        console.log('📨 Parsed envelope:', envelope);
+      } catch (e) {
+        console.warn('Could not parse envelope:', e);
+      }
+    }
+
+    // Parse attachments info if present (SendGrid sends as JSON string)
     if (req.body.attachments) {
       try {
-        const attachmentInfo = JSON.parse(req.body.attachments);
-        // Attachments are uploaded as files, need to handle via multer
-        // For now, we'll handle inline attachments only
+        const attachmentInfo = typeof req.body.attachments === 'string'
+          ? JSON.parse(req.body.attachments)
+          : req.body.attachments;
+        console.log('📎 Attachment info:', attachmentInfo);
       } catch (e) {
-        console.warn('Could not parse attachments:', e);
+        console.warn('Could not parse attachments info:', e);
       }
     }
 
@@ -48,7 +86,18 @@ export async function handleInboundEmailWebhook(req: Request, res: Response) {
         type: file.mimetype,
         content: file.buffer.toString('base64')
       }));
+      console.log('📎 File attachments:', payload.attachments.map(a => a.filename));
     }
+
+    // Log final payload
+    console.log('📦 Final payload:', {
+      from: payload.from,
+      to: payload.to,
+      subject: payload.subject,
+      textPreview: payload.text?.substring(0, 100) || '(empty)',
+      htmlPreview: payload.html?.substring(0, 100) || '(empty)',
+      attachmentCount: payload.attachments.length
+    });
 
     const result = await processInboundEmail(payload);
 
@@ -61,7 +110,7 @@ export async function handleInboundEmailWebhook(req: Request, res: Response) {
       res.status(200).json({ success: false, error: result.error });
     }
   } catch (error: any) {
-    console.error('Error in inbound email webhook:', error);
+    console.error('❌ Error in inbound email webhook:', error);
     // Return 200 to prevent SendGrid retries for processing errors
     res.status(200).json({ success: false, error: error.message });
   }
