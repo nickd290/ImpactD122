@@ -15,4 +15,8 @@ router.put('/jobs/:jobId/po', updateBradfordPO);
 // Or: { bradfordPO: "1227880", jobNo: "J-2045" }
 router.post('/capture-po', captureBradfordPOFromEmail);
 
+// Also support GET for easier Zapier setup (use query params)
+// GET /api/bradford/capture-po?subject=BGE%20LTD%20Print%20Order%20PO%23%201227880%20J-2045
+router.get('/capture-po', captureBradfordPOFromEmail);
+
 export default router;

@@ -332,7 +332,7 @@ export const captureBradfordPOFromEmail = async (req: Request, res: Response) =>
     let jobNo: string | undefined;
 
     // Try to find subject in various places Zapier might send it
-    const subject = req.body.subject || req.body.Subject || req.query.subject || req.body.data?.subject || '';
+    const subject = req.body.subject || req.body.Subject || req.query.subject || req.query.Subject || req.body.data?.subject || req.params.subject || '';
 
     // Option 1: Parse from subject line
     if (subject) {
