@@ -34,6 +34,93 @@ interface ForwardResult {
 }
 
 /**
+ * Check if email is a Bradford PO confirmation and extract details
+ * Subject format: "BGE LTD Print Order PO# 1227839 J-2045"
+ */
+function parseBradfordPOEmail(from: string, subject: string): {
+  isBradfordPO: boolean;
+  bradfordPONumber?: string;
+  jobNo?: string;
+} {
+  const BRADFORD_EMAIL = 'steve.gustafson@bgeltd.com';
+
+  if (!from.toLowerCase().includes(BRADFORD_EMAIL)) {
+    return { isBradfordPO: false };
+  }
+
+  // Match: "BGE LTD Print Order PO# 1227839 J-2045"
+  const match = subject.match(/BGE\s+LTD\s+Print\s+Order\s+PO#\s*(\d+)\s+J-?(\d+)/i);
+
+  if (!match) {
+    return { isBradfordPO: false };
+  }
+
+  return {
+    isBradfordPO: true,
+    bradfordPONumber: match[1],  // "1227839"
+    jobNo: match[2]              // "2045" (number only)
+  };
+}
+
+/**
+ * Handle Bradford PO confirmation email
+ * - Finds job by number (tries both "2045" and "J-2045" formats)
+ * - Updates partnerPONumber (always overwrites)
+ * - Stores email in job communication thread
+ */
+async function handleBradfordPOEmail(
+  jobNo: string,
+  bradfordPONumber: string,
+  payload: InboundEmailPayload
+): Promise<{ success: boolean; jobId?: string; communicationId?: string; error?: string }> {
+  // Try to find job - check both formats since both exist in DB
+  let job = await prisma.job.findUnique({ where: { jobNo } });
+  if (!job) {
+    job = await prisma.job.findUnique({ where: { jobNo: `J-${jobNo}` } });
+  }
+  if (!job) {
+    // Also try without J- if the extracted number already has it
+    const numOnly = jobNo.replace(/^J-?/i, '');
+    job = await prisma.job.findUnique({ where: { jobNo: numOnly } });
+  }
+
+  if (!job) {
+    console.warn('⚠️ Bradford PO email: Job not found', { jobNo, bradfordPONumber });
+    return { success: false, error: `Job ${jobNo} not found` };
+  }
+
+  // Update job with Bradford PO number (always overwrite)
+  const oldValue = job.partnerPONumber;
+  await prisma.job.update({
+    where: { id: job.id },
+    data: {
+      partnerPONumber: bradfordPONumber,
+      updatedAt: new Date()
+    }
+  });
+
+  console.log('✅ Bradford PO captured:', {
+    jobNo: job.jobNo,
+    bradfordPONumber,
+    previousValue: oldValue || '(none)'
+  });
+
+  // Store email in job communication thread
+  const communicationId = await storeInboundEmail(
+    job.id,
+    payload,
+    SenderType.VENDOR,
+    CommunicationDirection.VENDOR_TO_CUSTOMER
+  );
+
+  return {
+    success: true,
+    jobId: job.id,
+    communicationId
+  };
+}
+
+/**
  * Extract job number from email address or subject
  * Expects format: job-{jobNo}@domain.com or subject containing [Job #XXXX]
  */
@@ -552,6 +639,17 @@ export async function processInboundEmail(payload: InboundEmailPayload): Promise
   error?: string;
 }> {
   try {
+    // Check for Bradford PO confirmation email first
+    const bradfordCheck = parseBradfordPOEmail(payload.from, payload.subject);
+    if (bradfordCheck.isBradfordPO && bradfordCheck.jobNo && bradfordCheck.bradfordPONumber) {
+      console.log('📬 Bradford PO email detected:', bradfordCheck);
+      return await handleBradfordPOEmail(
+        bradfordCheck.jobNo,
+        bradfordCheck.bradfordPONumber,
+        payload
+      );
+    }
+
     // Extract job number from email
     const jobNo = extractJobNoFromEmail(payload.to, payload.subject);
 
