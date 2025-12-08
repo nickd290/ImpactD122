@@ -36,24 +36,27 @@ interface ForwardResult {
 /**
  * Check if email is a Bradford PO confirmation and extract details
  * Subject format: "BGE LTD Print Order PO# 1227839 J-2045"
+ * Also handles forwarded emails (Fwd: prefix) since the subject pattern is unique enough
  */
 function parseBradfordPOEmail(from: string, subject: string): {
   isBradfordPO: boolean;
   bradfordPONumber?: string;
   jobNo?: string;
 } {
-  const BRADFORD_EMAIL = 'steve.gustafson@bgeltd.com';
-
-  if (!from.toLowerCase().includes(BRADFORD_EMAIL)) {
-    return { isBradfordPO: false };
-  }
-
-  // Match: "BGE LTD Print Order PO# 1227839 J-2045"
+  // Match: "BGE LTD Print Order PO# 1227839 J-2045" (with optional Fwd: or Re: prefix)
+  // The subject pattern is unique enough to Bradford that we don't need to check sender
   const match = subject.match(/BGE\s+LTD\s+Print\s+Order\s+PO#\s*(\d+)\s+J-?(\d+)/i);
 
   if (!match) {
     return { isBradfordPO: false };
   }
+
+  console.log('🔍 Bradford PO pattern matched:', {
+    from,
+    subject,
+    poNumber: match[1],
+    jobNo: match[2]
+  });
 
   return {
     isBradfordPO: true,
