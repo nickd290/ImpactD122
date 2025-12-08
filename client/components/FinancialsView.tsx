@@ -162,8 +162,8 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
   };
 
   const filteredJobs = jobs.filter(job => {
-    if (filter === 'active') return job.status === 'ACTIVE';
-    if (filter === 'paid') return job.status === 'PAID';
+    if (filter === 'active') return !job.customerPaymentDate; // Not paid by customer
+    if (filter === 'paid') return !!job.customerPaymentDate; // Paid by customer
     return true;
   });
 
@@ -218,7 +218,7 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
               : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
           }`}
         >
-          Active ({jobs.filter(j => j.status === 'ACTIVE').length})
+          Unpaid ({jobs.filter(j => !j.customerPaymentDate).length})
         </button>
         <button
           onClick={() => setFilter('paid')}
@@ -228,7 +228,7 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
               : 'bg-green-100 text-green-700 hover:bg-green-200'
           }`}
         >
-          Paid ({jobs.filter(j => j.status === 'PAID').length})
+          Paid ({jobs.filter(j => !!j.customerPaymentDate).length})
         </button>
       </div>
 
