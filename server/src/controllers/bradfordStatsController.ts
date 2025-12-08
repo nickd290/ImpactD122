@@ -385,10 +385,42 @@ export const captureBradfordPOFromEmail = async (req: Request, res: Response) =>
       }
     });
 
+    // Also update/create the Bradford → JD PurchaseOrder (for Bradford Stats table)
+    const existingBradfordPO = await prisma.purchaseOrder.findFirst({
+      where: {
+        jobId: job.id,
+        originCompanyId: 'bradford',
+        targetCompanyId: 'jd-graphic',
+      },
+    });
+
+    if (existingBradfordPO) {
+      await prisma.purchaseOrder.update({
+        where: { id: existingBradfordPO.id },
+        data: { poNumber: bradfordPO },
+      });
+    } else {
+      await prisma.purchaseOrder.create({
+        data: {
+          id: crypto.randomUUID(),
+          jobId: job.id,
+          originCompanyId: 'bradford',
+          targetCompanyId: 'jd-graphic',
+          poNumber: bradfordPO,
+          buyCost: 0,
+          paperCost: 0,
+          paperMarkup: 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+    }
+
     console.log('✅ Bradford PO captured via API:', {
       jobNo: job.jobNo,
       bradfordPO,
-      previousValue: oldValue || '(none)'
+      previousValue: oldValue || '(none)',
+      updatedPurchaseOrder: true
     });
 
     return res.json({
