@@ -321,15 +321,29 @@ export const getBradfordStats = async (req: Request, res: Response) => {
 // - { bradfordPO: "1227880", jobNo: "J-2045" }
 export const captureBradfordPOFromEmail = async (req: Request, res: Response) => {
   try {
+    // Log incoming request for debugging
+    console.log('📬 Bradford capture-po request:', {
+      body: req.body,
+      query: req.query,
+      contentType: req.headers['content-type']
+    });
+
     let bradfordPO: string | undefined;
     let jobNo: string | undefined;
 
+    // Try to find subject in various places Zapier might send it
+    const subject = req.body.subject || req.body.Subject || req.query.subject || req.body.data?.subject || '';
+
     // Option 1: Parse from subject line
-    if (req.body.subject) {
-      const match = req.body.subject.match(/BGE\s+LTD\s+Print\s+Order\s+PO#\s*(\d+)\s+J-?(\d+)/i);
+    if (subject) {
+      console.log('📧 Parsing subject:', subject);
+      const match = subject.match(/BGE\s+LTD\s+Print\s+Order\s+PO#\s*(\d+)\s+J-?(\d+)/i);
       if (match) {
         bradfordPO = match[1];
         jobNo = match[2];
+        console.log('✅ Parsed:', { bradfordPO, jobNo });
+      } else {
+        console.log('⚠️ Subject did not match pattern');
       }
     }
 
@@ -340,7 +354,8 @@ export const captureBradfordPOFromEmail = async (req: Request, res: Response) =>
     if (!bradfordPO || !jobNo) {
       return res.status(400).json({
         error: 'Could not extract Bradford PO and Job number',
-        hint: 'Send { subject: "BGE LTD Print Order PO# 1227880 J-2045" } or { bradfordPO: "1227880", jobNo: "2045" }'
+        received: { body: req.body, query: req.query },
+        hint: 'Send { "subject": "BGE LTD Print Order PO# 1227880 J-2045" } or { "bradfordPO": "1227880", "jobNo": "2045" }'
       });
     }
 
