@@ -315,6 +315,79 @@ export const getBradfordStats = async (req: Request, res: Response) => {
   }
 };
 
+// Capture Bradford PO from email subject (Zapier integration)
+// Accepts either:
+// - { subject: "BGE LTD Print Order PO# 1227880 J-2045" }
+// - { bradfordPO: "1227880", jobNo: "J-2045" }
+export const captureBradfordPOFromEmail = async (req: Request, res: Response) => {
+  try {
+    let bradfordPO: string | undefined;
+    let jobNo: string | undefined;
+
+    // Option 1: Parse from subject line
+    if (req.body.subject) {
+      const match = req.body.subject.match(/BGE\s+LTD\s+Print\s+Order\s+PO#\s*(\d+)\s+J-?(\d+)/i);
+      if (match) {
+        bradfordPO = match[1];
+        jobNo = match[2];
+      }
+    }
+
+    // Option 2: Direct values provided
+    if (req.body.bradfordPO) bradfordPO = req.body.bradfordPO;
+    if (req.body.jobNo) jobNo = req.body.jobNo?.replace(/^J-?/i, ''); // Normalize
+
+    if (!bradfordPO || !jobNo) {
+      return res.status(400).json({
+        error: 'Could not extract Bradford PO and Job number',
+        hint: 'Send { subject: "BGE LTD Print Order PO# 1227880 J-2045" } or { bradfordPO: "1227880", jobNo: "2045" }'
+      });
+    }
+
+    // Find job - try multiple formats
+    let job = await prisma.job.findUnique({ where: { jobNo } });
+    if (!job) {
+      job = await prisma.job.findUnique({ where: { jobNo: `J-${jobNo}` } });
+    }
+    if (!job) {
+      job = await prisma.job.findUnique({ where: { jobNo: `${jobNo}` } });
+    }
+
+    if (!job) {
+      return res.status(404).json({
+        error: `Job not found: ${jobNo}`,
+        tried: [jobNo, `J-${jobNo}`]
+      });
+    }
+
+    // Update job's partnerPONumber
+    const oldValue = job.partnerPONumber;
+    await prisma.job.update({
+      where: { id: job.id },
+      data: {
+        partnerPONumber: bradfordPO,
+        updatedAt: new Date()
+      }
+    });
+
+    console.log('✅ Bradford PO captured via API:', {
+      jobNo: job.jobNo,
+      bradfordPO,
+      previousValue: oldValue || '(none)'
+    });
+
+    return res.json({
+      success: true,
+      jobNo: job.jobNo,
+      bradfordPO,
+      previousValue: oldValue || null
+    });
+  } catch (error) {
+    console.error('Capture Bradford PO error:', error);
+    res.status(500).json({ error: 'Failed to capture Bradford PO' });
+  }
+};
+
 // Update Bradford PO number for a job
 export const updateBradfordPO = async (req: Request, res: Response) => {
   try {
