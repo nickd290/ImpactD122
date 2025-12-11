@@ -94,6 +94,28 @@ function mapStatus(portalStatus?: string): 'ACTIVE' | 'PAID' | 'CANCELLED' {
 }
 
 /**
+ * Generate the next job number in ImpactD122's J-XXXX format
+ */
+async function generateJobNumber(): Promise<string> {
+  const lastJob = await prisma.job.findFirst({
+    orderBy: { jobNo: 'desc' },
+    where: {
+      jobNo: { startsWith: 'J-' }
+    }
+  });
+
+  let nextNumber = 1001;
+  if (lastJob) {
+    const match = lastJob.jobNo.match(/J-(\d+)/);
+    if (match) {
+      nextNumber = parseInt(match[1]) + 1;
+    }
+  }
+
+  return `J-${nextNumber.toString().padStart(4, '0')}`;
+}
+
+/**
  * POST /api/webhooks/jobs
  * Receive job data from Impact Customer Portal
  */
@@ -129,14 +151,20 @@ export async function receiveJobWebhook(req: Request, res: Response) {
     });
 
     let job;
+
+    // Build specs with external job number included for reference
+    const jobSpecs = {
+      ...(payload.specs || {}),
+      externalJobNo: payload.jobNo,  // Store external job/release number in specs
+    };
+
     const jobData = {
-      jobNo: payload.jobNo,
       customerId,
       title: payload.title || `Job from ${payload.companyName}`,
-      customerPONumber: payload.customerPONumber,
+      customerPONumber: payload.customerPONumber || payload.jobNo,  // Use external jobNo as PO if not provided
       sizeName: payload.sizeName,
       quantity: payload.quantity,
-      specs: payload.specs || {},
+      specs: jobSpecs,
       status: mapStatus(payload.status),
       deliveryDate: payload.deliveryDate ? new Date(payload.deliveryDate) : null,
       externalJobId: payload.externalJobId,
@@ -145,22 +173,24 @@ export async function receiveJobWebhook(req: Request, res: Response) {
     };
 
     if (existingJob) {
-      // Update existing job
+      // Update existing job (keep existing jobNo)
       job = await prisma.job.update({
         where: { id: existingJob.id },
         data: jobData,
       });
       console.log(`✅ Updated existing job ${job.jobNo} (${job.id})`);
     } else {
-      // Create new job
+      // Create new job with ImpactD122's own job number format
+      const newJobNo = await generateJobNumber();
       job = await prisma.job.create({
         data: {
           id: crypto.randomUUID(),
+          jobNo: newJobNo,  // Use generated J-XXXX format
           ...jobData,
           createdAt: payload.createdAt ? new Date(payload.createdAt) : new Date(),
         },
       });
-      console.log(`✅ Created new job ${job.jobNo} (${job.id})`);
+      console.log(`✅ Created new job ${job.jobNo} (${job.id}) from external ${payload.jobNo}`);
     }
 
     // Log activity
