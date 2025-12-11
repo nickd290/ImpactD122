@@ -43,18 +43,22 @@ function validateWebhookSecret(req: Request): boolean {
  * Find or create customer company by name
  */
 async function findOrCreateCustomer(companyName: string, companyId?: string): Promise<string> {
-  // First try to find by name (case-insensitive)
+  // First try to find by name (case-insensitive) - also check type case-insensitively
   const existingCompany = await prisma.company.findFirst({
     where: {
       name: {
         equals: companyName,
         mode: 'insensitive',
       },
-      type: 'CUSTOMER',
+      type: {
+        equals: 'customer',
+        mode: 'insensitive',
+      },
     },
   });
 
   if (existingCompany) {
+    console.log(`Found existing customer company: ${existingCompany.name} (${existingCompany.id})`);
     return existingCompany.id;
   }
 
@@ -63,7 +67,7 @@ async function findOrCreateCustomer(companyName: string, companyId?: string): Pr
     data: {
       id: companyId || crypto.randomUUID(),
       name: companyName,
-      type: 'CUSTOMER',
+      type: 'customer',  // Use lowercase to match existing data
       updatedAt: new Date(),
     },
   });
