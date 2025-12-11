@@ -132,6 +132,10 @@ model Job {
   title                     String?
   description               String?
   specs                     Json
+
+  // === EXTERNAL PORTAL INTEGRATION ===
+  externalJobId             String?          @unique  // ID from external portal (e.g., impact-customer-portal)
+  externalSource            String?          // Source system identifier (e.g., "impact-customer-portal")
   sizeId                    String?
   sizeName                  String?
   quantity                  Int?
