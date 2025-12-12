@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { prisma } from '../utils/prisma';
+import { RoutingType, PaperSource } from '@prisma/client';
 import { sendThreeZPOEmail } from '../services/emailService';
 
 /**
@@ -259,8 +260,8 @@ export async function receiveJobWebhook(req: Request, res: Response) {
 
       // Set routing type and paper source for third-party vendor jobs
       ...(specs.vendorName ? {
-        routingType: 'THIRD_PARTY_VENDOR',
-        paperSource: 'VENDOR',
+        routingType: RoutingType.THIRD_PARTY_VENDOR,
+        paperSource: PaperSource.VENDOR,
       } : {}),
     };
 
