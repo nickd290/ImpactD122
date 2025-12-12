@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { prisma } from '../utils/prisma';
+import { sendThreeZPOEmail } from '../services/emailService';
 
 /**
  * Webhook payload from Impact Customer Portal or Inventory Release App
@@ -40,6 +41,16 @@ interface PortalJobPayload {
     shipVia?: string;
     freightTerms?: string;
     sellPrice?: number;
+
+    // Cost basis and vendor info (from inventory-release-app)
+    costBasisPerUnit?: number;
+    buyCost?: number;
+    vendorName?: string;
+    paperSource?: 'BRADFORD' | 'VENDOR' | 'CUSTOMER';
+
+    // PDFs for ThreeZ email (base64 encoded)
+    packingSlipPdf?: string;
+    boxLabelsPdf?: string;
 
     // Any additional fields
     [key: string]: any;
@@ -245,6 +256,12 @@ export async function receiveJobWebhook(req: Request, res: Response) {
       ...(specs.sellPrice ? {
         sellPrice: specs.sellPrice,
       } : {}),
+
+      // Set routing type and paper source for third-party vendor jobs
+      ...(specs.vendorName ? {
+        routingType: 'THIRD_PARTY_VENDOR',
+        paperSource: 'VENDOR',
+      } : {}),
     };
 
     if (existingJob) {
@@ -287,11 +304,94 @@ export async function receiveJobWebhook(req: Request, res: Response) {
       },
     });
 
+    // Create PurchaseOrder to vendor if buyCost is provided (for third-party vendor jobs)
+    let purchaseOrder = null;
+    if (!existingJob && specs.buyCost && specs.vendorName) {
+      try {
+        // Find vendor by name
+        const vendor = await prisma.vendor.findFirst({
+          where: { name: { equals: specs.vendorName, mode: 'insensitive' } }
+        });
+
+        if (vendor) {
+          // Find Impact company (broker) as the origin
+          const impactCompany = await prisma.company.findFirst({
+            where: {
+              name: { contains: 'Impact', mode: 'insensitive' },
+              type: { equals: 'broker', mode: 'insensitive' }
+            }
+          });
+
+          // Generate PO number based on job number
+          const poCount = await prisma.purchaseOrder.count({ where: { jobId: job.id } });
+          const poNumber = `PO-${job.jobNo}-${String(poCount + 1).padStart(3, '0')}`;
+
+          // Create PO: Impact → Vendor (e.g., ThreeZ)
+          purchaseOrder = await prisma.purchaseOrder.create({
+            data: {
+              id: crypto.randomUUID(),
+              jobId: job.id,
+              originCompanyId: impactCompany?.id || customerId,
+              targetVendorId: vendor.id,
+              poNumber,
+              description: `${specs.partNumber || 'Part'} - ${specs.totalUnits?.toLocaleString() || ''} units`,
+              buyCost: specs.buyCost,
+              status: 'PENDING',
+              updatedAt: new Date(),
+            }
+          });
+
+          // Update job with vendor link
+          await prisma.job.update({
+            where: { id: job.id },
+            data: { vendorId: vendor.id }
+          });
+
+          console.log(`✅ Created PO ${poNumber} to ${vendor.name} for $${specs.buyCost.toFixed(2)}`);
+
+          // Auto-email ThreeZ if this is a ThreeZ PO with PDFs
+          if (vendor.name.toLowerCase() === 'threez' && (specs.packingSlipPdf || specs.boxLabelsPdf)) {
+            try {
+              const emailResult = await sendThreeZPOEmail(purchaseOrder, job, specs);
+              if (emailResult.success) {
+                // Update PO with email sent timestamp
+                await prisma.purchaseOrder.update({
+                  where: { id: purchaseOrder.id },
+                  data: {
+                    emailedAt: emailResult.emailedAt,
+                    emailedTo: 'jkoester@threez.com,dmeinhart@threez.com',
+                  },
+                });
+                console.log('📧 ThreeZ auto-email sent successfully');
+              } else {
+                console.warn('⚠️ ThreeZ email failed:', emailResult.error);
+              }
+            } catch (emailError) {
+              console.error('⚠️ Error sending ThreeZ email:', emailError);
+              // Don't fail webhook if email fails
+            }
+          }
+        } else {
+          console.warn(`⚠️ Vendor "${specs.vendorName}" not found - skipping PO creation`);
+        }
+      } catch (poError) {
+        console.error('⚠️ Error creating PurchaseOrder:', poError);
+        // Don't fail the webhook if PO creation fails
+      }
+    }
+
     return res.status(existingJob ? 200 : 201).json({
       success: true,
       action: existingJob ? 'updated' : 'created',
       jobId: job.id,
       jobNo: job.jobNo,
+      ...(purchaseOrder ? {
+        purchaseOrder: {
+          id: purchaseOrder.id,
+          poNumber: purchaseOrder.poNumber,
+          buyCost: purchaseOrder.buyCost,
+        }
+      } : {}),
     });
 
   } catch (error: any) {

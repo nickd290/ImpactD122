@@ -525,3 +525,153 @@ export async function sendJDInvoiceToBradfordEmail(
     return { success: false, error: error.message || 'Failed to generate or send JD invoice' };
   }
 }
+
+// ===========================================
+// ThreeZ PO Email for EPG Releases
+// ===========================================
+
+// ThreeZ contacts for EPG releases
+const THREEZ_EMAILS = ['jkoester@threez.com', 'dmeinhart@threez.com'];
+const THREEZ_CC_EMAIL = 'nick@jdgraphic.com';
+
+// Generate email body for ThreeZ PO (EPG release)
+function getThreeZPOEmailBody(po: any, job: any, specs: any): string {
+  const poNumber = po.poNumber || po.id;
+  const jobNo = job.jobNo || job.id;
+  const partNumber = specs.partNumber || 'N/A';
+  const totalUnits = specs.totalUnits ? Number(specs.totalUnits).toLocaleString() : 'N/A';
+  const buyCost = po.buyCost ? `$${Number(po.buyCost).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '';
+  const shippingLocation = specs.shippingLocation || 'N/A';
+
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <div style="background-color: #1E40AF; padding: 20px; text-align: center;">
+        <h1 style="color: white; margin: 0; font-size: 24px;">New EPrint Group Release</h1>
+        <p style="color: #93C5FD; margin: 5px 0 0 0;">Purchase Order from Impact Direct</p>
+      </div>
+
+      <div style="padding: 20px;">
+        <p>Dear ThreeZ Team,</p>
+
+        <p>Please find attached the Purchase Order and shipping documents for the following release:</p>
+
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+          <tr>
+            <td style="padding: 10px; border: 1px solid #ddd; background: #f9fafb; font-weight: bold;">PO Number</td>
+            <td style="padding: 10px; border: 1px solid #ddd;">${poNumber}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px; border: 1px solid #ddd; background: #f9fafb; font-weight: bold;">Job Number</td>
+            <td style="padding: 10px; border: 1px solid #ddd;">${jobNo}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px; border: 1px solid #ddd; background: #f9fafb; font-weight: bold;">Part Number</td>
+            <td style="padding: 10px; border: 1px solid #ddd;">${partNumber}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px; border: 1px solid #ddd; background: #f9fafb; font-weight: bold;">Total Units</td>
+            <td style="padding: 10px; border: 1px solid #ddd;">${totalUnits}</td>
+          </tr>
+          ${buyCost ? `
+          <tr>
+            <td style="padding: 10px; border: 1px solid #ddd; background: #f9fafb; font-weight: bold;">PO Amount</td>
+            <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold; color: #059669;">${buyCost}</td>
+          </tr>
+          ` : ''}
+          <tr>
+            <td style="padding: 10px; border: 1px solid #ddd; background: #f9fafb; font-weight: bold;">Ship To</td>
+            <td style="padding: 10px; border: 1px solid #ddd;">${shippingLocation}</td>
+          </tr>
+        </table>
+
+        <div style="background-color: #dbeafe; border: 1px solid #3b82f6; border-radius: 8px; padding: 15px; margin: 20px 0;">
+          <p style="margin: 0; font-weight: bold;">Attached Documents:</p>
+          <ul style="margin: 10px 0 0 0; padding-left: 20px;">
+            <li>Packing Slip</li>
+            <li>Box Labels</li>
+          </ul>
+        </div>
+
+        <p>Please confirm receipt and let us know if you have any questions.</p>
+
+        <p>Thank you!</p>
+      </div>
+
+      <hr style="border: none; border-top: 1px solid #ccc; margin: 20px 0;" />
+
+      <p style="color: #666; font-size: 12px; text-align: center;">
+        Impact Direct Printing<br />
+        brandon@impactdirectprinting.com
+      </p>
+    </div>
+  `;
+}
+
+// Send ThreeZ PO email with release documents
+export async function sendThreeZPOEmail(
+  po: any,
+  job: any,
+  specs: any
+): Promise<EmailResult> {
+  if (!process.env.SENDGRID_API_KEY) {
+    return { success: false, error: 'SendGrid API key not configured' };
+  }
+
+  const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'brandon@impactdirectprinting.com';
+  const fromName = process.env.SENDGRID_FROM_NAME || 'Impact Direct Printing';
+
+  const poNumber = po.poNumber || po.id;
+  const jobNo = job.jobNo || job.id;
+  const subject = `EPG Release PO #${poNumber} - Job #${jobNo}`;
+  const body = getThreeZPOEmailBody(po, job, specs);
+
+  // Build attachments array
+  const attachments: any[] = [];
+
+  if (specs.packingSlipPdf) {
+    attachments.push({
+      content: specs.packingSlipPdf, // Already base64
+      filename: `Packing-Slip-${jobNo}.pdf`,
+      type: 'application/pdf',
+      disposition: 'attachment',
+    });
+  }
+
+  if (specs.boxLabelsPdf) {
+    attachments.push({
+      content: specs.boxLabelsPdf, // Already base64
+      filename: `Box-Labels-${jobNo}.pdf`,
+      type: 'application/pdf',
+      disposition: 'attachment',
+    });
+  }
+
+  const msg: any = {
+    to: THREEZ_EMAILS,
+    cc: THREEZ_CC_EMAIL,
+    from: { email: fromEmail, name: fromName },
+    subject,
+    html: body,
+    attachments,
+  };
+
+  try {
+    const [response] = await sgMail.send(msg);
+    console.log('📧 ThreeZ PO email sent:', {
+      to: THREEZ_EMAILS,
+      cc: THREEZ_CC_EMAIL,
+      poNumber,
+      jobNo,
+      attachments: attachments.length,
+      statusCode: response.statusCode,
+    });
+    return { success: true, emailedAt: new Date() };
+  } catch (error: any) {
+    console.error('Error sending ThreeZ PO email:', {
+      code: error.code,
+      message: error.message,
+      errors: error.response?.body?.errors,
+    });
+    return { success: false, error: error.message || 'Failed to send ThreeZ email' };
+  }
+}
