@@ -3,21 +3,51 @@ import crypto from 'crypto';
 import { prisma } from '../utils/prisma';
 
 /**
- * Webhook payload from Impact Customer Portal
+ * Webhook payload from Impact Customer Portal or Inventory Release App
  */
 interface PortalJobPayload {
   jobNo: string;
   title?: string;
-  companyId: string;
+  companyId?: string;
   companyName: string;
   customerPONumber?: string;
   sizeName?: string;
   quantity?: number;
-  specs?: Record<string, any>;
+  specs?: {
+    // Common fields
+    source?: string;
+    externalJobNo?: string;
+
+    // Inventory Release App specific fields
+    releaseId?: string;
+    partNumber?: string;
+    partDescription?: string;
+    pallets?: number;
+    boxes?: number;
+    totalUnits?: number;
+    unitsPerBox?: number;
+    boxesPerSkid?: number;
+    shippingLocation?: string;
+    shippingAddress?: {
+      address?: string;
+      city?: string;
+      state?: string;
+      zip?: string;
+    };
+    ticketNumber?: string;
+    batchNumber?: string;
+    manufactureDate?: string;
+    shipVia?: string;
+    freightTerms?: string;
+    sellPrice?: number;
+
+    // Any additional fields
+    [key: string]: any;
+  };
   status?: string;
   deliveryDate?: string;
-  createdAt: string;
-  externalJobId: string; // The portal's job ID
+  createdAt?: string;
+  externalJobId: string; // The portal's job ID or release ID
 }
 
 /**
@@ -157,23 +187,64 @@ export async function receiveJobWebhook(req: Request, res: Response) {
     let job;
 
     // Build specs with external job number included for reference
+    const specs = payload.specs || {};
     const jobSpecs = {
-      ...(payload.specs || {}),
+      ...specs,
       externalJobNo: payload.jobNo,  // Store external job/release number in specs
     };
 
+    // Determine if this is from inventory-release-app
+    const isFromReleaseApp = specs.source === 'inventory-release-app';
+    const externalSource = isFromReleaseApp ? 'inventory-release-app' : 'impact-customer-portal';
+
+    // Build title - use part number for release app jobs
+    let jobTitle = payload.title;
+    if (!jobTitle) {
+      if (isFromReleaseApp && specs.partNumber) {
+        jobTitle = `${specs.partNumber} - ${specs.partDescription || 'Release'}`;
+      } else {
+        jobTitle = `Job from ${payload.companyName}`;
+      }
+    }
+
+    // Build description from part details if from release app
+    let jobDescription: string | undefined;
+    if (isFromReleaseApp) {
+      const parts = [];
+      if (specs.partNumber) parts.push(`Part: ${specs.partNumber}`);
+      if (specs.partDescription) parts.push(specs.partDescription);
+      if (specs.totalUnits) parts.push(`${specs.totalUnits.toLocaleString()} units`);
+      if (specs.pallets) parts.push(`${specs.pallets} pallet${specs.pallets > 1 ? 's' : ''}`);
+      jobDescription = parts.join(' • ');
+    }
+
     const jobData = {
       customerId,
-      title: payload.title || `Job from ${payload.companyName}`,
+      title: jobTitle,
+      description: jobDescription,
       customerPONumber: payload.customerPONumber || payload.jobNo,  // Use external jobNo as PO if not provided
       sizeName: payload.sizeName,
-      quantity: payload.quantity,
+      quantity: payload.quantity || specs.totalUnits,
       specs: jobSpecs,
       status: mapStatus(payload.status),
       deliveryDate: payload.deliveryDate ? new Date(payload.deliveryDate) : null,
       externalJobId: payload.externalJobId,
-      externalSource: 'impact-customer-portal',
+      externalSource,
       updatedAt: new Date(),
+
+      // Populate vendor ship-to fields from release shipping address
+      ...(isFromReleaseApp && specs.shippingLocation ? {
+        vendorShipToName: specs.shippingLocation,
+        vendorShipToAddress: specs.shippingAddress?.address,
+        vendorShipToCity: specs.shippingAddress?.city,
+        vendorShipToState: specs.shippingAddress?.state,
+        vendorShipToZip: specs.shippingAddress?.zip,
+      } : {}),
+
+      // Populate sell price if provided
+      ...(specs.sellPrice ? {
+        sellPrice: specs.sellPrice,
+      } : {}),
     };
 
     if (existingJob) {
@@ -207,9 +278,11 @@ export async function receiveJobWebhook(req: Request, res: Response) {
         oldValue: existingJob ? JSON.stringify({ status: existingJob.status }) : null,
         newValue: JSON.stringify({
           externalJobId: payload.externalJobId,
-          source: 'impact-customer-portal',
+          externalJobNo: payload.jobNo,
+          source: externalSource,
+          ...(isFromReleaseApp && specs.partNumber ? { partNumber: specs.partNumber } : {}),
         }),
-        changedBy: 'webhook:impact-customer-portal',
+        changedBy: `webhook:${externalSource}`,
         changedByRole: 'BROKER_ADMIN',
       },
     });
