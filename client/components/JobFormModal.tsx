@@ -1021,7 +1021,7 @@ export function JobFormModal({
                           </label>
                           <input
                             type="number"
-                            value={item.unitPrice.toFixed(2)}
+                            value={Number(item.unitPrice || 0).toFixed(2)}
                             onChange={(e) => handleLineItemChange(index, 'unitPrice', e.target.value)}
                             className="w-full px-2 py-1 border border-gray-300 rounded text-sm bg-white"
                             step="0.01"
