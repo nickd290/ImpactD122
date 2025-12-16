@@ -339,23 +339,42 @@ export function JobsView({
     setTimeout(() => onRefresh(), jobIds.length * 200 + 500);
   };
 
+  // Customer filter state
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+
+  // Get unique customers for filter chips
+  const customerList = useMemo(() => {
+    const customers = new Map<string, { id: string; name: string; count: number }>();
+    filteredJobs.forEach(job => {
+      const id = job.customer?.id || 'no-customer';
+      const name = job.customer?.name || 'No Customer';
+      if (!customers.has(id)) {
+        customers.set(id, { id, name, count: 0 });
+      }
+      customers.get(id)!.count++;
+    });
+    return Array.from(customers.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [filteredJobs]);
+
+  // Filter jobs by selected customer
+  const displayJobs = selectedCustomerId
+    ? filteredJobs.filter(j => (j.customer?.id || 'no-customer') === selectedCustomerId)
+    : filteredJobs;
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-4">
+      {/* Header - Compact */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Jobs</h1>
-          <p className="text-muted-foreground mt-1">
+          <h1 className="text-xl font-semibold text-foreground">Jobs</h1>
+          <p className="text-sm text-muted-foreground">
             Manage your print jobs and track their progress
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          {/* Primary New Job Button */}
-          <Button onClick={onCreateJob} className="bg-blue-600 hover:bg-blue-700">
-            <Plus className="w-4 h-4 mr-2" />
-            New Job
-          </Button>
-        </div>
+        <Button onClick={onCreateJob} size="sm">
+          <Plus className="w-4 h-4 mr-1" />
+          New Job
+        </Button>
       </div>
 
       {/* Tabs */}
@@ -364,381 +383,184 @@ export function JobsView({
         activeTab={activeTab}
         onTabChange={(tabId) => {
           setActiveTab(tabId as 'active' | 'completed' | 'paid');
-          setSelectedJobIds(new Set()); // Clear selection when switching tabs
+          setSelectedJobIds(new Set());
+          setSelectedCustomerId(null);
         }}
       />
 
       {/* Search and Table Card */}
       <div className="bg-card rounded-lg border border-border shadow-sm overflow-hidden">
         {/* Search Bar */}
-        <div className="p-4 border-b border-border">
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-              <Input
-                type="text"
-                placeholder="Search jobs by title, number, customer, or vendor..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            {selectedJobIds.size > 0 && (
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-muted-foreground">
-                  {selectedJobIds.size} selected
-                </span>
-
-                {/* Generate Documents Dropdown */}
-                <div className="relative" ref={docMenuRef}>
-                  <Button
-                    onClick={() => setIsDocMenuOpen(!isDocMenuOpen)}
-                    variant="outline"
-                    size="sm"
-                  >
-                    <FileText className="w-4 h-4 mr-2" />
-                    Generate Docs
-                    <ChevronDown className="w-4 h-4 ml-2" />
-                  </Button>
-
-                  {isDocMenuOpen && (
-                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
-                      <button
-                        onClick={() => handleBatchGenerate('quote')}
-                        className="w-full px-4 py-2 text-left flex items-center gap-3 hover:bg-purple-50 transition-colors"
-                      >
-                        <FileText className="w-4 h-4 text-purple-600" />
-                        <span className="text-sm font-medium">All Quotes ({selectedJobIds.size})</span>
-                      </button>
-                      <button
-                        onClick={() => handleBatchGenerate('po')}
-                        className="w-full px-4 py-2 text-left flex items-center gap-3 hover:bg-blue-50 transition-colors"
-                      >
-                        <Printer className="w-4 h-4 text-blue-600" />
-                        <span className="text-sm font-medium">All POs ({selectedJobIds.size})</span>
-                      </button>
-                      <button
-                        onClick={() => handleBatchGenerate('invoice')}
-                        className="w-full px-4 py-2 text-left flex items-center gap-3 hover:bg-green-50 transition-colors"
-                      >
-                        <Receipt className="w-4 h-4 text-green-600" />
-                        <span className="text-sm font-medium">All Invoices ({selectedJobIds.size})</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Mark as Paid Dropdown */}
-                <div className="relative" ref={paymentMenuRef}>
-                  <Button
-                    onClick={() => setIsPaymentMenuOpen(!isPaymentMenuOpen)}
-                    disabled={isProcessingPayment}
-                    variant="outline"
-                    size="sm"
-                  >
-                    <DollarSign className="w-4 h-4 mr-2" />
-                    {isProcessingPayment ? 'Processing...' : 'Mark Paid'}
-                    <ChevronDown className="w-4 h-4 ml-2" />
-                  </Button>
-
-                  {isPaymentMenuOpen && (
-                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
-                      <button
-                        onClick={() => handleBatchPayment('customer')}
-                        className="w-full px-4 py-2 text-left flex items-center gap-3 hover:bg-blue-50 transition-colors"
-                      >
-                        <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                        <span className="text-sm font-medium">Customer Paid</span>
-                      </button>
-                      <button
-                        onClick={() => handleBatchPayment('vendor')}
-                        className="w-full px-4 py-2 text-left flex items-center gap-3 hover:bg-purple-50 transition-colors"
-                      >
-                        <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
-                        <span className="text-sm font-medium">Vendor Paid</span>
-                      </button>
-                      <button
-                        onClick={() => handleBatchPayment('bradford')}
-                        className="w-full px-4 py-2 text-left flex items-center gap-3 hover:bg-orange-50 transition-colors"
-                      >
-                        <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
-                        <span className="text-sm font-medium">Bradford Paid</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                <Button
-                  onClick={handleBatchDelete}
-                  disabled={isDeleting}
-                  variant="destructive"
-                  size="sm"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  {isDeleting ? 'Deleting...' : `Delete ${selectedJobIds.size}`}
-                </Button>
-              </div>
-            )}
+        <div className="px-4 py-3 border-b border-border">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+            <Input
+              type="text"
+              placeholder="Search jobs by title, number, customer, or vendor..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
           </div>
         </div>
 
-        {/* Grouped Table by Customer */}
-        {filteredJobs.length > 0 ? (
+        {/* Customer Filter Chips */}
+        <div className="px-4 py-2 border-b border-border flex items-center gap-2 overflow-x-auto">
+          {customerList.map(({ id, name, count }) => (
+            <button
+              key={id}
+              onClick={() => setSelectedCustomerId(selectedCustomerId === id ? null : id)}
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors",
+                selectedCustomerId === id
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              <Building2 className="w-3.5 h-3.5" />
+              <span>{name}</span>
+              <span className={cn(
+                "text-xs px-1.5 py-0.5 rounded-full",
+                selectedCustomerId === id ? "bg-white/20" : "bg-muted"
+              )}>
+                {count}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Batch Actions Bar - only show when jobs selected */}
+        {selectedJobIds.size > 0 && (
+          <div className="px-4 py-2 border-b border-border flex items-center gap-3 bg-muted/30">
+            <span className="text-sm text-muted-foreground">
+              {selectedJobIds.size} selected
+            </span>
+            <div className="relative" ref={docMenuRef}>
+              <Button onClick={() => setIsDocMenuOpen(!isDocMenuOpen)} variant="outline" size="sm">
+                <FileText className="w-4 h-4 mr-1" />
+                Docs
+                <ChevronDown className="w-3 h-3 ml-1" />
+              </Button>
+              {isDocMenuOpen && (
+                <div className="absolute left-0 mt-1 w-40 bg-card rounded-lg shadow-lg border border-border py-1 z-50">
+                  <button onClick={() => handleBatchGenerate('quote')} className="w-full px-3 py-2 text-left text-sm hover:bg-accent">Quotes</button>
+                  <button onClick={() => handleBatchGenerate('po')} className="w-full px-3 py-2 text-left text-sm hover:bg-accent">POs</button>
+                  <button onClick={() => handleBatchGenerate('invoice')} className="w-full px-3 py-2 text-left text-sm hover:bg-accent">Invoices</button>
+                </div>
+              )}
+            </div>
+            <div className="relative" ref={paymentMenuRef}>
+              <Button onClick={() => setIsPaymentMenuOpen(!isPaymentMenuOpen)} disabled={isProcessingPayment} variant="outline" size="sm">
+                <DollarSign className="w-4 h-4 mr-1" />
+                {isProcessingPayment ? '...' : 'Paid'}
+                <ChevronDown className="w-3 h-3 ml-1" />
+              </Button>
+              {isPaymentMenuOpen && (
+                <div className="absolute left-0 mt-1 w-40 bg-card rounded-lg shadow-lg border border-border py-1 z-50">
+                  <button onClick={() => handleBatchPayment('customer')} className="w-full px-3 py-2 text-left text-sm hover:bg-accent">Customer</button>
+                  <button onClick={() => handleBatchPayment('vendor')} className="w-full px-3 py-2 text-left text-sm hover:bg-accent">Vendor</button>
+                  <button onClick={() => handleBatchPayment('bradford')} className="w-full px-3 py-2 text-left text-sm hover:bg-accent">Bradford</button>
+                </div>
+              )}
+            </div>
+            <Button onClick={handleBatchDelete} disabled={isDeleting} variant="destructive" size="sm">
+              <Trash2 className="w-4 h-4 mr-1" />
+              Delete
+            </Button>
+          </div>
+        )}
+
+        {/* Flat Jobs Table */}
+        {displayJobs.length > 0 ? (
           <div className="overflow-x-auto">
-            {jobsByCustomer.map(({ customer, jobs: customerJobs }) => (
-              <div key={customer.id} className="border-b border-border last:border-b-0">
-                {/* Customer Header - Collapsible */}
-                <button
-                  onClick={() => toggleCustomerCollapse(customer.id)}
-                  className="w-full px-6 py-4 flex items-center justify-between bg-muted/30 hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    {collapsedCustomers.has(customer.id) ? (
-                      <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                    ) : (
-                      <ChevronDown className="w-5 h-5 text-muted-foreground" />
+            <table className="min-w-full">
+              <thead className="bg-muted/30 border-b border-border">
+                <tr>
+                  <th className="px-3 py-2 w-10">
+                    <button
+                      onClick={handleSelectAll}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      {selectedJobIds.size === displayJobs.length && displayJobs.length > 0 ? (
+                        <CheckSquare className="w-4 h-4" />
+                      ) : (
+                        <Square className="w-4 h-4" />
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Job</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Customer</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Status</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase">PO #</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Due</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground uppercase">Qty</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground uppercase">Spread</th>
+                  <th className="px-3 py-2 w-20"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {displayJobs.map((job: Job) => (
+                  <tr
+                    key={job.id}
+                    className={cn(
+                      'group hover:bg-accent/50 transition-colors',
+                      selectedJob?.id === job.id && 'bg-accent'
                     )}
-                    <h3 className="text-sm font-semibold text-foreground">
-                      {customer.name || 'Unknown Customer'}
-                    </h3>
-                    <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                      {customerJobs.length} {customerJobs.length === 1 ? 'job' : 'jobs'}
-                    </span>
-                  </div>
-                </button>
-
-                {/* Customer Jobs Table */}
-                {!collapsedCustomers.has(customer.id) && (
-                  <table className="min-w-full divide-y divide-border">
-                    <thead className="bg-muted/20">
-                      <tr>
-                        <th className="px-4 py-3 w-12">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const allSelected = customerJobs.every(job => selectedJobIds.has(job.id));
-                              const newSelection = new Set(selectedJobIds);
-                              if (allSelected) {
-                                customerJobs.forEach(job => newSelection.delete(job.id));
-                              } else {
-                                customerJobs.forEach(job => newSelection.add(job.id));
-                              }
-                              setSelectedJobIds(newSelection);
-                            }}
-                            className="text-muted-foreground hover:text-foreground transition-colors"
-                            title="Select all in this customer"
-                          >
-                            {customerJobs.every(job => selectedJobIds.has(job.id)) ? (
-                              <CheckSquare className="w-5 h-5" />
-                            ) : (
-                              <Square className="w-5 h-5" />
-                            )}
-                          </button>
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Job
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Status
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Customer PO
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Delivery
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Mail
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          In-Homes
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Qty
-                        </th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Spread
-                        </th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-card divide-y divide-border">
-                      {customerJobs.map((job: Job) => (
-                        <tr
-                          key={job.id}
-                          className={cn(
-                            'hover:bg-accent/50 transition-colors',
-                            selectedJob?.id === job.id && 'bg-accent'
-                          )}
-                        >
-                          <td className="px-4 py-4 w-12">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleToggleSelection(job.id);
-                              }}
-                              className="text-muted-foreground hover:text-foreground transition-colors"
-                              title={selectedJobIds.has(job.id) ? "Deselect" : "Select"}
-                            >
-                              {selectedJobIds.has(job.id) ? (
-                                <CheckSquare className="w-5 h-5 text-blue-600" />
-                              ) : (
-                                <Square className="w-5 h-5" />
-                              )}
-                            </button>
-                          </td>
-                          {/* Job Title - Click to open detail */}
-                          <td
-                            onClick={() => handleRowClick(job)}
-                            className="px-6 py-4 cursor-pointer"
-                          >
-                            <div className="flex flex-col">
-                              <span className="text-sm font-medium text-foreground hover:text-blue-600">
-                                {job.number} - {job.title}
-                              </span>
-                              {job.vendor?.name && (
-                                <span className="text-xs text-muted-foreground">
-                                  {job.vendor.name}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          {/* Status - Inline dropdown */}
-                          <td className="px-4 py-4 whitespace-nowrap">
-                            <StatusDropdown
-                              status={job.status}
-                              onStatusChange={(newStatus) => handleStatusChange(job.id, newStatus)}
-                            />
-                          </td>
-                          {/* Customer PO - Inline editable */}
-                          <td className="px-4 py-4 whitespace-nowrap">
-                            <InlineEditableCell
-                              value={job.customerPONumber}
-                              onSave={(value) => handleInlineUpdate(job.id, 'customerPONumber', value)}
-                              placeholder="Add PO#"
-                              className="text-sm"
-                            />
-                          </td>
-                          {/* Delivery Date - Inline editable */}
-                          <td className="px-4 py-4 whitespace-nowrap">
-                            <InlineEditableCell
-                              value={job.dueDate}
-                              onSave={(value) => handleInlineUpdate(job.id, 'deliveryDate', value)}
-                              type="date"
-                              className="text-sm"
-                            />
-                          </td>
-                          {/* Mail Date - Inline editable */}
-                          <td className="px-4 py-4 whitespace-nowrap">
-                            <InlineEditableCell
-                              value={job.mailDate}
-                              onSave={(value) => handleInlineUpdate(job.id, 'mailDate', value)}
-                              type="date"
-                              className="text-sm"
-                            />
-                          </td>
-                          {/* In-Homes Date - Inline editable */}
-                          <td className="px-4 py-4 whitespace-nowrap">
-                            <InlineEditableCell
-                              value={job.inHomesDate}
-                              onSave={(value) => handleInlineUpdate(job.id, 'inHomesDate', value)}
-                              type="date"
-                              className="text-sm"
-                            />
-                          </td>
-                          {/* Quantity - Click to open detail */}
-                          <td
-                            onClick={() => handleRowClick(job)}
-                            className="px-4 py-4 whitespace-nowrap cursor-pointer"
-                          >
-                            <span className="text-sm text-foreground">
-                              {job.quantity?.toLocaleString() || '-'}
-                            </span>
-                          </td>
-                          {/* Spread */}
-                          <td
-                            onClick={() => handleRowClick(job)}
-                            className="px-4 py-4 whitespace-nowrap text-right cursor-pointer"
-                          >
-                            {(() => {
-                              // Calculate spread using CPM formula (same as Pricing tab)
-                              const impactToBradfordPO = (job as any).purchaseOrders?.find(
-                                (po: any) => po.originCompanyId === 'impact-direct' && po.targetCompanyId === 'bradford'
-                              );
-                              const bradfordToJDPO = (job as any).purchaseOrders?.find(
-                                (po: any) => po.originCompanyId === 'bradford' && po.targetCompanyId === 'jd-graphic'
-                              );
-                              const paperCPM = impactToBradfordPO?.paperCPM || 0;
-                              const printCPM = bradfordToJDPO?.printCPM || 0;
-                              // Require BOTH paperCPM AND printCPM to use CPM calculation
-                              const hasCPMData = paperCPM > 0 && printCPM > 0;
-
-                              if (hasCPMData && job.quantity) {
-                                const qty = job.quantity;
-                                const paperCost = paperCPM * (qty / 1000);
-                                const paperMarkup = paperCost * 0.18;
-                                const mfgCost = printCPM * (qty / 1000);
-                                const totalCost = paperCost + paperMarkup + mfgCost;
-                                const sellPrice = (job as any).sellPrice || 0;
-                                const spread = sellPrice - totalCost;
-                                return (
-                                  <span className={`text-sm font-medium ${spread >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                    ${spread.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </span>
-                                );
-                              }
-                              // Fallback: calculate from PO buyCosts (same as JobDetailModal)
-                              const poTotal = (job as any).purchaseOrders
-                                ?.filter((po: any) => po.originCompanyId === 'impact-direct' && po.targetCompanyId === 'bradford')
-                                .reduce((sum: number, po: any) => sum + (Number(po.buyCost) || 0), 0) || 0;
-                              const totalCost = Number((job as any).profit?.totalCost) || poTotal || 0;
-                              const fallbackSellPrice = (job as any).sellPrice || 0;
-                              const spread = fallbackSellPrice - totalCost;
-                              return (
-                                <span className={`text-sm ${spread >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                  ${Number(spread).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </span>
-                              );
-                            })()}
-                          </td>
-                          {/* Actions */}
-                          <td className="px-4 py-4 whitespace-nowrap text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onEditJob(job);
-                                }}
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7"
-                                title="Edit Job"
-                              >
-                                <Edit className="w-3.5 h-3.5" />
-                              </Button>
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onDeleteJob(job);
-                                }}
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                title="Delete Job"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            ))}
+                  >
+                    {/* Checkbox */}
+                    <td className="px-3 py-2.5">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleToggleSelection(job.id); }}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        {selectedJobIds.has(job.id) ? <CheckSquare className="w-4 h-4 text-primary" /> : <Square className="w-4 h-4" />}
+                      </button>
+                    </td>
+                    {/* Job */}
+                    <td onClick={() => handleRowClick(job)} className="px-3 py-2.5 cursor-pointer">
+                      <div className="text-sm font-medium text-foreground hover:text-primary">{job.number} - {job.title}</div>
+                      {job.vendor?.name && <div className="text-xs text-muted-foreground">{job.vendor.name}</div>}
+                    </td>
+                    {/* Customer */}
+                    <td className="px-3 py-2.5">
+                      <span className="text-sm text-muted-foreground">{job.customer?.name || '—'}</span>
+                    </td>
+                    {/* Status */}
+                    <td className="px-3 py-2.5">
+                      <StatusDropdown status={job.status} onStatusChange={(s) => handleStatusChange(job.id, s)} />
+                    </td>
+                    {/* PO # */}
+                    <td className="px-3 py-2.5">
+                      <InlineEditableCell value={job.customerPONumber} onSave={(v) => handleInlineUpdate(job.id, 'customerPONumber', v)} placeholder="—" className="text-sm" />
+                    </td>
+                    {/* Due */}
+                    <td className="px-3 py-2.5">
+                      <InlineEditableCell value={job.dueDate} onSave={(v) => handleInlineUpdate(job.id, 'dueDate', v)} type="date" className="text-sm" />
+                    </td>
+                    {/* Qty */}
+                    <td className="px-3 py-2.5 text-right">
+                      <span className="text-sm">{job.quantity?.toLocaleString() || '—'}</span>
+                    </td>
+                    {/* Spread */}
+                    <td className="px-3 py-2.5 text-right">
+                      {(() => {
+                        const sellPrice = (job as any).sellPrice || 0;
+                        const totalCost = (job as any).profit?.totalCost || 0;
+                        const spread = sellPrice - totalCost;
+                        return <span className={`text-sm font-medium ${spread >= 0 ? 'text-green-600' : 'text-red-600'}`}>${spread.toFixed(0)}</span>;
+                      })()}
+                    </td>
+                    {/* Actions - show on hover */}
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button onClick={(e) => { e.stopPropagation(); onEditJob(job); }} variant="ghost" size="icon" className="h-7 w-7"><Edit className="w-3.5 h-3.5" /></Button>
+                        <Button onClick={(e) => { e.stopPropagation(); onDeleteJob(job); }} variant="ghost" size="icon" className="h-7 w-7 text-destructive"><Trash2 className="w-3.5 h-3.5" /></Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : (
           <div className="p-12 text-center">

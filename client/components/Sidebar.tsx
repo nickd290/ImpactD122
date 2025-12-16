@@ -32,31 +32,34 @@ function NavItem({ icon, label, active, onClick, badge, shortcut }: NavItemProps
     <button
       onClick={onClick}
       className={cn(
-        "group relative w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all duration-200",
+        "group relative w-full flex items-center justify-between px-2 py-1.5 rounded-md transition-all duration-150",
         "hover:bg-accent",
         active
-          ? "bg-primary/10 text-primary font-medium shadow-sm"
+          ? "bg-primary/10 text-primary font-medium"
           : "text-muted-foreground hover:text-foreground"
       )}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         <div className={cn(
           "transition-colors",
           active ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
         )}>
-          {icon}
+          {React.cloneElement(icon as React.ReactElement, { className: "w-4 h-4" })}
         </div>
-        <span className="text-sm">{label}</span>
+        <span className="text-xs">{label}</span>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         {badge !== undefined && badge > 0 && (
-          <Badge variant={active ? "default" : "secondary"} className="text-xs px-2 py-0.5">
+          <span className={cn(
+            "text-[10px] px-1.5 py-0.5 rounded-full font-medium",
+            active ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
+          )}>
             {badge}
-          </Badge>
+          </span>
         )}
         {shortcut && (
-          <kbd className="hidden lg:inline-flex h-5 px-1.5 items-center gap-1 rounded border bg-muted text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+          <kbd className="hidden lg:inline-flex h-4 px-1 items-center rounded border bg-muted text-[9px] font-medium opacity-0 group-hover:opacity-100 transition-opacity">
             {shortcut}
           </kbd>
         )}
@@ -78,39 +81,40 @@ export function Sidebar({
   onShowSearch,
 }: SidebarProps) {
   return (
-    <div className="w-64 bg-card border-r border-border flex flex-col h-screen">
-      {/* Logo Header */}
-      <div className="p-6 border-b border-border">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-            <Briefcase className="h-6 w-6 text-primary" />
+    <div className="w-56 bg-card border-r border-border flex flex-col h-screen">
+      {/* Logo Header - Compact */}
+      <div className="px-4 py-3 border-b border-border">
+        <div className="flex items-center gap-2">
+          <div className="h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center">
+            <Briefcase className="h-4 w-4 text-primary" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-foreground">Impact Direct</h1>
-            <p className="text-xs text-muted-foreground">Print Brokerage</p>
+            <h1 className="text-sm font-semibold text-foreground">Impact Direct</h1>
+            <p className="text-[10px] text-muted-foreground">Print Brokerage</p>
           </div>
         </div>
       </div>
 
-      {/* Search Bar */}
-      <div className="px-3 pt-4 pb-3">
+      {/* Search Bar - Compact */}
+      <div className="px-2 py-2">
         <Button
           variant="outline"
           onClick={onShowSearch}
-          className="w-full justify-start text-muted-foreground hover:text-foreground"
+          size="sm"
+          className="w-full justify-start text-muted-foreground hover:text-foreground h-8"
         >
-          <Command className="w-4 h-4 mr-2" />
-          <span className="text-sm">Search...</span>
-          <kbd className="ml-auto hidden lg:inline-flex h-5 px-1.5 items-center gap-1 rounded border bg-muted text-[10px] font-medium">
+          <Command className="w-3.5 h-3.5 mr-2" />
+          <span className="text-xs">Search...</span>
+          <kbd className="ml-auto hidden lg:inline-flex h-4 px-1 items-center rounded border bg-muted text-[9px] font-medium">
             ⌘K
           </kbd>
         </Button>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
-        <div className="mb-4">
-          <p className="px-3 mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+      {/* Navigation - Compact */}
+      <nav className="flex-1 px-2 py-1 space-y-0.5 overflow-y-auto">
+        <div className="mb-3">
+          <p className="px-2 mb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
             Main
           </p>
           <NavItem
@@ -145,8 +149,8 @@ export function Sidebar({
           />
         </div>
 
-        <div className="mb-4">
-          <p className="px-3 mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+        <div className="mb-3">
+          <p className="px-2 mb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
             Entities
           </p>
           <NavItem
@@ -167,8 +171,8 @@ export function Sidebar({
           />
         </div>
 
-        <div className="mb-4">
-          <p className="px-3 mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+        <div className="mb-3">
+          <p className="px-2 mb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
             Analytics
           </p>
           <NavItem

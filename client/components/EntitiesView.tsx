@@ -63,117 +63,77 @@ export function EntitiesView({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      {/* Compact Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">{entityTypeLabelPlural}</h1>
-          <p className="text-muted-foreground mt-1">
+          <h1 className="text-xl font-semibold text-foreground">{entityTypeLabelPlural}</h1>
+          <p className="text-sm text-muted-foreground">
             Manage your {entityTypeLabelPlural.toLowerCase()} and view their jobs
           </p>
         </div>
-        <Button
-          onClick={() => onCreateEntity(type === 'CUSTOMER' ? 'customer' : 'vendor')}
-        >
-          <Plus className="w-4 h-4 mr-2" />
+        <Button size="sm" onClick={() => onCreateEntity(type === 'CUSTOMER' ? 'customer' : 'vendor')}>
+          <Plus className="w-4 h-4 mr-1" />
           Add {entityTypeLabel}
         </Button>
       </div>
 
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-border">
-            <thead className="bg-muted/50">
+          <table className="min-w-full">
+            <thead className="bg-muted/30 border-b border-border">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Name
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Contact Person
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Email
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Phone
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  # Jobs
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Actions
-                </th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Name</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Contact</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Email</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Phone</th>
+                <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground uppercase">Jobs</th>
+                <th className="px-4 py-2 w-20"></th>
               </tr>
             </thead>
-            <tbody className="bg-card divide-y divide-border">
-              {entities.map((entity: any) => (
-                <tr key={entity.id} className="hover:bg-accent/50 cursor-pointer transition-colors">
-                  <td
-                    onClick={() => handleRowClick(entity)}
-                    className="px-6 py-4 whitespace-nowrap"
+            <tbody>
+              {entities.map((entity: any, index: number) => {
+                const jobCount = getJobCount(entity.id);
+                return (
+                  <tr
+                    key={entity.id}
+                    className={`group hover:bg-accent/50 cursor-pointer transition-colors ${index % 2 === 0 ? 'bg-card' : 'bg-muted/10'}`}
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-foreground">{entity.name}</span>
-                      {entity.isPartner && (
-                        <span className="px-2 py-0.5 text-xs bg-primary text-primary-foreground rounded">
-                          Partner
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td
-                    onClick={() => handleRowClick(entity)}
-                    className="px-6 py-4 whitespace-nowrap text-sm text-foreground"
-                  >
-                    {entity.contactPerson}
-                  </td>
-                  <td
-                    onClick={() => handleRowClick(entity)}
-                    className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground"
-                  >
-                    {entity.email}
-                  </td>
-                  <td
-                    onClick={() => handleRowClick(entity)}
-                    className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground"
-                  >
-                    {entity.phone}
-                  </td>
-                  <td
-                    onClick={() => handleRowClick(entity)}
-                    className="px-6 py-4 whitespace-nowrap text-sm text-foreground"
-                  >
-                    {getJobCount(entity.id)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onEditEntity(entity);
-                        }}
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        title={`Edit ${entityTypeLabel}`}
-                      >
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteEntity(entity);
-                        }}
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                        title={`Delete ${entityTypeLabel}`}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    <td onClick={() => handleRowClick(entity)} className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-foreground">{entity.name}</span>
+                        {entity.isPartner && (
+                          <span className="px-1.5 py-0.5 text-[10px] bg-primary text-primary-foreground rounded font-medium">Partner</span>
+                        )}
+                      </div>
+                    </td>
+                    <td onClick={() => handleRowClick(entity)} className="px-4 py-3 text-sm text-muted-foreground">
+                      {entity.contactPerson || '—'}
+                    </td>
+                    <td onClick={() => handleRowClick(entity)} className="px-4 py-3 text-sm text-muted-foreground">
+                      {entity.email || '—'}
+                    </td>
+                    <td onClick={() => handleRowClick(entity)} className="px-4 py-3 text-sm text-muted-foreground">
+                      {entity.phone || '—'}
+                    </td>
+                    <td onClick={() => handleRowClick(entity)} className="px-4 py-3 text-center">
+                      <span className={`text-sm font-medium ${jobCount > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                        {jobCount}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button onClick={(e) => { e.stopPropagation(); onEditEntity(entity); }} variant="ghost" size="icon" className="h-7 w-7">
+                          <Edit className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button onClick={(e) => { e.stopPropagation(); onDeleteEntity(entity); }} variant="ghost" size="icon" className="h-7 w-7 text-destructive">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
 
