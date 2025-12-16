@@ -309,7 +309,7 @@ function transformJob(job: any) {
       amount: inv.amount ? Number(inv.amount) : null,
       paidAt: inv.paidAt,
     })),
-    hasPaidInvoice: (job.Invoice || []).some((inv: any) => inv.paidAt !== null),
+    hasPaidInvoice: (job.Invoice || []).some((inv: any) => inv.paidAt !== null) || job.customerPaymentDate !== null,
   };
 }
 

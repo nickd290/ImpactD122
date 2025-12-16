@@ -87,6 +87,7 @@ export function JobsView({
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const paymentMenuRef = useRef<HTMLDivElement>(null);
   const docMenuRef = useRef<HTMLDivElement>(null);
+  const [optimisticallyPaidIds, setOptimisticallyPaidIds] = useState<Set<string>>(new Set());
 
   // Filter jobs by active tab
   const tabFilteredJobs = useMemo(() => {
@@ -94,22 +95,22 @@ export function JobsView({
       case 'active':
         return jobs.filter((job) => job.status === 'ACTIVE');
       case 'completed':
-        // Work is done (status PAID) but invoice not yet paid
-        return jobs.filter((job) => job.status === 'PAID' && !job.hasPaidInvoice);
+        // Work is done (status PAID) but invoice not yet paid, exclude optimistically paid
+        return jobs.filter((job) => job.status === 'PAID' && !job.hasPaidInvoice && !optimisticallyPaidIds.has(job.id));
       case 'paid':
         // Invoice has been paid
         return jobs.filter((job) => job.hasPaidInvoice === true);
       default:
         return jobs;
     }
-  }, [jobs, activeTab]);
+  }, [jobs, activeTab, optimisticallyPaidIds]);
 
   // Get counts for tabs
   const tabCounts = useMemo(() => ({
     active: jobs.filter((job) => job.status === 'ACTIVE').length,
-    completed: jobs.filter((job) => job.status === 'PAID' && !job.hasPaidInvoice).length,
+    completed: jobs.filter((job) => job.status === 'PAID' && !job.hasPaidInvoice && !optimisticallyPaidIds.has(job.id)).length,
     paid: jobs.filter((job) => job.hasPaidInvoice === true).length,
-  }), [jobs]);
+  }), [jobs, optimisticallyPaidIds]);
 
   // Define tabs
   const tabs = [
@@ -301,6 +302,27 @@ export function JobsView({
       alert(error.message || 'Failed to update payments. Please try again.');
     } finally {
       setIsProcessingPayment(false);
+    }
+  };
+
+  // Handle single job mark paid - optimistic UI
+  const handleMarkPaid = async (jobId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    // Optimistic: immediately hide from Completed tab
+    setOptimisticallyPaidIds(prev => new Set(prev).add(jobId));
+
+    try {
+      await jobsApi.markCustomerPaid(jobId);
+      onRefresh(); // Sync actual data in background
+    } catch (error) {
+      // Rollback on error
+      setOptimisticallyPaidIds(prev => {
+        const next = new Set(prev);
+        next.delete(jobId);
+        return next;
+      });
+      console.error('Failed to mark job as paid:', error);
+      alert('Failed to mark job as paid. Please try again.');
     }
   };
 
@@ -555,6 +577,17 @@ export function JobsView({
                     {/* Actions - show on hover */}
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {activeTab === 'completed' && (
+                          <Button
+                            onClick={(e) => handleMarkPaid(job.id, e)}
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs text-green-600 border-green-200 hover:bg-green-50 hover:border-green-300"
+                          >
+                            <DollarSign className="w-3 h-3 mr-1" />
+                            Mark Paid
+                          </Button>
+                        )}
                         <Button onClick={(e) => { e.stopPropagation(); onEditJob(job); }} variant="ghost" size="icon" className="h-7 w-7"><Edit className="w-3.5 h-3.5" /></Button>
                         <Button onClick={(e) => { e.stopPropagation(); onDeleteJob(job); }} variant="ghost" size="icon" className="h-7 w-7 text-destructive"><Trash2 className="w-3.5 h-3.5" /></Button>
                       </div>
