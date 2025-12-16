@@ -552,64 +552,77 @@ function getRfqEmailBody(rfq: any, vendorName: string, quoteToken?: string): str
   const quoteLink = quoteToken ? `${baseUrl}/vendor-quote/${rfq.id}/${quoteToken}` : null;
 
   return `
-    <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;">
-      <div style="background-color: #FF8C42; padding: 20px; text-align: center;">
-        <h1 style="color: white; margin: 0; font-size: 24px;">Request for Quote</h1>
-        <p style="color: #FFF3E0; margin: 5px 0 0 0; font-size: 14px;">${rfq.rfqNumber}</p>
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff;">
+      <!-- Header -->
+      <div style="background-color: #1a1a1a; padding: 24px 32px;">
+        <h1 style="color: #ffffff; margin: 0; font-size: 18px; font-weight: 600; letter-spacing: 0.5px;">IMPACT DIRECT PRINTING</h1>
+        <p style="color: #9ca3af; margin: 4px 0 0 0; font-size: 13px;">Request for Quote</p>
       </div>
 
-      <div style="padding: 20px;">
-        <p>Dear ${vendorName},</p>
+      <!-- Body -->
+      <div style="padding: 32px;">
+        <p style="color: #374151; font-size: 15px; line-height: 1.6; margin: 0 0 24px 0;">
+          Hi ${vendorName},
+        </p>
 
-        <p>We are requesting a quote for the following job. Please review the specifications below and provide your pricing.</p>
+        <p style="color: #374151; font-size: 15px; line-height: 1.6; margin: 0 0 24px 0;">
+          Please quote the following job:
+        </p>
 
-        <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; margin: 20px 0;">
-          <h3 style="margin: 0 0 10px 0; color: #1f2937;">${rfq.title}</h3>
-          <p style="margin: 0; color: #4b5563; font-size: 14px;">RFQ Number: ${rfq.rfqNumber}</p>
+        <!-- Job Card -->
+        <div style="border: 1px solid #e5e7eb; border-radius: 6px; padding: 20px; margin: 0 0 24px 0;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <h2 style="color: #111827; font-size: 16px; font-weight: 600; margin: 0 0 8px 0;">${rfq.title}</h2>
+          </div>
+          <p style="color: #6b7280; font-size: 13px; margin: 0;">
+            ${rfq.rfqNumber} &nbsp;&bull;&nbsp; Due: ${dueDate}
+          </p>
         </div>
 
-        <div style="background-color: #fff; border: 2px solid #FF8C42; border-radius: 8px; padding: 20px; margin: 20px 0;">
-          <h3 style="margin: 0 0 15px 0; color: #1f2937; border-bottom: 1px solid #e5e7eb; padding-bottom: 10px;">Job Specifications</h3>
-          <div style="color: #374151; line-height: 1.6; white-space: pre-wrap;">${formattedSpecs}</div>
-        </div>
-
-        <div style="background-color: #dbeafe; border: 1px solid #3b82f6; border-radius: 8px; padding: 15px; margin: 20px 0;">
-          <p style="margin: 0; font-weight: bold; color: #1e40af;">Quote Due By: ${dueDate}</p>
+        <!-- Specifications -->
+        <div style="margin: 0 0 24px 0;">
+          <p style="color: #6b7280; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 12px 0; border-bottom: 1px solid #e5e7eb; padding-bottom: 8px;">
+            Specifications
+          </p>
+          <div style="color: #374151; font-size: 14px; line-height: 1.7; font-family: 'SF Mono', Monaco, 'Courier New', monospace;">
+            ${formattedSpecs}
+          </div>
         </div>
 
         ${rfq.notes ? `
-        <div style="background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 15px; margin: 20px 0;">
-          <p style="margin: 0 0 5px 0; font-weight: bold; color: #92400e;">Additional Notes:</p>
-          <p style="margin: 0; color: #78350f;">${rfq.notes}</p>
+        <!-- Notes -->
+        <div style="margin: 0 0 24px 0;">
+          <p style="color: #6b7280; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 8px 0;">
+            Notes
+          </p>
+          <p style="color: #374151; font-size: 14px; line-height: 1.6; margin: 0;">
+            ${rfq.notes}
+          </p>
         </div>
         ` : ''}
 
         ${quoteLink ? `
-        <div style="background-color: #10B981; border-radius: 8px; padding: 25px; margin: 25px 0; text-align: center;">
-          <p style="margin: 0 0 15px 0; color: white; font-size: 16px; font-weight: bold;">Submit Your Quote Online</p>
-          <a href="${quoteLink}" style="display: inline-block; background-color: white; color: #10B981; padding: 15px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">Click Here to Submit Quote</a>
-          <p style="margin: 15px 0 0 0; color: #D1FAE5; font-size: 12px;">Quick and easy - no login required</p>
+        <!-- CTA -->
+        <div style="text-align: center; margin: 32px 0;">
+          <a href="${quoteLink}" style="display: inline-block; background-color: #2563eb; color: #ffffff; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px;">Submit Your Quote</a>
+          <p style="color: #9ca3af; font-size: 12px; margin: 12px 0 0 0;">No login required</p>
         </div>
         ` : `
-        <p>Please reply to this email with your quote including:</p>
-        <ul style="color: #374151;">
-          <li>Price per unit and/or total price</li>
-          <li>Estimated turnaround time</li>
-          <li>Any questions or clarifications needed</li>
-        </ul>
+        <p style="color: #374151; font-size: 14px; line-height: 1.6;">Please reply with your pricing and turnaround time.</p>
         `}
 
-        <p>Thank you for your prompt attention to this request.</p>
-
-        <p>Best regards,<br/>Impact Direct Printing Team</p>
+        <p style="color: #6b7280; font-size: 14px; margin: 24px 0 0 0;">
+          Questions? Reply to this email.
+        </p>
       </div>
 
-      <hr style="border: none; border-top: 1px solid #ccc; margin: 20px 0;" />
-
-      <p style="color: #666; font-size: 12px; text-align: center;">
-        Impact Direct Printing<br />
-        brandon@impactdirectprinting.com
-      </p>
+      <!-- Footer -->
+      <div style="border-top: 1px solid #e5e7eb; padding: 20px 32px; text-align: center;">
+        <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+          Impact Direct Printing<br/>
+          brandon@impactdirectprinting.com
+        </p>
+      </div>
     </div>
   `;
 }
