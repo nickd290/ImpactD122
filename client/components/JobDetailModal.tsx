@@ -912,9 +912,6 @@ export function JobDetailModal({
               {job.customer.phone && (
                 <p className="text-sm text-gray-500">{job.customer.phone}</p>
               )}
-              {job.customerPONumber && (
-                <p className="text-sm text-blue-600 font-medium mt-2">PO: {job.customerPONumber}</p>
-              )}
             </div>
           ) : (
             <p className="text-gray-400 italic text-sm">Not assigned</p>
@@ -1143,22 +1140,6 @@ export function JobDetailModal({
                 </p>
               </div>
             )}
-            {job.dueDate && (
-              <div>
-                <span className="text-xs text-gray-500 uppercase">Due Date</span>
-                <p className="font-medium text-gray-900">
-                  {new Date(job.dueDate).toLocaleDateString('en-US', {
-                    month: 'short', day: 'numeric', year: 'numeric'
-                  })}
-                </p>
-              </div>
-            )}
-            {job.customerPONumber && (
-              <div>
-                <span className="text-xs text-gray-500 uppercase">Customer PO</span>
-                <p className="font-medium text-gray-900">{job.customerPONumber}</p>
-              </div>
-            )}
             {job.vendorPONumber && (
               <div>
                 <span className="text-xs text-gray-500 uppercase">Vendor PO</span>
@@ -1237,11 +1218,6 @@ export function JobDetailModal({
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Bradford Cost Breakdown</h3>
           <div className="flex items-center gap-2">
-            {job.customerPONumber && (
-              <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-medium">
-                Customer PO: {job.customerPONumber}
-              </span>
-            )}
             {job.sizeName && (
               <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded font-medium">
                 Size: {job.sizeName}
@@ -1431,11 +1407,6 @@ export function JobDetailModal({
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Profit Summary</h3>
-          {job.customerPONumber && (
-            <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-medium">
-              Customer PO: {job.customerPONumber}
-            </span>
-          )}
         </div>
         <div className="p-4 space-y-4">
           <div className="grid grid-cols-3 gap-4">

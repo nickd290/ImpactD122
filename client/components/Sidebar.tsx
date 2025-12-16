@@ -1,7 +1,7 @@
 import React from 'react';
 import { BarChart3, Briefcase, Users, Building2, TrendingUp, DollarSign, Command, Package, Calculator, MessageSquare, FileQuestion } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { Badge } from './ui';
+import { Button, Badge } from './ui';
 
 type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
 
