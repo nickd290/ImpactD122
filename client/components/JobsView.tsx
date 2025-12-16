@@ -1,10 +1,12 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Plus, Search, Sparkles, Upload, FileText, Edit, Trash2, FileSpreadsheet, CheckSquare, Square, ChevronDown, ChevronRight, MoreVertical, DollarSign, Printer, Receipt } from 'lucide-react';
-import { Button } from './ui';
+import { Button, Tabs } from './ui';
 import { Input } from './ui';
 import { Badge } from './ui';
 import { StatusBadge } from './ui/StatusBadge';
 import { JobDetailModal } from './JobDetailModal';
+import { InlineEditableCell } from './InlineEditableCell';
+import { StatusDropdown } from './StatusDropdown';
 import { cn } from '../lib/utils';
 import { pdfApi, jobsApi } from '../lib/api';
 
@@ -21,6 +23,8 @@ interface Job {
   updatedAt?: string;
   quantity?: number;
   dueDate?: string;
+  mailDate?: string;
+  inHomesDate?: string;
   lineItems?: any[];
   // Document tracking fields
   quoteGeneratedAt?: string;
@@ -29,6 +33,9 @@ interface Job {
   poGeneratedCount?: number;
   invoiceGeneratedAt?: string;
   invoiceGeneratedCount?: number;
+  // Invoice/payment tracking
+  hasPaidInvoice?: boolean;
+  invoices?: { id: string; amount: number | null; paidAt: string | null }[];
 }
 
 interface JobsViewProps {
@@ -70,6 +77,7 @@ export function JobsView({
   onShowExcelImporter,
 }: JobsViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState<'active' | 'completed' | 'paid'>('active');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
@@ -79,6 +87,34 @@ export function JobsView({
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const paymentMenuRef = useRef<HTMLDivElement>(null);
   const docMenuRef = useRef<HTMLDivElement>(null);
+
+  // Filter jobs by active tab
+  const tabFilteredJobs = useMemo(() => {
+    switch (activeTab) {
+      case 'active':
+        return jobs.filter((job) => job.status === 'ACTIVE');
+      case 'completed':
+        return jobs.filter((job) => job.status === 'PAID');
+      case 'paid':
+        return jobs.filter((job) => job.hasPaidInvoice === true);
+      default:
+        return jobs;
+    }
+  }, [jobs, activeTab]);
+
+  // Get counts for tabs
+  const tabCounts = useMemo(() => ({
+    active: jobs.filter((job) => job.status === 'ACTIVE').length,
+    completed: jobs.filter((job) => job.status === 'PAID').length,
+    paid: jobs.filter((job) => job.hasPaidInvoice === true).length,
+  }), [jobs]);
+
+  // Define tabs
+  const tabs = [
+    { id: 'active', label: 'Active Jobs', count: tabCounts.active },
+    { id: 'completed', label: 'Completed Jobs', count: tabCounts.completed },
+    { id: 'paid', label: 'Paid Jobs', count: tabCounts.paid },
+  ];
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -97,13 +133,26 @@ export function JobsView({
     }
   }, [isPaymentMenuOpen, isDocMenuOpen]);
 
-  const filteredJobs = jobs.filter((job: Job) =>
+  // Apply search filter on top of tab filter
+  const filteredJobs = tabFilteredJobs.filter((job: Job) =>
     job.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     job.number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     job.customerPONumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     job.customer?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     job.vendor?.name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Handle inline field updates
+  const handleInlineUpdate = async (jobId: string, field: string, value: string) => {
+    if (onUpdateJob) {
+      await onUpdateJob(jobId, { [field]: value || null });
+    }
+  };
+
+  // Handle status change
+  const handleStatusChange = async (jobId: string, newStatus: string) => {
+    await onUpdateStatus(jobId, newStatus);
+  };
 
   // Group jobs by customer
   const jobsByCustomer = useMemo(() => {
@@ -309,6 +358,16 @@ export function JobsView({
         </div>
       </div>
 
+      {/* Tabs */}
+      <Tabs
+        tabs={tabs}
+        activeTab={activeTab}
+        onTabChange={(tabId) => {
+          setActiveTab(tabId as 'active' | 'completed' | 'paid');
+          setSelectedJobIds(new Set()); // Clear selection when switching tabs
+        }}
+      />
+
       {/* Search and Table Card */}
       <div className="bg-card rounded-lg border border-border shadow-sm overflow-hidden">
         {/* Search Bar */}
@@ -479,28 +538,28 @@ export function JobsView({
                         <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                           Job
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Customer PO
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Vendor
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Size
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Quantity
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Due Date
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                           Status
                         </th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Customer PO
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Delivery
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Mail
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          In-Homes
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Qty
+                        </th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                           Spread
                         </th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                           Actions
                         </th>
                       </tr>
@@ -530,87 +589,85 @@ export function JobsView({
                               )}
                             </button>
                           </td>
+                          {/* Job Title - Click to open detail */}
                           <td
                             onClick={() => handleRowClick(job)}
                             className="px-6 py-4 cursor-pointer"
                           >
-                            <div className="flex items-center gap-2">
-                              <div className="flex flex-col">
-                                <span className="text-sm font-medium text-foreground">
-                                  {job.number} - {job.title}
+                            <div className="flex flex-col">
+                              <span className="text-sm font-medium text-foreground hover:text-blue-600">
+                                {job.number} - {job.title}
+                              </span>
+                              {job.vendor?.name && (
+                                <span className="text-xs text-muted-foreground">
+                                  {job.vendor.name}
                                 </span>
-                              </div>
+                              )}
                             </div>
                           </td>
+                          {/* Status - Inline dropdown */}
+                          <td className="px-4 py-4 whitespace-nowrap">
+                            <StatusDropdown
+                              status={job.status}
+                              onStatusChange={(newStatus) => handleStatusChange(job.id, newStatus)}
+                            />
+                          </td>
+                          {/* Customer PO - Inline editable */}
+                          <td className="px-4 py-4 whitespace-nowrap">
+                            <InlineEditableCell
+                              value={job.customerPONumber}
+                              onSave={(value) => handleInlineUpdate(job.id, 'customerPONumber', value)}
+                              placeholder="Add PO#"
+                              className="text-sm"
+                            />
+                          </td>
+                          {/* Delivery Date - Inline editable */}
+                          <td className="px-4 py-4 whitespace-nowrap">
+                            <InlineEditableCell
+                              value={job.dueDate}
+                              onSave={(value) => handleInlineUpdate(job.id, 'deliveryDate', value)}
+                              type="date"
+                              className="text-sm"
+                            />
+                          </td>
+                          {/* Mail Date - Inline editable */}
+                          <td className="px-4 py-4 whitespace-nowrap">
+                            <InlineEditableCell
+                              value={job.mailDate}
+                              onSave={(value) => handleInlineUpdate(job.id, 'mailDate', value)}
+                              type="date"
+                              className="text-sm"
+                            />
+                          </td>
+                          {/* In-Homes Date - Inline editable */}
+                          <td className="px-4 py-4 whitespace-nowrap">
+                            <InlineEditableCell
+                              value={job.inHomesDate}
+                              onSave={(value) => handleInlineUpdate(job.id, 'inHomesDate', value)}
+                              type="date"
+                              className="text-sm"
+                            />
+                          </td>
+                          {/* Quantity - Click to open detail */}
                           <td
                             onClick={() => handleRowClick(job)}
-                            className="px-6 py-4 whitespace-nowrap cursor-pointer"
+                            className="px-4 py-4 whitespace-nowrap cursor-pointer"
                           >
                             <span className="text-sm text-foreground">
-                              {job.customerPONumber || '-'}
+                              {job.quantity?.toLocaleString() || '-'}
                             </span>
                           </td>
+                          {/* Spread */}
                           <td
                             onClick={() => handleRowClick(job)}
-                            className="px-6 py-4 whitespace-nowrap cursor-pointer"
-                          >
-                            <span
-                              className="text-sm text-foreground"
-                              title={job.vendor?.name || ''}
-                            >
-                              {job.vendor?.name
-                                ? job.vendor.name.length > 15
-                                  ? `${job.vendor.name.substring(0, 15)}...`
-                                  : job.vendor.name
-                                : '-'}
-                            </span>
-                          </td>
-                          <td
-                            onClick={() => handleRowClick(job)}
-                            className="px-6 py-4 whitespace-nowrap cursor-pointer"
-                          >
-                            <span className="text-sm text-foreground">
-                              {job.sizeName || '-'}
-                            </span>
-                          </td>
-                          <td
-                            onClick={() => handleRowClick(job)}
-                            className="px-6 py-4 whitespace-nowrap cursor-pointer"
-                          >
-                            <span className="text-sm text-foreground">
-                              {job.quantity
-                                ? job.quantity.toLocaleString()
-                                : job.lineItems && job.lineItems.length > 0
-                                  ? job.lineItems.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0).toLocaleString()
-                                  : '-'}
-                            </span>
-                          </td>
-                          <td
-                            onClick={() => handleRowClick(job)}
-                            className="px-6 py-4 whitespace-nowrap cursor-pointer"
-                          >
-                            <span className="text-sm text-foreground">
-                              {job.dueDate
-                                ? new Date(job.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                                : '-'}
-                            </span>
-                          </td>
-                          <td
-                            onClick={() => handleRowClick(job)}
-                            className="px-6 py-4 whitespace-nowrap cursor-pointer"
-                          >
-                            <StatusBadge status={job.status} />
-                          </td>
-                          <td
-                            onClick={() => handleRowClick(job)}
-                            className="px-6 py-4 whitespace-nowrap text-right cursor-pointer"
+                            className="px-4 py-4 whitespace-nowrap text-right cursor-pointer"
                           >
                             {(() => {
                               // Calculate spread using CPM formula (same as Pricing tab)
-                              const impactToBradfordPO = job.purchaseOrders?.find(
+                              const impactToBradfordPO = (job as any).purchaseOrders?.find(
                                 (po: any) => po.originCompanyId === 'impact-direct' && po.targetCompanyId === 'bradford'
                               );
-                              const bradfordToJDPO = job.purchaseOrders?.find(
+                              const bradfordToJDPO = (job as any).purchaseOrders?.find(
                                 (po: any) => po.originCompanyId === 'bradford' && po.targetCompanyId === 'jd-graphic'
                               );
                               const paperCPM = impactToBradfordPO?.paperCPM || 0;
@@ -624,7 +681,7 @@ export function JobsView({
                                 const paperMarkup = paperCost * 0.18;
                                 const mfgCost = printCPM * (qty / 1000);
                                 const totalCost = paperCost + paperMarkup + mfgCost;
-                                const sellPrice = job.sellPrice || 0;
+                                const sellPrice = (job as any).sellPrice || 0;
                                 const spread = sellPrice - totalCost;
                                 return (
                                   <span className={`text-sm font-medium ${spread >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -633,11 +690,11 @@ export function JobsView({
                                 );
                               }
                               // Fallback: calculate from PO buyCosts (same as JobDetailModal)
-                              const poTotal = job.purchaseOrders
+                              const poTotal = (job as any).purchaseOrders
                                 ?.filter((po: any) => po.originCompanyId === 'impact-direct' && po.targetCompanyId === 'bradford')
                                 .reduce((sum: number, po: any) => sum + (Number(po.buyCost) || 0), 0) || 0;
-                              const totalCost = Number(job.profit?.totalCost) || poTotal || 0;
-                              const fallbackSellPrice = job.sellPrice || 0;
+                              const totalCost = Number((job as any).profit?.totalCost) || poTotal || 0;
+                              const fallbackSellPrice = (job as any).sellPrice || 0;
                               const spread = fallbackSellPrice - totalCost;
                               return (
                                 <span className={`text-sm ${spread >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -646,7 +703,8 @@ export function JobsView({
                               );
                             })()}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-right">
+                          {/* Actions */}
+                          <td className="px-4 py-4 whitespace-nowrap text-right">
                             <div className="flex items-center justify-end gap-1">
                               <Button
                                 onClick={(e) => {

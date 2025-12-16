@@ -1,10 +1,10 @@
 import React from 'react';
-import { BarChart3, Briefcase, Users, Building2, TrendingUp, DollarSign, Plus, Sparkles, Command, Package, Calculator, MessageSquare } from 'lucide-react';
+import { BarChart3, Briefcase, Users, Building2, TrendingUp, DollarSign, Plus, Sparkles, Command, Package, Calculator, MessageSquare, FileQuestion } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Button } from './ui';
 import { Badge } from './ui';
 
-type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS';
+type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
 
 interface SidebarProps {
   currentView: View;
@@ -136,6 +136,13 @@ export function Sidebar({
             onClick={() => onViewChange('COMMUNICATIONS')}
             badge={pendingCommunicationsCount}
             shortcut="M"
+          />
+          <NavItem
+            icon={<FileQuestion className="w-5 h-5" />}
+            label="Vendor RFQs"
+            active={currentView === 'VENDOR_RFQS'}
+            onClick={() => onViewChange('VENDOR_RFQS')}
+            shortcut="R"
           />
         </div>
 

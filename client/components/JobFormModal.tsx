@@ -120,6 +120,8 @@ export function JobFormModal({
       setManualOverrides(new Set()); // Reset manual overrides when form resets
       setBradfordCut(initialData?.bradfordCut || 0); // Reset Bradford's cut
       setUseBradford35Percent(false); // Reset 35% checkbox
+      setSellPrice(initialData?.sellPrice ? String(initialData.sellPrice) : ''); // Reset sell price
+      setSellPriceError(''); // Clear any previous error
     }
   }, [isOpen, initialData]);
 
@@ -206,6 +208,10 @@ export function JobFormModal({
 
   // Checkbox for auto-calculating 35% of net profit as Bradford's cut
   const [useBradford35Percent, setUseBradford35Percent] = useState(false);
+
+  // Sell Price - explicit field for what we charge the customer
+  const [sellPrice, setSellPrice] = useState<string>(initialData?.sellPrice ? String(initialData.sellPrice) : '');
+  const [sellPriceError, setSellPriceError] = useState<string>('');
 
   // Calculate total quantity from all line items
   const totalQuantity = lineItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
@@ -356,6 +362,17 @@ export function JobFormModal({
       return;
     }
 
+    // Validate sell price
+    const parsedSellPrice = parseFloat(sellPrice);
+    if (!sellPrice || isNaN(parsedSellPrice)) {
+      setSellPriceError('Sell price is required');
+      return;
+    }
+    if (parsedSellPrice <= 0) {
+      setSellPriceError('Sell price must be greater than $0');
+      return;
+    }
+
     // Validate line items
     const validLineItems = lineItems.filter(item => item.description.trim());
     if (validLineItems.length === 0) {
@@ -392,6 +409,7 @@ export function JobFormModal({
 
     onSubmit({
       ...formData,
+      sellPrice: parsedSellPrice,  // Include validated sell price
       specs: specsData,
       lineItems: validLineItems,
       financials: financialsData,
@@ -544,6 +562,36 @@ export function JobFormModal({
                   onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Sell Price *
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={sellPrice}
+                    onChange={(e) => {
+                      setSellPrice(e.target.value);
+                      setSellPriceError(''); // Clear error on change
+                    }}
+                    className={`w-full pl-7 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                      sellPriceError ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                    }`}
+                    placeholder="0.00"
+                    required
+                  />
+                </div>
+                {sellPriceError && (
+                  <p className="mt-1 text-sm text-red-600">{sellPriceError}</p>
+                )}
+                <p className="mt-1 text-xs text-gray-500">
+                  Total amount to charge the customer
+                </p>
               </div>
             </div>
 

@@ -18,6 +18,7 @@ import { FinancialsView } from './components/FinancialsView';
 import { PaperInventoryView } from './components/PaperInventoryView';
 import { AccountingDashboardView } from './components/AccountingDashboardView';
 import { CommunicationsView } from './components/CommunicationsView';
+import { VendorRFQView } from './components/VendorRFQView';
 import { JobFormModal } from './components/JobFormModal';
 import { JobExcelImporter } from './components/JobExcelImporter';
 import { JobImportPreviewModal } from './components/JobImportPreviewModal';
@@ -25,7 +26,7 @@ import { NewJobChoiceModal } from './components/NewJobChoiceModal';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { AppLoadingSkeleton } from './components/LoadingSkeleton';
 
-type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS';
+type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
 
 // Impact Direct entity for PDF generation
 const IMPACT_DIRECT_ENTITY = {
@@ -97,11 +98,13 @@ function App() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [jobsData, customersData, vendorsData] = await Promise.all([
+      const [jobsResponse, customersData, vendorsData] = await Promise.all([
         jobsApi.getAll(),
         entitiesApi.getAll('CUSTOMER'),
         entitiesApi.getAll('VENDOR'),
       ]);
+      // API now returns { jobs, counts } structure
+      const jobsData = jobsResponse.jobs || jobsResponse;
       setJobs(jobsData);
       setCustomers(customersData);
       setVendors(vendorsData);
@@ -319,7 +322,7 @@ function App() {
     setShowJobFormModal(true);
   };
 
-  const handleUpdateJob = async (jobId: string, jobData: any) => {
+  const handleUpdateJob = async (jobId: string, jobData: any, fromModal = false) => {
     try {
       setIsSaving(true);
       const updated = await jobsApi.update(jobId, jobData);
@@ -327,12 +330,18 @@ function App() {
       if (selectedJob?.id === jobId) {
         setSelectedJob(updated);
       }
-      setShowJobFormModal(false);
-      setEditingJob(null);
-      toast.success('Job updated successfully');
+      // Only close modal if edit came from modal
+      if (fromModal) {
+        setShowJobFormModal(false);
+        setEditingJob(null);
+        toast.success('Job updated successfully');
+      }
     } catch (error) {
       console.error('Failed to update job:', error);
-      toast.error('Failed to update job. Please try again.');
+      if (fromModal) {
+        toast.error('Failed to update job. Please try again.');
+      }
+      throw error; // Re-throw for inline edits to handle
     } finally {
       setIsSaving(false);
     }
@@ -565,6 +574,8 @@ function App() {
               onRefreshCount={loadPendingCount}
             />
           )}
+
+          {currentView === 'VENDOR_RFQS' && <VendorRFQView />}
         </div>
       </div>
 
@@ -626,7 +637,7 @@ function App() {
         }}
         onSubmit={async (jobData) => {
           if (editingJob) {
-            await handleUpdateJob(editingJob.id, jobData);
+            await handleUpdateJob(editingJob.id, jobData, true); // fromModal = true
           } else {
             await handleSubmitJobForm(jobData);
             setShowJobFormModal(false);

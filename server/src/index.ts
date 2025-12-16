@@ -13,6 +13,7 @@ import paperInventoryRouter from './routes/paperInventory';
 import emailRouter from './routes/email';
 import communicationsRouter from './routes/communications';
 import webhooksRouter from './routes/webhooks';
+import vendorRfqRouter from './routes/vendorRfq';
 
 // Load environment variables
 // Use path relative to this file to find .env in the server directory
@@ -51,6 +52,7 @@ app.use('/api/paper-inventory', paperInventoryRouter);
 app.use('/api/email', emailRouter);
 app.use('/api/communications', communicationsRouter);
 app.use('/api/webhooks', webhooksRouter);
+app.use('/api/vendor-rfqs', vendorRfqRouter);
 
 // Serve frontend in production
 if (process.env.NODE_ENV === 'production') {

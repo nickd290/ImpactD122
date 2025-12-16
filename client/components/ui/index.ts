@@ -4,3 +4,4 @@ export { Card, CardHeader, CardFooter, CardTitle, CardDescription, CardContent }
 export { Badge, badgeVariants } from "./Badge";
 export { Label } from "./Label";
 export { Textarea } from "./Textarea";
+export { Tabs } from "./Tabs";

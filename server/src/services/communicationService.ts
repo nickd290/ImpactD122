@@ -1,7 +1,7 @@
 import sgMail from '@sendgrid/mail';
 import { prisma } from '../utils/prisma';
 import { CommunicationDirection, SenderType, CommunicationStatus } from '@prisma/client';
-import { getJobEmailAddress } from './emailService';
+import { getJobEmailAddress, getRfqEmailAddress } from './emailService';
 
 // Initialize SendGrid
 const apiKey = process.env.SENDGRID_API_KEY;
@@ -120,6 +120,124 @@ async function handleBradfordPOEmail(
     success: true,
     jobId: job.id,
     communicationId
+  };
+}
+
+/**
+ * Extract RFQ ID from email address
+ * Expects format: rfq-{rfqId}@jobs.impactdirectprinting.com
+ */
+export function extractRfqIdFromEmail(toAddress: string): string | null {
+  const match = toAddress.match(/rfq-([a-zA-Z0-9]+)@/i);
+  return match ? match[1] : null;
+}
+
+/**
+ * Handle RFQ reply email from vendor
+ * - Finds the RFQ by ID
+ * - Matches vendor by "from" email
+ * - Creates or updates VendorQuote with email content
+ */
+async function handleRfqReply(
+  rfqId: string,
+  payload: InboundEmailPayload
+): Promise<{ success: boolean; rfqId?: string; vendorQuoteId?: string; error?: string }> {
+  // Find the RFQ with its vendors
+  const rfq = await prisma.vendorRFQ.findUnique({
+    where: { id: rfqId },
+    include: {
+      vendors: {
+        include: {
+          Vendor: true
+        }
+      }
+    }
+  });
+
+  if (!rfq) {
+    console.warn('⚠️ RFQ reply email: RFQ not found', { rfqId });
+    return { success: false, error: `RFQ ${rfqId} not found` };
+  }
+
+  // Extract email from "from" field (handles formats like "Name <email@domain.com>")
+  const fromMatch = payload.from.match(/<([^>]+)>/) || [null, payload.from];
+  const fromEmail = (fromMatch[1] || payload.from).toLowerCase().trim();
+
+  // Match vendor by email
+  const matchedVendor = rfq.vendors.find(v =>
+    v.Vendor.email?.toLowerCase() === fromEmail
+  );
+
+  if (!matchedVendor) {
+    console.warn('⚠️ RFQ reply email: Vendor not matched', {
+      rfqId,
+      fromEmail,
+      assignedVendorEmails: rfq.vendors.map(v => v.Vendor.email)
+    });
+    // Still store the email content for manual review
+    // We'll create a quote without matching vendorId
+    return { success: false, error: `Vendor not matched for email: ${fromEmail}` };
+  }
+
+  // Build notes from email content
+  const emailNotes = [
+    `Email received from: ${payload.from}`,
+    `Subject: ${payload.subject}`,
+    '',
+    'Email content:',
+    payload.text || payload.html?.replace(/<[^>]+>/g, ' ').trim() || '(no content)'
+  ].join('\n');
+
+  // Create or update VendorQuote
+  const vendorQuote = await prisma.vendorQuote.upsert({
+    where: {
+      rfqId_vendorId: {
+        rfqId,
+        vendorId: matchedVendor.vendorId
+      }
+    },
+    create: {
+      rfqId,
+      vendorId: matchedVendor.vendorId,
+      quoteAmount: 0,  // Needs manual entry
+      status: 'RECEIVED',
+      notes: emailNotes,
+      emailContent: payload.text || payload.html || null,
+      respondedAt: new Date()
+    },
+    update: {
+      status: 'RECEIVED',
+      notes: emailNotes,
+      emailContent: payload.text || payload.html || null,
+      respondedAt: new Date()
+    }
+  });
+
+  // Update RFQ status to QUOTED if all vendors have responded, or just leave as PENDING
+  const allQuotes = await prisma.vendorQuote.findMany({
+    where: { rfqId }
+  });
+
+  // Check if at least some vendors have responded
+  const respondedCount = allQuotes.filter(q => q.status === 'RECEIVED').length;
+  if (respondedCount > 0 && rfq.status === 'PENDING') {
+    await prisma.vendorRFQ.update({
+      where: { id: rfqId },
+      data: { status: 'QUOTED' }
+    });
+  }
+
+  console.log('✅ RFQ vendor quote received:', {
+    rfqNumber: rfq.rfqNumber,
+    vendorName: matchedVendor.Vendor.name,
+    vendorEmail: matchedVendor.Vendor.email,
+    quoteId: vendorQuote.id
+  });
+
+  return {
+    success: true,
+    rfqId,
+    vendorQuoteId: vendorQuote.id
   };
 }
 
@@ -651,6 +769,19 @@ export async function processInboundEmail(payload: InboundEmailPayload): Promise
         bradfordCheck.bradfordPONumber,
         payload
       );
+    }
+
+    // Check for RFQ reply: rfq-{id}@jobs.impactdirectprinting.com
+    const rfqId = extractRfqIdFromEmail(payload.to);
+    if (rfqId) {
+      console.log('📬 RFQ reply email detected:', { rfqId, from: payload.from });
+      const result = await handleRfqReply(rfqId, payload);
+      return {
+        success: result.success,
+        jobId: result.rfqId, // Return rfqId as jobId for consistency
+        communicationId: result.vendorQuoteId,
+        error: result.error
+      };
     }
 
     // Extract job number from email

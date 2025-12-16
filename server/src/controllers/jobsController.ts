@@ -302,16 +302,42 @@ function transformJob(job: any) {
       markupPercent: 0,
       unitPrice: revenue,
     }] : [])),
+
+    // Invoice data for payment tracking
+    invoices: (job.Invoice || []).map((inv: any) => ({
+      id: inv.id,
+      amount: inv.amount ? Number(inv.amount) : null,
+      paidAt: inv.paidAt,
+    })),
+    hasPaidInvoice: (job.Invoice || []).some((inv: any) => inv.paidAt !== null),
   };
 }
 
-// Get all jobs
+// Get all jobs with optional tab filtering
 export const getAllJobs = async (req: Request, res: Response) => {
   try {
+    const { tab } = req.query;
+
+    // Build where clause based on tab filter
+    let whereClause: any = {
+      deletedAt: null, // Only get non-deleted jobs
+    };
+
+    if (tab === 'active') {
+      whereClause.status = 'ACTIVE';
+    } else if (tab === 'completed') {
+      whereClause.status = 'PAID';
+    } else if (tab === 'paid') {
+      // Jobs where customer has actually paid (has an invoice with paidAt set)
+      whereClause.Invoice = {
+        some: {
+          paidAt: { not: null },
+        },
+      };
+    }
+
     const jobs = await prisma.job.findMany({
-      where: {
-        deletedAt: null, // Only get non-deleted jobs
-      },
+      where: whereClause,
       include: {
         Company: true,
         Vendor: true,
@@ -320,7 +346,14 @@ export const getAllJobs = async (req: Request, res: Response) => {
             Vendor: true,
           },
         },
-        ProfitSplit: true, // NEW: Include cached profit split
+        ProfitSplit: true,
+        Invoice: {
+          select: {
+            id: true,
+            paidAt: true,
+            amount: true,
+          },
+        },
       },
       orderBy: {
         createdAt: 'desc',
@@ -328,7 +361,27 @@ export const getAllJobs = async (req: Request, res: Response) => {
     });
 
     const transformedJobs = jobs.map(transformJob);
-    res.json(transformedJobs);
+
+    // Get counts for all tabs
+    const [activeCount, completedCount, paidCount] = await Promise.all([
+      prisma.job.count({ where: { deletedAt: null, status: 'ACTIVE' } }),
+      prisma.job.count({ where: { deletedAt: null, status: 'PAID' } }),
+      prisma.job.count({
+        where: {
+          deletedAt: null,
+          Invoice: { some: { paidAt: { not: null } } },
+        },
+      }),
+    ]);
+
+    res.json({
+      jobs: transformedJobs,
+      counts: {
+        active: activeCount,
+        completed: completedCount,
+        paid: paidCount,
+      },
+    });
   } catch (error) {
     console.error('Get all jobs error:', error);
     res.status(500).json({ error: 'Failed to fetch jobs' });
@@ -392,6 +445,17 @@ export const createJob = async (req: Request, res: Response) => {
       ...rest
     } = req.body;
 
+    // Validate sellPrice if provided
+    if (inputSellPrice !== undefined && inputSellPrice !== null && inputSellPrice !== '') {
+      const parsedPrice = Number(inputSellPrice);
+      if (isNaN(parsedPrice)) {
+        return res.status(400).json({ error: 'Invalid sell price format' });
+      }
+      if (parsedPrice < 0) {
+        return res.status(400).json({ error: 'Sell price cannot be negative' });
+      }
+    }
+
     // Generate job number
     const lastJob = await prisma.job.findFirst({
       orderBy: { jobNo: 'desc' },
@@ -427,7 +491,11 @@ export const createJob = async (req: Request, res: Response) => {
     const paperSource = jdSuppliesPaper === true ? 'VENDOR' : (inputPaperSource || 'BRADFORD');
 
     // Use sellPrice if provided, otherwise calculate from financials or line items
-    const sellPrice = inputSellPrice || financials?.impactCustomerTotal || lineItemTotal;
+    // Ensure proper Number conversion to avoid NaN or string concatenation
+    const sellPrice = Number(inputSellPrice) ||
+                      Number(financials?.impactCustomerTotal) ||
+                      lineItemTotal ||
+                      0;
 
     // Calculate tier pricing if this is a standard size
     let tierPricing: TierPricingResult | null = null;
@@ -489,6 +557,11 @@ export const createJob = async (req: Request, res: Response) => {
       jdSuppliesPaper: jdSuppliesPaper === true,  // true = Vendor supplies paper, false = Bradford supplies
       lineItems: lineItems || null,  // Preserve user-entered line items (unitCost, markupPercent, unitPrice)
     };
+
+    // Final validation: ensure sellPrice is valid before saving
+    if (!sellPrice || sellPrice <= 0) {
+      return res.status(400).json({ error: 'Sell price is required and must be greater than 0' });
+    }
 
     const job = await prisma.job.create({
       data: {

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY';
+type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
 
 interface KeyboardShortcutsConfig {
   onShowSearch: () => void;
@@ -69,6 +69,18 @@ export function useKeyboardShortcuts({
         case 'p':
           e.preventDefault();
           onViewChange('PAPER_INVENTORY');
+          break;
+        case 'a':
+          e.preventDefault();
+          onViewChange('ACCOUNTING');
+          break;
+        case 'm':
+          e.preventDefault();
+          onViewChange('COMMUNICATIONS');
+          break;
+        case 'r':
+          e.preventDefault();
+          onViewChange('VENDOR_RFQS');
           break;
         case 'n':
           // Only when Ctrl/Cmd is pressed for new job

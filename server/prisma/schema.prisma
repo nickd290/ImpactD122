@@ -239,6 +239,7 @@ model Job {
   SampleShipment            SampleShipment[]
   Shipment                  Shipment[]
   ProfitSplit               ProfitSplit?     // Calculated profit split for this job
+  VendorRFQs                VendorRFQ[]      // RFQs linked to this job
 
   @@index([customerId])
   @@index([paperSource])
@@ -683,6 +684,8 @@ model Vendor {
   Job           Job[]
   PurchaseOrder PurchaseOrder[]
   contacts      VendorContact[]
+  rfqAssignments VendorRFQVendor[]
+  vendorQuotes   VendorQuote[]
 
   @@index([isActive])
   @@index([name])
@@ -798,4 +801,83 @@ enum WebhookSource {
   ZAPIER
   BRADFORD
   EMAIL
+}
+
+// ========================================
+// VENDOR RFQ SYSTEM
+// ========================================
+
+model VendorRFQ {
+  id              String          @id @default(cuid())
+  rfqNumber       String          @unique
+  title           String
+  specs           String          @db.Text    // Large free-text spec field
+  dueDate         DateTime                    // When vendor responses are due
+  status          RFQStatus       @default(DRAFT)
+  notes           String?
+  jobId           String?                     // Optional link to existing job
+  createdById     String?                     // User who created
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  Job             Job?            @relation(fields: [jobId], references: [id])
+  vendors         VendorRFQVendor[]           // Multi-select vendors
+  quotes          VendorQuote[]               // Vendor responses
+
+  @@index([status])
+  @@index([jobId])
+  @@index([dueDate])
+}
+
+model VendorRFQVendor {
+  id          String    @id @default(cuid())
+  rfqId       String
+  vendorId    String
+  sentAt      DateTime?                       // When RFQ was sent to this vendor
+  createdAt   DateTime  @default(now())
+
+  VendorRFQ   VendorRFQ @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  Vendor      Vendor    @relation(fields: [vendorId], references: [id])
+
+  @@unique([rfqId, vendorId])
+  @@index([rfqId])
+  @@index([vendorId])
+}
+
+model VendorQuote {
+  id              String            @id @default(cuid())
+  rfqId           String
+  vendorId        String
+  quoteAmount     Decimal           @db.Decimal(10, 2)
+  turnaroundDays  Int?
+  notes           String?           @db.Text
+  status          VendorQuoteStatus @default(PENDING)
+  isAwarded       Boolean           @default(false)
+  respondedAt     DateTime?
+  emailContent    String?           @db.Text    // Store inbound email content
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  VendorRFQ       VendorRFQ         @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  Vendor          Vendor            @relation(fields: [vendorId], references: [id])
+
+  @@unique([rfqId, vendorId])
+  @@index([rfqId])
+  @@index([vendorId])
+  @@index([status])
+}
+
+enum RFQStatus {
+  DRAFT
+  PENDING       // Sent to vendors, awaiting responses
+  QUOTED        // All/some vendors responded
+  AWARDED       // Vendor selected
+  CONVERTED     // Converted to Job
+  CANCELLED
+}
+
+enum VendorQuoteStatus {
+  PENDING
+  RECEIVED
+  DECLINED
 }

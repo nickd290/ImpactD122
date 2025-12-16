@@ -24,7 +24,10 @@ async function apiFetch(url: string, options?: RequestInit) {
 
 // Jobs API
 export const jobsApi = {
-  getAll: () => apiFetch('/jobs'),
+  getAll: (tab?: 'active' | 'completed' | 'paid') => {
+    const query = tab ? `?tab=${tab}` : '';
+    return apiFetch(`/jobs${query}`);
+  },
   getById: (id: string) => apiFetch(`/jobs/${id}`),
   create: (data: any) => apiFetch('/jobs', {
     method: 'POST',
@@ -236,4 +239,73 @@ export const communicationsApi = {
       method: 'POST',
       body: JSON.stringify({ customMessage }),
     }),
+};
+
+// Vendor RFQ API - Request for Quotes from vendors
+export const vendorRfqApi = {
+  // List all RFQs with optional filters
+  getAll: (status?: string) => {
+    const query = status ? `?status=${status}` : '';
+    return apiFetch(`/vendor-rfqs${query}`);
+  },
+
+  // Get single RFQ with vendors and quotes
+  getById: (id: string) => apiFetch(`/vendor-rfqs/${id}`),
+
+  // Create new RFQ
+  create: (data: {
+    title: string;
+    specs: string;
+    dueDate: string;
+    vendorIds: string[];
+    notes?: string;
+    jobId?: string;
+  }) => apiFetch('/vendor-rfqs', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+
+  // Update RFQ (draft only)
+  update: (id: string, data: {
+    title?: string;
+    specs?: string;
+    dueDate?: string;
+    vendorIds?: string[];
+    notes?: string;
+    jobId?: string;
+  }) => apiFetch(`/vendor-rfqs/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
+
+  // Delete RFQ (draft only)
+  delete: (id: string) => apiFetch(`/vendor-rfqs/${id}`, {
+    method: 'DELETE',
+  }),
+
+  // Send RFQ emails to vendors
+  send: (id: string) => apiFetch(`/vendor-rfqs/${id}/send`, {
+    method: 'POST',
+  }),
+
+  // Record vendor quote response (manual entry)
+  recordQuote: (id: string, data: {
+    vendorId: string;
+    quoteAmount: number;
+    turnaroundDays?: number;
+    notes?: string;
+  }) => apiFetch(`/vendor-rfqs/${id}/quotes`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+
+  // Award RFQ to vendor
+  award: (id: string, vendorId: string) => apiFetch(`/vendor-rfqs/${id}/award/${vendorId}`, {
+    method: 'POST',
+  }),
+
+  // Convert awarded RFQ to job
+  convertToJob: (id: string) => apiFetch(`/vendor-rfqs/${id}/convert-to-job`, {
+    method: 'POST',
+  }),
 };

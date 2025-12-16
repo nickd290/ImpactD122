@@ -24,6 +24,11 @@ export function getJobEmailAddress(jobNo: string): string {
   return `job-${jobNo}@jobs.impactdirectprinting.com`;
 }
 
+// Helper to generate RFQ-specific email address for vendor quote responses
+export function getRfqEmailAddress(rfqId: string): string {
+  return `rfq-${rfqId}@jobs.impactdirectprinting.com`;
+}
+
 interface EmailResult {
   success: boolean;
   emailedAt?: Date;
@@ -523,6 +528,111 @@ export async function sendJDInvoiceToBradfordEmail(
   } catch (error: any) {
     console.error('Error sending JD invoice to Bradford:', error);
     return { success: false, error: error.message || 'Failed to generate or send JD invoice' };
+  }
+}
+
+// ===========================================
+// Vendor RFQ Email Functions
+// ===========================================
+
+// Generate email body for vendor RFQ
+function getRfqEmailBody(rfq: any, vendorName: string): string {
+  const dueDate = rfq.dueDate ? new Date(rfq.dueDate).toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }) : 'ASAP';
+
+  // Format specs - preserve line breaks
+  const formattedSpecs = (rfq.specs || '').replace(/\n/g, '<br/>');
+
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;">
+      <div style="background-color: #FF8C42; padding: 20px; text-align: center;">
+        <h1 style="color: white; margin: 0; font-size: 24px;">Request for Quote</h1>
+        <p style="color: #FFF3E0; margin: 5px 0 0 0; font-size: 14px;">${rfq.rfqNumber}</p>
+      </div>
+
+      <div style="padding: 20px;">
+        <p>Dear ${vendorName},</p>
+
+        <p>We are requesting a quote for the following job. Please review the specifications below and provide your pricing.</p>
+
+        <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; margin: 20px 0;">
+          <h3 style="margin: 0 0 10px 0; color: #1f2937;">${rfq.title}</h3>
+          <p style="margin: 0; color: #4b5563; font-size: 14px;">RFQ Number: ${rfq.rfqNumber}</p>
+        </div>
+
+        <div style="background-color: #fff; border: 2px solid #FF8C42; border-radius: 8px; padding: 20px; margin: 20px 0;">
+          <h3 style="margin: 0 0 15px 0; color: #1f2937; border-bottom: 1px solid #e5e7eb; padding-bottom: 10px;">Job Specifications</h3>
+          <div style="color: #374151; line-height: 1.6; white-space: pre-wrap;">${formattedSpecs}</div>
+        </div>
+
+        <div style="background-color: #dbeafe; border: 1px solid #3b82f6; border-radius: 8px; padding: 15px; margin: 20px 0;">
+          <p style="margin: 0; font-weight: bold; color: #1e40af;">Quote Due By: ${dueDate}</p>
+        </div>
+
+        ${rfq.notes ? `
+        <div style="background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 15px; margin: 20px 0;">
+          <p style="margin: 0 0 5px 0; font-weight: bold; color: #92400e;">Additional Notes:</p>
+          <p style="margin: 0; color: #78350f;">${rfq.notes}</p>
+        </div>
+        ` : ''}
+
+        <p>Please reply to this email with your quote including:</p>
+        <ul style="color: #374151;">
+          <li>Price per unit and/or total price</li>
+          <li>Estimated turnaround time</li>
+          <li>Any questions or clarifications needed</li>
+        </ul>
+
+        <p>Thank you for your prompt attention to this request.</p>
+
+        <p>Best regards,<br/>Impact Direct Printing Team</p>
+      </div>
+
+      <hr style="border: none; border-top: 1px solid #ccc; margin: 20px 0;" />
+
+      <p style="color: #666; font-size: 12px; text-align: center;">
+        Impact Direct Printing<br />
+        brandon@impactdirectprinting.com
+      </p>
+    </div>
+  `;
+}
+
+// Send RFQ email to vendor
+export async function sendRfqEmail(
+  rfq: any,
+  vendorEmail: string,
+  vendorName: string
+): Promise<EmailResult> {
+  try {
+    const subject = `RFQ ${rfq.rfqNumber}: ${rfq.title}`;
+    const body = getRfqEmailBody(rfq, vendorName);
+    const replyTo = getRfqEmailAddress(rfq.id);
+
+    const result = await sendEmail({
+      to: vendorEmail,
+      subject,
+      body,
+      replyTo,  // Vendor replies go to rfq-{id}@jobs.impactdirectprinting.com
+    });
+
+    if (result.success) {
+      console.log('📧 RFQ email sent:', {
+        rfqNumber: rfq.rfqNumber,
+        vendor: vendorName,
+        email: vendorEmail,
+        replyTo,
+      });
+    }
+
+    return result;
+  } catch (error: any) {
+    console.error('Error sending RFQ email:', error);
+    return { success: false, error: error.message || 'Failed to send RFQ email' };
   }
 }
 
