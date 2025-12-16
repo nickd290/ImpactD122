@@ -234,6 +234,9 @@ export function JobDetailModal({
   const [showArtworkConfirmModal, setShowArtworkConfirmModal] = useState(false);
   const [isSendingArtworkNotification, setIsSendingArtworkNotification] = useState(false);
 
+  // Specs display state
+  const [showAllSpecs, setShowAllSpecs] = useState(false);
+
   // Fetch vendors when edit mode is enabled OR when adding PO
   useEffect(() => {
     if ((isEditMode || isAddingPO) && vendors.length === 0) {
@@ -735,440 +738,337 @@ export function JobDetailModal({
   ];
 
   // Tab content components
-  const OverviewTab = () => (
-    <div className="space-y-6">
-      {/* Job Info - Status and key fields */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Job Info</h3>
+  // Helper to get populated specs only
+  const getPopulatedSpecs = () => {
+    const specs = [
+      { key: 'productType', label: 'Product', value: getSpecValue('productType') },
+      { key: 'sizeName', label: 'Size', value: job.sizeName },
+      { key: 'flatSize', label: 'Flat', value: getSpecValue('flatSize') },
+      { key: 'finishedSize', label: 'Finished', value: getSpecValue('finishedSize') },
+      { key: 'colors', label: 'Colors', value: getSpecValue('colors') },
+      { key: 'pageCount', label: 'Pages', value: getSpecValue('pageCount') },
+      { key: 'paperType', label: 'Paper', value: getSpecValue('paperType') },
+      { key: 'coating', label: 'Coating', value: getSpecValue('coating') },
+      { key: 'finishing', label: 'Finishing', value: getSpecValue('finishing') },
+      { key: 'bindingStyle', label: 'Binding', value: getSpecValue('bindingStyle') },
+    ];
+    return specs.filter(s => s.value && s.value !== '');
+  };
+
+  const OverviewTab = () => {
+    const populatedSpecs = getPopulatedSpecs();
+    const hasArtwork = job.specs?.artworkUrl || isEditMode;
+    const showPaperSource = paperSource !== 'VENDOR' || paperMarkup > 0 || job.paperInventory;
+
+    return (
+    <div className="space-y-4">
+      {/* Key Metrics Row */}
+      <div className="grid grid-cols-4 gap-3">
+        {/* Status */}
+        <div className="bg-card border border-border rounded-lg p-3">
+          <span className="text-[10px] text-muted-foreground uppercase block mb-1">Status</span>
+          {isEditMode ? (
+            <select
+              value={editedJob.status ?? job.status ?? ''}
+              onChange={(e) => updateEditedField('status', e.target.value)}
+              className="w-full px-2 py-1 text-sm border border-input rounded focus:ring-2 focus:ring-primary"
+            >
+              {statusOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          ) : (
+            <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${
+              job.status === 'PAID' ? 'bg-green-100 text-green-700' :
+              job.status === 'CANCELLED' ? 'bg-red-100 text-red-700' :
+              job.status === 'ACTIVE' ? 'bg-amber-100 text-amber-700' :
+              'bg-muted text-muted-foreground'
+            }`}>
+              {statusOptions.find(s => s.value === job.status)?.label || job.status}
+            </span>
+          )}
         </div>
-        <div className="p-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4">
-            <div>
-              <span className="text-xs text-gray-500 uppercase block mb-1">Status</span>
-              {isEditMode ? (
-                <select
-                  value={editedJob.status ?? job.status ?? ''}
-                  onChange={(e) => updateEditedField('status', e.target.value)}
-                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  {statusOptions.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              ) : (
-                <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                  job.status === 'PAID' ? 'bg-emerald-100 text-emerald-800' :
-                  job.status === 'CANCELLED' ? 'bg-red-100 text-red-800' :
-                  job.status === 'ACTIVE' ? 'bg-yellow-100 text-yellow-800' :
-                  'bg-gray-100 text-gray-800'
-                }`}>
-                  {statusOptions.find(s => s.value === job.status)?.label || job.status}
-                </span>
-              )}
-            </div>
-            <EditableField
-              label="Customer PO"
-              value={getSpecValue('customerPONumber') ?? getValue<string>('customerPONumber')}
-              isEditing={isEditMode}
-              onChange={(val) => updateEditedField('customerPONumber', val)}
-              emptyText="—"
-            />
-            <EditableField
-              label="Due Date"
-              value={getValue<string>('dueDate')}
-              isEditing={isEditMode}
-              onChange={(val) => updateEditedField('dueDate', val)}
-              type="date"
-              emptyText="Not set"
-            />
-            <EditableField
-              label="Sell Price"
-              value={getValue<number>('sellPrice')}
-              isEditing={isEditMode}
-              onChange={(val) => updateEditedField('sellPrice', parseFloat(val) || 0)}
+        {/* Sell Price */}
+        <div className="bg-card border border-border rounded-lg p-3">
+          <span className="text-[10px] text-muted-foreground uppercase block mb-1">Sell Price</span>
+          {isEditMode ? (
+            <input
               type="number"
-              prefix="$"
-              emptyText="$0.00"
+              value={editedJob.sellPrice ?? job.sellPrice ?? ''}
+              onChange={(e) => updateEditedField('sellPrice', parseFloat(e.target.value) || 0)}
+              className="w-full px-2 py-1 text-sm border border-input rounded focus:ring-2 focus:ring-primary"
             />
-            <EditableField
-              label="Quantity"
-              value={getValue<number>('quantity')}
-              isEditing={isEditMode}
-              onChange={(val) => updateEditedField('quantity', parseInt(val) || 0)}
+          ) : (
+            <p className="text-lg font-semibold text-foreground">{formatCurrency(job.sellPrice || 0)}</p>
+          )}
+        </div>
+        {/* Quantity */}
+        <div className="bg-card border border-border rounded-lg p-3">
+          <span className="text-[10px] text-muted-foreground uppercase block mb-1">Quantity</span>
+          {isEditMode ? (
+            <input
               type="number"
-              emptyText="—"
+              value={editedJob.quantity ?? job.quantity ?? ''}
+              onChange={(e) => updateEditedField('quantity', parseInt(e.target.value) || 0)}
+              className="w-full px-2 py-1 text-sm border border-input rounded focus:ring-2 focus:ring-primary"
             />
-          </div>
+          ) : (
+            <p className="text-lg font-semibold text-foreground">{(job.quantity || 0).toLocaleString()}</p>
+          )}
+        </div>
+        {/* Spread */}
+        <div className="bg-card border border-border rounded-lg p-3">
+          <span className="text-[10px] text-muted-foreground uppercase block mb-1">Spread</span>
+          <p className={`text-lg font-semibold ${(job.profit?.spread || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            {formatCurrency(job.profit?.spread || 0)}
+          </p>
         </div>
       </div>
 
-      {/* Job Specifications - Front and Center */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Job Specifications</h3>
-        </div>
-        <div className="p-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4">
-            <EditableField
-              label="Product Type"
-              value={getSpecValue('productType')}
-              isEditing={isEditMode}
-              onChange={(val) => updateEditedSpec('productType', val)}
-              emptyText="—"
-            />
-            <EditableField
-              label="Standard Size"
-              value={job.sizeName || ''}
-              isEditing={false}
-              onChange={() => {}}
-              emptyText="—"
-            />
-            <EditableField
-              label="Flat Size"
-              value={getSpecValue('flatSize')}
-              isEditing={isEditMode}
-              onChange={(val) => updateEditedSpec('flatSize', val)}
-              emptyText="—"
-            />
-            <EditableField
-              label="Finished Size"
-              value={getSpecValue('finishedSize')}
-              isEditing={isEditMode}
-              onChange={(val) => updateEditedSpec('finishedSize', val)}
-              emptyText="—"
-            />
-            <EditableField
-              label="Colors"
-              value={getSpecValue('colors')}
-              isEditing={isEditMode}
-              onChange={(val) => updateEditedSpec('colors', val)}
-              emptyText="—"
-            />
-            <EditableField
-              label="Pages"
-              value={getSpecValue('pageCount')}
-              isEditing={isEditMode}
-              onChange={(val) => updateEditedSpec('pageCount', parseInt(val) || 0)}
-              type="number"
-              emptyText="—"
-            />
-            <EditableField
-              label="Paper Type"
-              value={getSpecValue('paperType')}
-              isEditing={isEditMode}
-              onChange={(val) => updateEditedSpec('paperType', val)}
-              emptyText="—"
-            />
-            <EditableField
-              label="Bradford Paper (lbs)"
-              value={job.bradfordPaperLbs ?? getSpecValue('paperLbs') ?? ''}
-              isEditing={isEditMode}
-              onChange={(val) => updateEditedField('bradfordPaperLbs', parseFloat(val) || null)}
-              type="number"
-              emptyText="—"
-            />
-            <EditableField
-              label="Coating"
-              value={getSpecValue('coating')}
-              isEditing={isEditMode}
-              onChange={(val) => updateEditedSpec('coating', val)}
-              emptyText="—"
-            />
-            <EditableField
-              label="Finishing"
-              value={getSpecValue('finishing')}
-              isEditing={isEditMode}
-              onChange={(val) => updateEditedSpec('finishing', val)}
-              emptyText="—"
-            />
-            <EditableField
-              label="Binding"
-              value={getSpecValue('bindingStyle')}
-              isEditing={isEditMode}
-              onChange={(val) => updateEditedSpec('bindingStyle', val)}
-              emptyText="—"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Customer & Vendor - Side by Side */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <User className="w-4 h-4 text-gray-400" />
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Customer</span>
+      {/* Customer & Vendor Row */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-card border border-border rounded-lg p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <User className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase">Customer</span>
           </div>
           {job.customer ? (
-            <div className="space-y-1">
-              <p className="font-semibold text-gray-900">{job.customer.name}</p>
-              {job.customer.contactPerson && (
-                <p className="text-sm text-gray-600">{job.customer.contactPerson}</p>
-              )}
-              {job.customer.email && (
-                <p className="text-sm text-gray-500">{job.customer.email}</p>
-              )}
-              {job.customer.phone && (
-                <p className="text-sm text-gray-500">{job.customer.phone}</p>
-              )}
+            <div>
+              <p className="font-medium text-sm text-foreground">{job.customer.name}</p>
+              {job.customer.email && <p className="text-xs text-muted-foreground">{job.customer.email}</p>}
             </div>
           ) : (
-            <p className="text-gray-400 italic text-sm">Not assigned</p>
+            <p className="text-muted-foreground italic text-sm">Not assigned</p>
           )}
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Package className="w-4 h-4 text-gray-400" />
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Vendor</span>
+        <div className="bg-card border border-border rounded-lg p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Package className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase">Vendor</span>
             {!isEditMode && job.vendor?.isPartner && (
-              <span className="px-2 py-0.5 bg-orange-500 text-white text-[10px] font-bold rounded ml-auto">
+              <span className="px-1.5 py-0.5 bg-primary text-primary-foreground text-[9px] font-bold rounded ml-auto">
                 PARTNER
               </span>
             )}
           </div>
           {isEditMode ? (
-            <div className="space-y-2">
-              <select
-                value={editedJob.vendorId || ''}
-                onChange={(e) => updateEditedField('vendorId', e.target.value || null)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                disabled={isLoadingVendors}
-              >
-                <option value="">Select vendor...</option>
-                {vendors.map(vendor => (
-                  <option key={vendor.id} value={vendor.id}>
-                    {vendor.name}{vendor.isPartner ? ' (Partner)' : ''}
-                  </option>
-                ))}
-              </select>
-              {editedJob.vendorId && vendors.find(v => v.id === editedJob.vendorId)?.isPartner && (
-                <span className="inline-flex px-2 py-0.5 bg-orange-500 text-white text-[10px] font-bold rounded">
-                  PARTNER - 50/50 Split
-                </span>
-              )}
-            </div>
+            <select
+              value={editedJob.vendorId || ''}
+              onChange={(e) => updateEditedField('vendorId', e.target.value || null)}
+              className="w-full px-2 py-1 text-sm border border-input rounded focus:ring-2 focus:ring-primary"
+              disabled={isLoadingVendors}
+            >
+              <option value="">Select vendor...</option>
+              {vendors.map(vendor => (
+                <option key={vendor.id} value={vendor.id}>
+                  {vendor.name}{vendor.isPartner ? ' (Partner)' : ''}
+                </option>
+              ))}
+            </select>
           ) : job.vendor ? (
-            <div className="space-y-1">
-              <p className="font-semibold text-gray-900">{job.vendor.name}</p>
-              {job.vendor.contactPerson && (
-                <p className="text-sm text-gray-600">{job.vendor.contactPerson}</p>
-              )}
-              {job.vendor.email && (
-                <p className="text-sm text-gray-500">{job.vendor.email}</p>
-              )}
-              {job.vendor.phone && (
-                <p className="text-sm text-gray-500">{job.vendor.phone}</p>
-              )}
+            <div>
+              <p className="font-medium text-sm text-foreground">{job.vendor.name}</p>
+              {job.vendor.email && <p className="text-xs text-muted-foreground">{job.vendor.email}</p>}
             </div>
           ) : (
-            <p className="text-gray-400 italic text-sm">Not assigned</p>
+            <p className="text-muted-foreground italic text-sm">Not assigned</p>
           )}
         </div>
       </div>
 
-      {/* Paper Source */}
-      <div className={`border rounded-lg p-4 ${
-        paperSource === 'BRADFORD' ? 'bg-orange-50 border-orange-200' :
-        paperSource === 'CUSTOMER' ? 'bg-blue-50 border-blue-200' :
-        'bg-white border-gray-200'
-      }`}>
-        <div className="flex items-center gap-2 mb-1">
-          <Building2 className={`w-4 h-4 ${
-            paperSource === 'BRADFORD' ? 'text-orange-500' :
-            paperSource === 'CUSTOMER' ? 'text-blue-500' :
-            'text-gray-400'
-          }`} />
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Paper Source</span>
-        </div>
-        <p className={`font-semibold ${
-          paperSource === 'BRADFORD' ? 'text-orange-700' :
-          paperSource === 'CUSTOMER' ? 'text-blue-700' :
-          'text-gray-700'
-        }`}>
-          {paperSource === 'BRADFORD' ? 'Bradford Supplies Paper' :
-           paperSource === 'VENDOR' ? 'Vendor Supplies Paper' :
-           'Customer Supplies Paper'}
-        </p>
-        {paperSource === 'BRADFORD' && job.paperInventory && (
-          <p className="text-sm text-orange-600 mt-1">
-            Linked: {job.paperInventory.rollType} - {job.paperInventory.rollWidth}" {job.paperInventory.paperType}
-          </p>
-        )}
-        {paperMarkup > 0 && (
-          <p className="text-sm text-orange-600 mt-1">
-            Paper Markup: {formatCurrency(paperMarkup)}
-          </p>
-        )}
-      </div>
-
-      {/* Artwork Link Section */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Link className="w-4 h-4 text-gray-400" />
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Artwork Link</h3>
+      {/* Job Details Row: PO, Due Date, Paper Source */}
+      <div className="bg-card border border-border rounded-lg p-3">
+        <div className="flex items-center gap-6 text-sm">
+          <div>
+            <span className="text-[10px] text-muted-foreground uppercase">Customer PO</span>
+            {isEditMode ? (
+              <input
+                type="text"
+                value={editedJob.customerPONumber ?? job.customerPONumber ?? ''}
+                onChange={(e) => updateEditedField('customerPONumber', e.target.value)}
+                className="w-32 px-2 py-1 text-sm border border-input rounded focus:ring-2 focus:ring-primary block mt-0.5"
+                placeholder="PO #"
+              />
+            ) : (
+              <p className="font-medium text-foreground">{job.customerPONumber || '—'}</p>
+            )}
           </div>
-          {job.artworkEmailedAt && (
-            <span className="text-xs text-green-600 flex items-center gap-1">
-              <Check className="w-3 h-3" />
-              Sent {new Date(job.artworkEmailedAt).toLocaleDateString()}
-            </span>
-          )}
-        </div>
-        <div className="p-4">
-          {/* Show existing artwork URL if present */}
-          {job.specs?.artworkUrl && (
-            <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <p className="text-xs text-blue-600 font-medium mb-1">Current Artwork Link:</p>
-              <a
-                href={job.specs.artworkUrl as string}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-blue-700 hover:underline flex items-center gap-1 break-all"
-              >
-                {job.specs.artworkUrl as string}
-                <ExternalLink className="w-3 h-3 flex-shrink-0" />
-              </a>
+          <div>
+            <span className="text-[10px] text-muted-foreground uppercase">Due Date</span>
+            {isEditMode ? (
+              <input
+                type="date"
+                value={editedJob.dueDate ?? job.dueDate ?? ''}
+                onChange={(e) => updateEditedField('dueDate', e.target.value)}
+                className="px-2 py-1 text-sm border border-input rounded focus:ring-2 focus:ring-primary block mt-0.5"
+              />
+            ) : (
+              <p className={`font-medium ${job.dueDate && new Date(job.dueDate) < new Date() ? 'text-red-600' : 'text-foreground'}`}>
+                {job.dueDate ? new Date(job.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
+              </p>
+            )}
+          </div>
+          {showPaperSource && (
+            <div className="flex items-center gap-2 ml-auto">
+              <Building2 className={`w-4 h-4 ${paperSource === 'BRADFORD' ? 'text-primary' : 'text-muted-foreground'}`} />
+              <span className={`text-sm font-medium ${paperSource === 'BRADFORD' ? 'text-primary' : 'text-muted-foreground'}`}>
+                {paperSource === 'BRADFORD' ? 'Bradford Paper' : paperSource === 'CUSTOMER' ? 'Customer Paper' : 'Vendor Paper'}
+              </span>
+              {paperMarkup > 0 && (
+                <span className="text-xs text-primary">+{formatCurrency(paperMarkup)}</span>
+              )}
             </div>
           )}
+        </div>
+      </div>
 
-          {/* Input and send button */}
+      {/* Specifications - Collapsible */}
+      <div className="bg-card border border-border rounded-lg overflow-hidden">
+        <button
+          onClick={() => setShowAllSpecs(!showAllSpecs)}
+          className="w-full px-3 py-2 flex items-center justify-between hover:bg-accent/50 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <FileText className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase">Specifications</span>
+            {!isEditMode && populatedSpecs.length > 0 && (
+              <span className="text-xs text-muted-foreground">({populatedSpecs.length} fields)</span>
+            )}
+          </div>
+          <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${showAllSpecs ? 'rotate-180' : ''}`} />
+        </button>
+
+        {/* Compact inline specs preview (when collapsed) */}
+        {!showAllSpecs && populatedSpecs.length > 0 && (
+          <div className="px-3 pb-2 text-sm text-muted-foreground">
+            {populatedSpecs.slice(0, 4).map((s, i) => (
+              <span key={s.key}>
+                {i > 0 && ' · '}
+                <span className="text-foreground">{s.value}</span>
+              </span>
+            ))}
+            {populatedSpecs.length > 4 && <span> · +{populatedSpecs.length - 4} more</span>}
+          </div>
+        )}
+
+        {/* Full specs grid (when expanded or editing) */}
+        {(showAllSpecs || isEditMode) && (
+          <div className="px-3 pb-3 pt-1 border-t border-border">
+            <div className="grid grid-cols-3 gap-x-4 gap-y-2 text-sm">
+              <EditableField label="Product" value={getSpecValue('productType')} isEditing={isEditMode} onChange={(val) => updateEditedSpec('productType', val)} emptyText="—" />
+              <EditableField label="Flat Size" value={getSpecValue('flatSize')} isEditing={isEditMode} onChange={(val) => updateEditedSpec('flatSize', val)} emptyText="—" />
+              <EditableField label="Finished" value={getSpecValue('finishedSize')} isEditing={isEditMode} onChange={(val) => updateEditedSpec('finishedSize', val)} emptyText="—" />
+              <EditableField label="Colors" value={getSpecValue('colors')} isEditing={isEditMode} onChange={(val) => updateEditedSpec('colors', val)} emptyText="—" />
+              <EditableField label="Pages" value={getSpecValue('pageCount')} isEditing={isEditMode} onChange={(val) => updateEditedSpec('pageCount', parseInt(val) || 0)} type="number" emptyText="—" />
+              <EditableField label="Paper" value={getSpecValue('paperType')} isEditing={isEditMode} onChange={(val) => updateEditedSpec('paperType', val)} emptyText="—" />
+              <EditableField label="Coating" value={getSpecValue('coating')} isEditing={isEditMode} onChange={(val) => updateEditedSpec('coating', val)} emptyText="—" />
+              <EditableField label="Finishing" value={getSpecValue('finishing')} isEditing={isEditMode} onChange={(val) => updateEditedSpec('finishing', val)} emptyText="—" />
+              <EditableField label="Binding" value={getSpecValue('bindingStyle')} isEditing={isEditMode} onChange={(val) => updateEditedSpec('bindingStyle', val)} emptyText="—" />
+              {(job.bradfordPaperLbs || isEditMode) && (
+                <EditableField label="Bradford lbs" value={job.bradfordPaperLbs ?? getSpecValue('paperLbs') ?? ''} isEditing={isEditMode} onChange={(val) => updateEditedField('bradfordPaperLbs', parseFloat(val) || null)} type="number" emptyText="—" />
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Artwork Link - Only show if has URL or in edit mode */}
+      {hasArtwork && (
+        <div className="bg-card border border-border rounded-lg p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Link className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase">Artwork</span>
+            </div>
+            {job.artworkEmailedAt && (
+              <span className="text-[10px] text-green-600 flex items-center gap-1">
+                <Check className="w-3 h-3" />
+                Sent {new Date(job.artworkEmailedAt).toLocaleDateString()}
+              </span>
+            )}
+          </div>
+          {job.specs?.artworkUrl && (
+            <a
+              href={job.specs.artworkUrl as string}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-primary hover:underline flex items-center gap-1 mb-2 truncate"
+            >
+              {job.specs.artworkUrl as string}
+              <ExternalLink className="w-3 h-3 flex-shrink-0" />
+            </a>
+          )}
           <div className="flex gap-2">
             <input
               type="url"
-              placeholder="Paste artwork link here..."
+              placeholder="Paste artwork link..."
               value={artworkUrl}
               onChange={(e) => setArtworkUrl(e.target.value)}
-              className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="flex-1 px-2 py-1.5 text-sm border border-input rounded focus:ring-2 focus:ring-primary"
             />
             <button
               onClick={() => setShowArtworkConfirmModal(true)}
               disabled={!artworkUrl.trim() || !job.vendor?.email || isSendingArtworkNotification}
-              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-3 py-1.5 bg-primary text-primary-foreground text-sm font-medium rounded hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
             >
-              <Send className="w-4 h-4" />
+              <Send className="w-3.5 h-3.5" />
               Send
             </button>
           </div>
-
-          {/* Warning if no vendor email */}
           {!job.vendor?.email && (
-            <p className="mt-2 text-xs text-amber-600 flex items-center gap-1">
+            <p className="mt-1 text-[10px] text-amber-600 flex items-center gap-1">
               <AlertTriangle className="w-3 h-3" />
-              No vendor email - assign a vendor with email to send notifications
-            </p>
-          )}
-
-          {/* Info about who will receive */}
-          {job.vendor?.email && (
-            <p className="mt-2 text-xs text-gray-500">
-              Will send to: {job.vendor.name} ({job.vendor.email}) + internal team
+              No vendor email
             </p>
           )}
         </div>
-      </div>
+      )}
 
-      {/* Paper Details (for standard sizes with snapshotted data) */}
+      {/* Paper Details - Condensed */}
       {job.paperData && (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Paper Details</h3>
+        <div className="bg-card border border-border rounded-lg p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase">Paper Details</span>
+            {job.sizeName && <span className="text-[10px] text-muted-foreground">({job.sizeName})</span>}
           </div>
-          <div className="p-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div>
-                <span className="text-xs text-gray-500 uppercase block mb-1">Paper Type</span>
-                <p className="font-medium text-gray-900">{job.paperData.paperType}</p>
-              </div>
-              <div>
-                <span className="text-xs text-gray-500 uppercase block mb-1">Weight per 1,000</span>
-                <p className="font-medium text-gray-900">{job.paperData.lbsPerThousand} lbs</p>
-              </div>
-              <div>
-                <span className="text-xs text-gray-500 uppercase block mb-1">Cost per lb</span>
-                <p className="font-medium text-gray-900">${job.paperData.costPerLb.toFixed(3)}</p>
-              </div>
-              <div>
-                <span className="text-xs text-gray-500 uppercase block mb-1">Raw Paper Cost</span>
-                <p className="font-medium text-gray-900">
-                  {job.paperData.rawTotal ? formatCurrency(job.paperData.rawTotal) : '—'}
-                </p>
-              </div>
-              <div>
-                <span className="text-xs text-gray-500 uppercase block mb-1">Paper Charged</span>
-                <p className="font-medium text-gray-900">
-                  {job.paperData.chargedTotal ? formatCurrency(job.paperData.chargedTotal) : '—'}
-                </p>
-              </div>
-              <div>
-                <span className="text-xs text-gray-500 uppercase block mb-1">Bradford Markup ({job.paperData.markupPercent}%)</span>
-                <p className="font-semibold text-orange-600">
-                  {job.paperData.markupAmount ? formatCurrency(job.paperData.markupAmount) : '—'}
-                </p>
-              </div>
+          <div className="grid grid-cols-4 gap-3 text-sm">
+            <div>
+              <span className="text-[10px] text-muted-foreground">Type</span>
+              <p className="font-medium text-foreground">{job.paperData.paperType}</p>
             </div>
-            {job.sizeName && (
-              <div className="mt-3 pt-3 border-t border-gray-100">
-                <span className="text-xs text-gray-400">
-                  Standard Size: {job.sizeName} • Data snapshotted at job creation
-                </span>
-              </div>
-            )}
+            <div>
+              <span className="text-[10px] text-muted-foreground">Wt/1000</span>
+              <p className="font-medium text-foreground">{job.paperData.lbsPerThousand} lbs</p>
+            </div>
+            <div>
+              <span className="text-[10px] text-muted-foreground">Paper Cost</span>
+              <p className="font-medium text-foreground">{job.paperData.rawTotal ? formatCurrency(job.paperData.rawTotal) : '—'}</p>
+            </div>
+            <div>
+              <span className="text-[10px] text-muted-foreground">Markup ({job.paperData.markupPercent}%)</span>
+              <p className="font-semibold text-primary">{job.paperData.markupAmount ? formatCurrency(job.paperData.markupAmount) : '—'}</p>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Dates & References */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-gray-400" />
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Dates & References</h3>
-          </div>
+      {/* References - Compact inline */}
+      {(createdDate || job.bradfordRefNumber || job.customerPONumber) && (
+        <div className="flex items-center gap-4 text-xs text-muted-foreground px-1">
+          {createdDate && (
+            <span>Created {new Date(createdDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+          )}
+          {job.bradfordRefNumber && (
+            <span>JD Ref: <span className="text-primary font-medium">{job.bradfordRefNumber}</span></span>
+          )}
+          {job.invoiceNumber && <span>Invoice #{job.invoiceNumber}</span>}
+          {job.quoteNumber && <span>Quote #{job.quoteNumber}</span>}
         </div>
-        <div className="p-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            {createdDate && (
-              <div>
-                <span className="text-xs text-gray-500 uppercase">Created</span>
-                <p className="font-medium text-gray-900">
-                  {new Date(createdDate).toLocaleDateString('en-US', {
-                    month: 'short', day: 'numeric', year: 'numeric'
-                  })}
-                </p>
-              </div>
-            )}
-            {job.vendorPONumber && (
-              <div>
-                <span className="text-xs text-gray-500 uppercase">Vendor PO</span>
-                <p className="font-medium text-gray-900">{job.vendorPONumber}</p>
-              </div>
-            )}
-            {job.invoiceNumber && (
-              <div>
-                <span className="text-xs text-gray-500 uppercase">Invoice #</span>
-                <p className="font-medium text-gray-900">{job.invoiceNumber}</p>
-              </div>
-            )}
-            {job.quoteNumber && (
-              <div>
-                <span className="text-xs text-gray-500 uppercase">Quote #</span>
-                <p className="font-medium text-gray-900">{job.quoteNumber}</p>
-              </div>
-            )}
-            {job.bradfordRefNumber && (
-              <div>
-                <span className="text-xs text-gray-500 uppercase">JD PO / Bradford Payment Ref</span>
-                <p className="font-semibold text-orange-600">{job.bradfordRefNumber}</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
+  };
 
   const PricingTab = () => {
     // Extract PO data for cost breakdown
