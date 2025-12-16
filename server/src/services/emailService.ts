@@ -548,7 +548,7 @@ function getRfqEmailBody(rfq: any, vendorName: string, quoteToken?: string): str
   const formattedSpecs = (rfq.specs || '').replace(/\n/g, '<br/>');
 
   // Build quote submission link if token provided
-  const baseUrl = process.env.APP_URL || 'https://impactd122-client-production.up.railway.app';
+  const baseUrl = process.env.APP_URL || 'https://impactd122-server-production.up.railway.app';
   const quoteLink = quoteToken ? `${baseUrl}/vendor-quote/${rfq.id}/${quoteToken}` : null;
 
   return `
