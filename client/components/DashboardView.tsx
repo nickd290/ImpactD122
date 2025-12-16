@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Upload, Sparkles, ArrowRight, Clock, CheckCircle2 } from 'lucide-react';
+import { Plus, Upload, Sparkles, ArrowRight } from 'lucide-react';
 import { Button } from './ui';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './ui';
 import { Badge } from './ui';
@@ -30,9 +30,6 @@ export function DashboardView({
 }: DashboardViewProps) {
   // Get recent jobs (last 5)
   const recentJobs = jobs.slice(0, 5);
-
-  // Get active jobs (not paid or cancelled)
-  const activeJobs = jobs.filter(j => !['PAID', 'CANCELLED'].includes(j.status));
 
   return (
     <div className="space-y-8">
@@ -95,10 +92,8 @@ export function DashboardView({
         </CardContent>
       </Card>
 
-      {/* Recent Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Jobs */}
-        <Card>
+      {/* Recent Jobs */}
+      <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -150,58 +145,7 @@ export function DashboardView({
               </div>
             )}
           </CardContent>
-        </Card>
-
-        {/* Overview */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Overview</CardTitle>
-            <CardDescription>Quick stats at a glance</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
-                    <Clock className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-foreground">Active Jobs</p>
-                    <p className="text-sm text-muted-foreground">Currently in progress</p>
-                  </div>
-                </div>
-                <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
-                  {activeJobs.length}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between p-4 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-100 dark:border-green-900">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-green-100 dark:bg-green-900 rounded-lg">
-                    <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-foreground">Total Jobs</p>
-                    <p className="text-sm text-muted-foreground">All time</p>
-                  </div>
-                </div>
-                <div className="text-3xl font-bold text-green-600 dark:text-green-400">
-                  {jobs.length}
-                </div>
-              </div>
-
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={onViewAllJobs}
-              >
-                View All Jobs
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      </Card>
     </div>
   );
 }

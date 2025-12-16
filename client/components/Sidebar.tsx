@@ -1,7 +1,6 @@
 import React from 'react';
-import { BarChart3, Briefcase, Users, Building2, TrendingUp, DollarSign, Plus, Sparkles, Command, Package, Calculator, MessageSquare, FileQuestion } from 'lucide-react';
+import { BarChart3, Briefcase, Users, Building2, TrendingUp, DollarSign, Command, Package, Calculator, MessageSquare, FileQuestion } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { Button } from './ui';
 import { Badge } from './ui';
 
 type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
@@ -203,29 +202,6 @@ export function Sidebar({
         </div>
       </nav>
 
-      {/* Quick Actions Footer */}
-      <div className="p-3 border-t border-border space-y-2">
-        <p className="px-3 mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-          Quick Actions
-        </p>
-        <Button
-          onClick={onCreateJob}
-          className="w-full justify-start"
-          size="sm"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          New Job
-        </Button>
-        <Button
-          onClick={onShowSpecParser}
-          variant="outline"
-          className="w-full justify-start"
-          size="sm"
-        >
-          <Sparkles className="w-4 h-4 mr-2" />
-          Parse Specs
-        </Button>
-      </div>
     </div>
   );
 }
