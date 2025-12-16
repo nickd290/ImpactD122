@@ -122,6 +122,7 @@ export function JobFormModal({
       setUseBradford35Percent(false); // Reset 35% checkbox
       setSellPrice(initialData?.sellPrice ? String(initialData.sellPrice) : ''); // Reset sell price
       setSellPriceError(''); // Clear any previous error
+      setOverrideSellPrice(!!initialData?.sellPrice); // If editing existing job with sellPrice, enable override
     }
   }, [isOpen, initialData]);
 
@@ -212,6 +213,16 @@ export function JobFormModal({
   // Sell Price - explicit field for what we charge the customer
   const [sellPrice, setSellPrice] = useState<string>(initialData?.sellPrice ? String(initialData.sellPrice) : '');
   const [sellPriceError, setSellPriceError] = useState<string>('');
+  const [overrideSellPrice, setOverrideSellPrice] = useState(false);
+
+  // Auto-sync sellPrice from line items total (when not overridden)
+  useEffect(() => {
+    if (!overrideSellPrice) {
+      const lineItemTotal = lineItems.reduce((sum, item) =>
+        sum + ((item.quantity || 0) * (Number(item.unitPrice) || 0)), 0);
+      setSellPrice(lineItemTotal > 0 ? lineItemTotal.toFixed(2) : '');
+    }
+  }, [lineItems, overrideSellPrice]);
 
   // Calculate total quantity from all line items
   const totalQuantity = lineItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
@@ -573,9 +584,20 @@ export function JobFormModal({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Sell Price *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Sell Price *
+                  </label>
+                  <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={overrideSellPrice}
+                      onChange={(e) => setOverrideSellPrice(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    Override
+                  </label>
+                </div>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
                   <input
@@ -585,11 +607,13 @@ export function JobFormModal({
                     value={sellPrice}
                     onChange={(e) => {
                       setSellPrice(e.target.value);
-                      setSellPriceError(''); // Clear error on change
+                      setSellPriceError('');
+                      if (!overrideSellPrice) setOverrideSellPrice(true); // Auto-enable override when manually editing
                     }}
+                    readOnly={!overrideSellPrice}
                     className={`w-full pl-7 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
                       sellPriceError ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                    }`}
+                    } ${!overrideSellPrice ? 'bg-gray-50' : ''}`}
                     placeholder="0.00"
                     required
                   />
@@ -598,7 +622,7 @@ export function JobFormModal({
                   <p className="mt-1 text-sm text-red-600">{sellPriceError}</p>
                 )}
                 <p className="mt-1 text-xs text-gray-500">
-                  Total amount to charge the customer
+                  {overrideSellPrice ? 'Manually set (not from line items)' : 'Auto-calculated from line items total'}
                 </p>
               </div>
             </div>
