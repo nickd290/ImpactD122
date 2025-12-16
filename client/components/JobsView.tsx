@@ -94,8 +94,10 @@ export function JobsView({
       case 'active':
         return jobs.filter((job) => job.status === 'ACTIVE');
       case 'completed':
-        return jobs.filter((job) => job.status === 'PAID');
+        // Work is done (status PAID) but invoice not yet paid
+        return jobs.filter((job) => job.status === 'PAID' && !job.hasPaidInvoice);
       case 'paid':
+        // Invoice has been paid
         return jobs.filter((job) => job.hasPaidInvoice === true);
       default:
         return jobs;
@@ -105,7 +107,7 @@ export function JobsView({
   // Get counts for tabs
   const tabCounts = useMemo(() => ({
     active: jobs.filter((job) => job.status === 'ACTIVE').length,
-    completed: jobs.filter((job) => job.status === 'PAID').length,
+    completed: jobs.filter((job) => job.status === 'PAID' && !job.hasPaidInvoice).length,
     paid: jobs.filter((job) => job.hasPaidInvoice === true).length,
   }), [jobs]);
 
