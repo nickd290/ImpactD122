@@ -11,7 +11,7 @@ interface StatusOption {
 
 const STATUS_OPTIONS: StatusOption[] = [
   { value: 'ACTIVE', label: 'Active', color: 'text-blue-700', bgColor: 'bg-blue-100' },
-  { value: 'PAID', label: 'Paid', color: 'text-green-700', bgColor: 'bg-green-100' },
+  { value: 'PAID', label: 'Completed', color: 'text-green-700', bgColor: 'bg-green-100' },
   { value: 'CANCELLED', label: 'Cancelled', color: 'text-red-700', bgColor: 'bg-red-100' },
 ];
 

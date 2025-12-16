@@ -141,7 +141,7 @@ export function JobOverviewTab({
               className="w-full text-sm font-medium border rounded px-2 py-1"
             >
               <option value="ACTIVE">Active</option>
-              <option value="PAID">Paid</option>
+              <option value="PAID">Completed</option>
               <option value="CANCELLED">Cancelled</option>
             </select>
           ) : (
