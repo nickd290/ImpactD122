@@ -328,6 +328,14 @@ export function JobFormModal({
     setLineItems(updated);
   };
 
+  // Format numbers to 2 decimals on blur (not during typing)
+  const formatOnBlur = (index: number, field: string) => {
+    const updated = [...lineItems];
+    const value = parseFloat(updated[index][field]) || 0;
+    updated[index][field] = Math.round(value * 100) / 100;
+    setLineItems(updated);
+  };
+
   const addLineItem = () => {
     setLineItems([...lineItems, {
       description: '',
@@ -959,8 +967,9 @@ export function JobFormModal({
                         </span>
                       </div>
                     )}
-                    <div className="grid grid-cols-6 gap-3">
-                      <div className="col-span-2">
+                    <div className="grid grid-cols-12 gap-2">
+                      {/* Description - 3 cols */}
+                      <div className="col-span-3">
                         <label className="block text-xs font-medium text-gray-700 mb-1">
                           Description
                         </label>
@@ -973,9 +982,10 @@ export function JobFormModal({
                         />
                       </div>
 
-                      <div>
+                      {/* Quantity - 1 col */}
+                      <div className="col-span-1">
                         <label className="block text-xs font-medium text-gray-700 mb-1">
-                          Quantity
+                          Qty
                         </label>
                         <input
                           type="number"
@@ -986,58 +996,77 @@ export function JobFormModal({
                         />
                       </div>
 
-                      <div>
+                      {/* Cost/Each - 2 cols */}
+                      <div className="col-span-2">
                         <label className="block text-xs font-medium text-gray-700 mb-1">
-                          Cost
+                          Cost/Each
                         </label>
                         <input
                           type="number"
-                          value={Number(item.unitCost || 0).toFixed(2)}
+                          value={item.unitCost}
                           onChange={(e) => handleLineItemChange(index, 'unitCost', e.target.value)}
+                          onBlur={() => formatOnBlur(index, 'unitCost')}
                           className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                          step="0.01"
+                          step="any"
                           min="0"
+                          placeholder="0.00"
                         />
                       </div>
 
-                      <div>
+                      {/* Markup % - 1 col */}
+                      <div className="col-span-1">
                         <label className="block text-xs font-medium text-gray-700 mb-1">
-                          Markup %
+                          Markup%
                         </label>
                         <input
                           type="number"
-                          value={Number(item.markupPercent || 0).toFixed(2)}
+                          value={item.markupPercent}
                           onChange={(e) => handleLineItemChange(index, 'markupPercent', e.target.value)}
+                          onBlur={() => formatOnBlur(index, 'markupPercent')}
                           className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                          step="0.01"
+                          step="any"
                           min="0"
+                          placeholder="20"
                         />
                       </div>
 
-                      <div className="flex items-end gap-2">
-                        <div className="flex-1">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
-                            Price
-                          </label>
-                          <input
-                            type="number"
-                            value={Number(item.unitPrice || 0).toFixed(2)}
-                            onChange={(e) => handleLineItemChange(index, 'unitPrice', e.target.value)}
-                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm bg-white"
-                            step="0.01"
-                            min="0"
-                          />
+                      {/* Price/Each - 2 cols */}
+                      <div className="col-span-2">
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Price/Each
+                        </label>
+                        <input
+                          type="number"
+                          value={item.unitPrice}
+                          onChange={(e) => handleLineItemChange(index, 'unitPrice', e.target.value)}
+                          onBlur={() => formatOnBlur(index, 'unitPrice')}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                          step="any"
+                          min="0"
+                          placeholder="0.00"
+                        />
+                      </div>
+
+                      {/* Line Total - 2 cols */}
+                      <div className="col-span-2">
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Line Total
+                        </label>
+                        <div className="flex items-center gap-1">
+                          <div className="flex-1 px-2 py-1 bg-gray-100 border border-gray-300 rounded text-sm font-medium text-gray-900">
+                            ${((item.quantity || 0) * (Number(item.unitPrice) || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                          {lineItems.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeLineItem(index)}
+                              className="p-1 text-red-600 hover:bg-red-50 rounded"
+                              title="Remove item"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
-                        {lineItems.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => removeLineItem(index)}
-                            className="p-1 text-red-600 hover:bg-red-50 rounded"
-                            title="Remove item"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
                       </div>
                     </div>
                   </div>
