@@ -368,7 +368,8 @@ export const sendRFQ = async (req: Request, res: Response) => {
       }
 
       try {
-        const emailResult = await sendRfqEmail(rfq, recipientEmail, vendor.name);
+        // Pass the quoteToken for the submission link
+        const emailResult = await sendRfqEmail(rfq, recipientEmail, vendor.name, vendorAssignment.quoteToken || undefined);
 
         if (emailResult.success) {
           // Update sent timestamp
@@ -559,6 +560,180 @@ export const awardToVendor = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Award vendor error:', error);
     res.status(500).json({ error: error.message || 'Failed to award vendor' });
+  }
+};
+
+/**
+ * GET /api/vendor-rfqs/quote/:rfqId/:token
+ * Public route - Get RFQ details for vendor quote form
+ */
+export const getQuoteForm = async (req: Request, res: Response) => {
+  try {
+    const { rfqId, token } = req.params;
+
+    // Find vendor assignment by token
+    const vendorAssignment = await prisma.vendorRFQVendor.findFirst({
+      where: {
+        rfqId,
+        quoteToken: token,
+      },
+      include: {
+        Vendor: {
+          select: { id: true, name: true },
+        },
+        VendorRFQ: {
+          select: {
+            id: true,
+            rfqNumber: true,
+            title: true,
+            specs: true,
+            dueDate: true,
+            status: true,
+          },
+        },
+      },
+    });
+
+    if (!vendorAssignment) {
+      return res.status(404).json({ error: 'Invalid or expired quote link' });
+    }
+
+    // Check if quote already submitted
+    const existingQuote = await prisma.vendorQuote.findUnique({
+      where: {
+        rfqId_vendorId: {
+          rfqId,
+          vendorId: vendorAssignment.vendorId,
+        },
+      },
+    });
+
+    res.json({
+      rfq: vendorAssignment.VendorRFQ,
+      vendor: vendorAssignment.Vendor,
+      hasExistingQuote: !!existingQuote,
+      existingQuote: existingQuote ? {
+        priceTiers: existingQuote.priceTiers,
+        turnaroundDays: existingQuote.turnaroundDays,
+        notes: existingQuote.notes,
+        submittedAt: existingQuote.respondedAt,
+      } : null,
+    });
+  } catch (error: any) {
+    console.error('Get quote form error:', error);
+    res.status(500).json({ error: error.message || 'Failed to load quote form' });
+  }
+};
+
+/**
+ * POST /api/vendor-rfqs/quote/:rfqId/:token
+ * Public route - Submit vendor quote
+ */
+export const submitVendorQuote = async (req: Request, res: Response) => {
+  try {
+    const { rfqId, token } = req.params;
+    const { priceTiers, turnaroundDays, notes } = req.body;
+
+    // Validate price tiers
+    if (!priceTiers || !Array.isArray(priceTiers) || priceTiers.length === 0) {
+      return res.status(400).json({ error: 'At least one price tier is required' });
+    }
+
+    // Validate each tier has quantity and price
+    for (const tier of priceTiers) {
+      if (!tier.quantity || tier.quantity <= 0) {
+        return res.status(400).json({ error: 'Each tier must have a valid quantity' });
+      }
+      if (!tier.price || tier.price <= 0) {
+        return res.status(400).json({ error: 'Each tier must have a valid price' });
+      }
+    }
+
+    // Find vendor assignment by token
+    const vendorAssignment = await prisma.vendorRFQVendor.findFirst({
+      where: {
+        rfqId,
+        quoteToken: token,
+      },
+      include: {
+        VendorRFQ: true,
+        Vendor: {
+          select: { id: true, name: true },
+        },
+      },
+    });
+
+    if (!vendorAssignment) {
+      return res.status(404).json({ error: 'Invalid or expired quote link' });
+    }
+
+    // Calculate average/representative quote amount from tiers (use lowest tier for sorting)
+    const sortedTiers = [...priceTiers].sort((a, b) => a.quantity - b.quantity);
+    const representativeAmount = sortedTiers[0].price;
+
+    // Upsert vendor quote
+    const quote = await prisma.vendorQuote.upsert({
+      where: {
+        rfqId_vendorId: {
+          rfqId,
+          vendorId: vendorAssignment.vendorId,
+        },
+      },
+      create: {
+        rfqId,
+        vendorId: vendorAssignment.vendorId,
+        quoteAmount: representativeAmount,
+        priceTiers: priceTiers,
+        turnaroundDays: turnaroundDays || null,
+        notes: notes || null,
+        status: 'RECEIVED',
+        respondedAt: new Date(),
+      },
+      update: {
+        quoteAmount: representativeAmount,
+        priceTiers: priceTiers,
+        turnaroundDays: turnaroundDays || null,
+        notes: notes || null,
+        status: 'RECEIVED',
+        respondedAt: new Date(),
+      },
+    });
+
+    // Check if all vendors have responded - if so, update RFQ status to QUOTED
+    const rfq = await prisma.vendorRFQ.findUnique({
+      where: { id: rfqId },
+      include: {
+        vendors: true,
+        quotes: true,
+      },
+    });
+
+    if (rfq && rfq.quotes.filter(q => q.status === 'RECEIVED').length === rfq.vendors.length) {
+      await prisma.vendorRFQ.update({
+        where: { id: rfqId },
+        data: { status: 'QUOTED' },
+      });
+    }
+
+    console.log('📝 Vendor quote submitted:', {
+      rfqNumber: vendorAssignment.VendorRFQ.rfqNumber,
+      vendor: vendorAssignment.Vendor.name,
+      tiers: priceTiers.length,
+    });
+
+    res.json({
+      success: true,
+      message: 'Quote submitted successfully',
+      quote: {
+        id: quote.id,
+        priceTiers: quote.priceTiers,
+        turnaroundDays: quote.turnaroundDays,
+        submittedAt: quote.respondedAt,
+      },
+    });
+  } catch (error: any) {
+    console.error('Submit vendor quote error:', error);
+    res.status(500).json({ error: error.message || 'Failed to submit quote' });
   }
 };
 

@@ -834,6 +834,7 @@ model VendorRFQVendor {
   rfqId       String
   vendorId    String
   sentAt      DateTime?                       // When RFQ was sent to this vendor
+  quoteToken  String?   @unique @default(cuid())  // Unique token for quote submission link
   createdAt   DateTime  @default(now())
 
   VendorRFQ   VendorRFQ @relation(fields: [rfqId], references: [id], onDelete: Cascade)
@@ -848,7 +849,8 @@ model VendorQuote {
   id              String            @id @default(cuid())
   rfqId           String
   vendorId        String
-  quoteAmount     Decimal           @db.Decimal(10, 2)
+  quoteAmount     Decimal?          @db.Decimal(10, 2)  // Single price (backwards compat)
+  priceTiers      Json?             // [{ quantity: 500, price: 150 }, { quantity: 1000, price: 275 }]
   turnaroundDays  Int?
   notes           String?           @db.Text
   status          VendorQuoteStatus @default(PENDING)

@@ -28,10 +28,16 @@ interface Vendor {
   isPartner?: boolean;
 }
 
+interface PriceTier {
+  quantity: number;
+  price: number;
+}
+
 interface VendorQuote {
   id: string;
   vendorId: string;
-  quoteAmount: number;
+  quoteAmount?: number;
+  priceTiers?: PriceTier[];
   turnaroundDays?: number;
   notes?: string;
   status: 'PENDING' | 'RECEIVED' | 'DECLINED';
@@ -541,7 +547,7 @@ function RfqDetailPanel({
               <thead className="bg-gray-50">
                 <tr>
                   <th className="text-left p-3 font-medium">Vendor</th>
-                  <th className="text-left p-3 font-medium">Amount</th>
+                  <th className="text-left p-3 font-medium">Pricing</th>
                   <th className="text-left p-3 font-medium">Turnaround</th>
                   <th className="text-left p-3 font-medium">Status</th>
                   <th className="text-right p-3 font-medium">Actions</th>
@@ -550,6 +556,9 @@ function RfqDetailPanel({
               <tbody>
                 {rfq.vendors.map(v => {
                   const quote = rfq.quotes.find(q => q.vendorId === v.vendorId);
+                  const hasPriceTiers = quote?.priceTiers && Array.isArray(quote.priceTiers) && quote.priceTiers.length > 0;
+                  const hasQuoteAmount = quote && Number(quote.quoteAmount) > 0;
+
                   return (
                     <tr key={v.id} className="border-t">
                       <td className="p-3">
@@ -568,7 +577,16 @@ function RfqDetailPanel({
                         </div>
                       </td>
                       <td className="p-3">
-                        {quote && Number(quote.quoteAmount) > 0 ? (
+                        {hasPriceTiers ? (
+                          <div className="space-y-1">
+                            {(quote.priceTiers as PriceTier[]).sort((a, b) => a.quantity - b.quantity).map((tier, idx) => (
+                              <div key={idx} className="flex items-center gap-2 text-xs">
+                                <span className="text-gray-500">{tier.quantity.toLocaleString()} qty:</span>
+                                <span className="font-medium text-gray-900">{formatCurrency(tier.price)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : hasQuoteAmount ? (
                           <span className="font-medium">{formatCurrency(Number(quote.quoteAmount))}</span>
                         ) : (
                           <span className="text-gray-400">-</span>
@@ -590,7 +608,7 @@ function RfqDetailPanel({
                       </td>
                       <td className="p-3 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {quote?.status === 'RECEIVED' && Number(quote.quoteAmount) === 0 && (
+                          {quote?.status === 'RECEIVED' && !hasPriceTiers && !hasQuoteAmount && (
                             <button
                               onClick={() => onRecordQuote(v.Vendor)}
                               className="text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
@@ -606,7 +624,7 @@ function RfqDetailPanel({
                               Record Quote
                             </button>
                           )}
-                          {rfq.status === 'QUOTED' && quote && Number(quote.quoteAmount) > 0 && !quote.isAwarded && (
+                          {rfq.status === 'QUOTED' && quote && (hasPriceTiers || hasQuoteAmount) && !quote.isAwarded && (
                             <button
                               onClick={() => onAward(v.vendorId)}
                               className="text-xs px-2 py-1 bg-green-50 text-green-600 rounded hover:bg-green-100"

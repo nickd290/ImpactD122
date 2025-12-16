@@ -536,7 +536,7 @@ export async function sendJDInvoiceToBradfordEmail(
 // ===========================================
 
 // Generate email body for vendor RFQ
-function getRfqEmailBody(rfq: any, vendorName: string): string {
+function getRfqEmailBody(rfq: any, vendorName: string, quoteToken?: string): string {
   const dueDate = rfq.dueDate ? new Date(rfq.dueDate).toLocaleDateString('en-US', {
     weekday: 'long',
     year: 'numeric',
@@ -546,6 +546,10 @@ function getRfqEmailBody(rfq: any, vendorName: string): string {
 
   // Format specs - preserve line breaks
   const formattedSpecs = (rfq.specs || '').replace(/\n/g, '<br/>');
+
+  // Build quote submission link if token provided
+  const baseUrl = process.env.APP_URL || 'https://impactd122-client-production.up.railway.app';
+  const quoteLink = quoteToken ? `${baseUrl}/vendor-quote/${rfq.id}/${quoteToken}` : null;
 
   return `
     <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;">
@@ -580,12 +584,20 @@ function getRfqEmailBody(rfq: any, vendorName: string): string {
         </div>
         ` : ''}
 
+        ${quoteLink ? `
+        <div style="background-color: #10B981; border-radius: 8px; padding: 25px; margin: 25px 0; text-align: center;">
+          <p style="margin: 0 0 15px 0; color: white; font-size: 16px; font-weight: bold;">Submit Your Quote Online</p>
+          <a href="${quoteLink}" style="display: inline-block; background-color: white; color: #10B981; padding: 15px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">Click Here to Submit Quote</a>
+          <p style="margin: 15px 0 0 0; color: #D1FAE5; font-size: 12px;">Quick and easy - no login required</p>
+        </div>
+        ` : `
         <p>Please reply to this email with your quote including:</p>
         <ul style="color: #374151;">
           <li>Price per unit and/or total price</li>
           <li>Estimated turnaround time</li>
           <li>Any questions or clarifications needed</li>
         </ul>
+        `}
 
         <p>Thank you for your prompt attention to this request.</p>
 
@@ -606,11 +618,12 @@ function getRfqEmailBody(rfq: any, vendorName: string): string {
 export async function sendRfqEmail(
   rfq: any,
   vendorEmail: string,
-  vendorName: string
+  vendorName: string,
+  quoteToken?: string  // Token for quote submission link
 ): Promise<EmailResult> {
   try {
     const subject = `RFQ ${rfq.rfqNumber}: ${rfq.title}`;
-    const body = getRfqEmailBody(rfq, vendorName);
+    const body = getRfqEmailBody(rfq, vendorName, quoteToken);
     const replyTo = getRfqEmailAddress(rfq.id);
 
     const result = await sendEmail({
@@ -626,6 +639,7 @@ export async function sendRfqEmail(
         vendor: vendorName,
         email: vendorEmail,
         replyTo,
+        hasQuoteLink: !!quoteToken,
       });
     }
 

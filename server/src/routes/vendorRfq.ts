@@ -9,9 +9,16 @@ import {
   recordQuote,
   awardToVendor,
   convertToJob,
+  getQuoteForm,
+  submitVendorQuote,
 } from '../controllers/vendorRfqController';
 
 const router = Router();
+
+// ====== PUBLIC ROUTES (no auth required) ======
+// Vendor quote submission form
+router.get('/quote/:rfqId/:token', getQuoteForm);
+router.post('/quote/:rfqId/:token', submitVendorQuote);
 
 // List all RFQs with optional filters
 router.get('/', listRFQs);
