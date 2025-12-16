@@ -302,7 +302,7 @@ export function JobFormModal({
   if (!isOpen) return null;
 
   const calculateUnitPrice = (unitCost: number, markupPercent: number) => {
-    return Math.round(unitCost * (1 + markupPercent / 100) * 100) / 100;  // Round to 2 decimals
+    return Math.round(unitCost * (1 + markupPercent / 100) * 10000) / 10000;  // Round to 4 decimals for per-piece pricing
   };
 
   const handleLineItemChange = (index: number, field: string, value: any) => {
@@ -318,16 +318,16 @@ export function JobFormModal({
       const newCost = parseFloat(value) || 0;
       const currentPrice = updated[index].unitPrice;
       if (newCost > 0 && currentPrice > 0) {
-        // Markup% = ((Price - Cost) / Cost) * 100
-        updated[index].markupPercent = Math.round(((currentPrice - newCost) / newCost) * 100 * 100) / 100;
+        // Markup% = ((Price - Cost) / Cost) * 100 - round to 4 decimals
+        updated[index].markupPercent = Math.round(((currentPrice - newCost) / newCost) * 100 * 10000) / 10000;
       }
     } else if (field === 'unitPrice') {
       // Price changed → recalculate Markup% (keep Cost fixed)
       const newPrice = parseFloat(value) || 0;
       const currentCost = updated[index].unitCost;
       if (currentCost > 0) {
-        // Markup% = ((Price - Cost) / Cost) * 100
-        updated[index].markupPercent = Math.round(((newPrice - currentCost) / currentCost) * 100 * 100) / 100;
+        // Markup% = ((Price - Cost) / Cost) * 100 - round to 4 decimals
+        updated[index].markupPercent = Math.round(((newPrice - currentCost) / currentCost) * 100 * 10000) / 10000;
       }
     } else if (field === 'markupPercent') {
       // Markup% changed → recalculate Price (keep Cost fixed)
@@ -339,11 +339,11 @@ export function JobFormModal({
     setLineItems(updated);
   };
 
-  // Format numbers to 2 decimals on blur (not during typing)
+  // Format numbers to 4 decimals on blur (not during typing) - supports per-piece pricing
   const formatOnBlur = (index: number, field: string) => {
     const updated = [...lineItems];
     const value = parseFloat(updated[index][field]) || 0;
-    updated[index][field] = Math.round(value * 100) / 100;
+    updated[index][field] = Math.round(value * 10000) / 10000;
     setLineItems(updated);
   };
 
