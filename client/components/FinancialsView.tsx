@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Check, TrendingUp, Building2, Handshake, DollarSign } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { jobsApi, pdfApi } from '../lib/api';
 import { JobDetailModal } from './JobDetailModal';
 
@@ -29,8 +29,9 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
   const loadJobs = async () => {
     try {
       setLoading(true);
-      const jobsData = await jobsApi.getAll();
-      setJobs(jobsData);
+      const response = await jobsApi.getAll();
+      // API returns { jobs: [...], counts: {...} }
+      setJobs(response.jobs || []);
     } catch (error) {
       console.error('Failed to load jobs:', error);
     } finally {
@@ -258,43 +259,10 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
         </div>
       )}
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-5 gap-4 mb-4">
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <DollarSign className="w-4 h-4 text-green-600" />
-            <p className="text-xs text-gray-500 font-medium">Sell Price</p>
-          </div>
-          <p className="text-xl font-bold text-gray-900">{formatCurrency(totals.sellPrice)}</p>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <DollarSign className="w-4 h-4 text-red-600" />
-            <p className="text-xs text-gray-500 font-medium">Total Cost</p>
-          </div>
-          <p className="text-xl font-bold text-gray-900">{formatCurrency(totals.totalCost)}</p>
-        </div>
-        <div className="bg-blue-50 rounded-lg border border-blue-200 p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <TrendingUp className="w-4 h-4 text-blue-600" />
-            <p className="text-xs text-blue-600 font-medium">Spread (Profit)</p>
-          </div>
-          <p className="text-xl font-bold text-blue-700">{formatCurrency(totals.spread)}</p>
-        </div>
-        <div className="bg-orange-50 rounded-lg border border-orange-200 p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Building2 className="w-4 h-4 text-orange-600" />
-            <p className="text-xs text-orange-600 font-medium">Bradford Share</p>
-          </div>
-          <p className="text-xl font-bold text-orange-700">{formatCurrency(totals.bradfordTotal)}</p>
-        </div>
-        <div className="bg-blue-50 rounded-lg border border-blue-200 p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Handshake className="w-4 h-4 text-blue-600" />
-            <p className="text-xs text-blue-600 font-medium">Impact Share</p>
-          </div>
-          <p className="text-xl font-bold text-blue-700">{formatCurrency(totals.impactTotal)}</p>
-        </div>
+      {/* Total Summary */}
+      <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+        <p className="text-sm text-green-600 font-medium">Total Sell ({filteredJobs.length} jobs)</p>
+        <p className="text-2xl font-bold text-green-700">{formatCurrency(totals.sellPrice)}</p>
       </div>
 
       {/* Jobs Table */}
@@ -314,10 +282,8 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Customer PO #</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Customer</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Sell</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Cost</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Spread</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-orange-600 uppercase">Bradford</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-blue-600 uppercase">Impact</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Split</th>
               <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Customer Paid</th>
             </tr>
           </thead>
@@ -357,17 +323,15 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
                   <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-right font-semibold text-green-600 cursor-pointer">
                     {formatCurrency(fin.sellPrice)}
                   </td>
-                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-right font-semibold text-red-600 cursor-pointer">
-                    {formatCurrency(fin.totalCost)}
-                  </td>
                   <td onClick={() => handleRowClick(job)} className={`px-4 py-3 text-sm text-right font-bold cursor-pointer ${fin.spread >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
                     {formatCurrency(fin.spread)}
                   </td>
-                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-right font-semibold text-orange-600 cursor-pointer">
-                    {formatCurrency(fin.bradfordTotal)}
-                  </td>
-                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-right font-semibold text-blue-600 cursor-pointer">
-                    {formatCurrency(fin.impactTotal)}
+                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-right cursor-pointer relative group">
+                    <span className="font-semibold text-blue-600">{formatCurrency(fin.impactTotal)}</span>
+                    <div className="hidden group-hover:block absolute bg-gray-900 text-white text-xs p-2 rounded -top-12 right-0 whitespace-nowrap z-10 shadow-lg">
+                      <div className="text-orange-300">Bradford: {formatCurrency(fin.bradfordTotal)}</div>
+                      <div className="text-blue-300">Impact: {formatCurrency(fin.impactTotal)}</div>
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-sm text-center">
                     {job.customerPaymentDate ? (
@@ -394,10 +358,12 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
               <td className="px-4 py-3"></td>
               <td colSpan={3} className="px-4 py-3 text-sm font-bold">TOTALS ({filteredJobs.length} jobs)</td>
               <td className="px-4 py-3 text-sm text-right font-bold">{formatCurrency(totals.sellPrice)}</td>
-              <td className="px-4 py-3 text-sm text-right font-bold">{formatCurrency(totals.totalCost)}</td>
               <td className="px-4 py-3 text-sm text-right font-bold text-blue-400">{formatCurrency(totals.spread)}</td>
-              <td className="px-4 py-3 text-sm text-right font-bold text-orange-400">{formatCurrency(totals.bradfordTotal)}</td>
-              <td className="px-4 py-3 text-sm text-right font-bold text-blue-400">{formatCurrency(totals.impactTotal)}</td>
+              <td className="px-4 py-3 text-sm text-right font-bold">
+                <span className="text-orange-400">{formatCurrency(totals.bradfordTotal)}</span>
+                <span className="text-gray-500 mx-1">/</span>
+                <span className="text-blue-400">{formatCurrency(totals.impactTotal)}</span>
+              </td>
               <td className="px-4 py-3"></td>
             </tr>
           </tfoot>

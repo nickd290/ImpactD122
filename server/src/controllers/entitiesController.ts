@@ -214,6 +214,15 @@ export const createEntity = async (req: Request, res: Response) => {
     const { type, contacts, name, email, phone, address, ...rest } = req.body;
 
     if (type === 'VENDOR') {
+      // Auto-generate unique 4-digit vendor code
+      let vendorCode: string;
+      let isUnique = false;
+      while (!isUnique) {
+        vendorCode = Math.floor(1000 + Math.random() * 9000).toString();
+        const existing = await prisma.vendor.findUnique({ where: { vendorCode } });
+        if (!existing) isUnique = true;
+      }
+
       const vendor = await prisma.vendor.create({
         data: {
           id: crypto.randomUUID(),
@@ -221,6 +230,7 @@ export const createEntity = async (req: Request, res: Response) => {
           email: email || null,
           phone: phone || null,
           streetAddress: address || null,
+          vendorCode: vendorCode!,
           updatedAt: new Date(),
           contacts: contacts?.length ? {
             create: contacts.map((c: any) => ({

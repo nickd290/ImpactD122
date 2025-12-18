@@ -323,9 +323,29 @@ export async function receiveJobWebhook(req: Request, res: Response) {
             }
           });
 
-          // Generate PO number based on job number
-          const poCount = await prisma.purchaseOrder.count({ where: { jobId: job.id } });
-          const poNumber = `PO-${job.jobNo}-${String(poCount + 1).padStart(3, '0')}`;
+          // Ensure vendor has a code (auto-generate if missing)
+          let vendorCode = vendor.vendorCode;
+          if (!vendorCode) {
+            let isUnique = false;
+            while (!isUnique) {
+              vendorCode = Math.floor(1000 + Math.random() * 9000).toString();
+              const existing = await prisma.vendor.findUnique({ where: { vendorCode } });
+              if (!existing) isUnique = true;
+            }
+            await prisma.vendor.update({
+              where: { id: vendor.id },
+              data: { vendorCode },
+            });
+          }
+
+          // Count existing POs for this job to this vendor
+          const existingPOCount = await prisma.purchaseOrder.count({
+            where: { jobId: job.id, targetVendorId: vendor.id },
+          });
+          const sequenceNum = existingPOCount + 1;
+
+          // New PO format: {jobNo}-{vendorCode}.{seq} (jobNo already has J- prefix)
+          const poNumber = `${job.jobNo}-${vendorCode}.${sequenceNum}`;
 
           // Create PO: Impact → Vendor (e.g., ThreeZ)
           purchaseOrder = await prisma.purchaseOrder.create({

@@ -974,55 +974,100 @@ interface ThreadInitOptions {
 function getCustomerWelcomeEmailHtml(job: any, jobEmailAddress: string, options?: ThreadInitOptions): string {
   const jobNo = job.jobNo;
   const specs = job.specs || {};
-
-  // Build specs table if requested
-  let specsHtml = '';
-  if (options?.includeJobSpecs) {
-    const specsRows = [];
-    if (job.description) specsRows.push(`<tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Description</td><td style="padding: 8px; border-bottom: 1px solid #eee;">${job.description}</td></tr>`);
-    if (job.sizeName || specs.finishedSize) specsRows.push(`<tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Size</td><td style="padding: 8px; border-bottom: 1px solid #eee;">${job.sizeName || specs.finishedSize}</td></tr>`);
-    if (job.quantity) specsRows.push(`<tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Quantity</td><td style="padding: 8px; border-bottom: 1px solid #eee;">${Number(job.quantity).toLocaleString()}</td></tr>`);
-    if (job.dueDate) specsRows.push(`<tr><td style="padding: 8px; color: #666;">Due Date</td><td style="padding: 8px;">${new Date(job.dueDate).toLocaleDateString()}</td></tr>`);
-
-    if (specsRows.length > 0) {
-      specsHtml = `
-        <h3 style="color: #1A1A1A; margin-top: 20px;">Your Order Details</h3>
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; background-color: #f9fafb; border-radius: 8px;">
-          ${specsRows.join('')}
-        </table>
-      `;
-    }
-  }
+  const productType = specs.productType || job.title || 'Print Job';
+  const quantity = job.quantity ? Number(job.quantity).toLocaleString() : 'TBD';
+  const dueDate = job.dueDate || job.deliveryDate
+    ? new Date(job.dueDate || job.deliveryDate).toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      })
+    : 'TBD';
+  const customerName = job.Company?.name || 'Valued Customer';
 
   return `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <div style="background-color: #FF8C42; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-        <h1 style="color: white; margin: 0; font-size: 24px;">Your Print Order</h1>
-        <p style="color: white; margin: 10px 0 0 0; font-size: 18px;">Job #${jobNo}</p>
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+      <div style="background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); padding: 30px; border-radius: 8px 8px 0 0;">
+        <h1 style="color: white; margin: 0; font-size: 24px;">Order Confirmed</h1>
+        <p style="color: #dbeafe; margin: 5px 0 0 0;">Job #${jobNo}</p>
       </div>
 
-      <div style="padding: 25px; background-color: #ffffff;">
-        <p style="font-size: 16px; color: #333;">Thank you for your order with Impact Direct Printing!</p>
+      <div style="padding: 25px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+        <p>Dear ${customerName},</p>
 
-        ${options?.customMessage ? `<p style="font-size: 16px; color: #333;">${options.customMessage}</p>` : ''}
+        <p>Thank you for your order! Here's what happens next:</p>
 
-        ${specsHtml}
+        ${options?.customMessage ? `<p style="color: #333;">${options.customMessage}</p>` : ''}
 
-        <div style="background-color: #dbeafe; border: 2px solid #3b82f6; border-radius: 8px; padding: 20px; margin: 25px 0;">
-          <h3 style="margin: 0 0 10px 0; color: #1e40af; font-size: 16px;">Communication for This Project</h3>
-          <p style="margin: 0; color: #333;">
-            <strong>Please keep all communication on this email thread</strong> regarding your project. This includes artwork submissions, questions, status updates, change requests, and any other correspondence about this job.
-          </p>
+        <div style="background: #f3f4f6; border-radius: 8px; padding: 20px; margin: 20px 0;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 10px 0; vertical-align: top; width: 50px;">
+                <div style="background: #2563eb; color: white; width: 30px; height: 30px; border-radius: 50%; text-align: center; line-height: 30px; font-weight: bold;">1</div>
+              </td>
+              <td style="padding: 10px 0;">
+                <strong style="color: #1e40af;">PROOF REVIEW</strong><br/>
+                <span style="color: #6b7280; font-size: 14px;">You'll receive a proof shortly for your approval. Please review carefully and approve to proceed to production.</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 10px 0; vertical-align: top;">
+                <div style="background: #2563eb; color: white; width: 30px; height: 30px; border-radius: 50%; text-align: center; line-height: 30px; font-weight: bold;">2</div>
+              </td>
+              <td style="padding: 10px 0;">
+                <strong style="color: #1e40af;">PRODUCTION</strong><br/>
+                <span style="color: #6b7280; font-size: 14px;">Once approved, we'll begin manufacturing your order.</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 10px 0; vertical-align: top;">
+                <div style="background: #2563eb; color: white; width: 30px; height: 30px; border-radius: 50%; text-align: center; line-height: 30px; font-weight: bold;">3</div>
+              </td>
+              <td style="padding: 10px 0;">
+                <strong style="color: #1e40af;">DELIVERY</strong><br/>
+                <span style="color: #6b7280; font-size: 14px;">When complete, you'll receive tracking information for shipment to your location.</span>
+              </td>
+            </tr>
+          </table>
         </div>
 
-        <p style="color: #666; font-size: 14px;">Simply reply to this email and we'll receive your message. We'll keep you updated on the progress of your order through this thread.</p>
-      </div>
+        <div style="background: #dbeafe; border: 1px solid #3b82f6; border-radius: 8px; padding: 15px; margin: 20px 0;">
+          <strong style="color: #1e40af;">Keep all communication on this thread</strong>
+          <p style="margin: 5px 0 0 0; color: #1e3a5f; font-size: 14px;">Reply to this email for questions, artwork submissions, or any updates about your project.</p>
+        </div>
 
-      <hr style="border: none; border-top: 1px solid #ccc; margin: 0;" />
+        <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; margin-top: 25px;">
+          <h3 style="margin: 0 0 10px 0; color: #374151; font-size: 16px;">Order Details</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 5px 0; color: #6b7280;">Job #:</td>
+              <td style="padding: 5px 0; font-weight: 600;">${jobNo}</td>
+            </tr>
+            <tr>
+              <td style="padding: 5px 0; color: #6b7280;">Product:</td>
+              <td style="padding: 5px 0; font-weight: 600;">${productType}</td>
+            </tr>
+            <tr>
+              <td style="padding: 5px 0; color: #6b7280;">Quantity:</td>
+              <td style="padding: 5px 0; font-weight: 600;">${quantity}</td>
+            </tr>
+            <tr>
+              <td style="padding: 5px 0; color: #6b7280;">Due Date:</td>
+              <td style="padding: 5px 0; font-weight: 600;">${dueDate}</td>
+            </tr>
+          </table>
+        </div>
 
-      <div style="padding: 20px; text-align: center;">
-        <p style="color: #666; font-size: 12px; margin: 0;">
+        <p style="margin-top: 25px;">Questions? Reply to this email or call us at (330) 963-0970.</p>
+
+        <p>Thank you for choosing Impact Direct Printing!</p>
+
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 25px 0;" />
+
+        <p style="color: #9ca3af; font-size: 12px; margin: 0;">
           Impact Direct Printing<br />
+          (330) 963-0970<br />
           brandon@impactdirectprinting.com
         </p>
       </div>

@@ -14,6 +14,8 @@ import emailRouter from './routes/email';
 import communicationsRouter from './routes/communications';
 import webhooksRouter from './routes/webhooks';
 import vendorRfqRouter from './routes/vendorRfq';
+import portalRouter from './routes/portal';
+import filesRouter from './routes/files';
 
 // Load environment variables
 // Use path relative to this file to find .env in the server directory
@@ -53,6 +55,8 @@ app.use('/api/email', emailRouter);
 app.use('/api/communications', communicationsRouter);
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/vendor-rfqs', vendorRfqRouter);
+app.use('/api', portalRouter);
+app.use('/api', filesRouter);
 
 // Serve frontend in production
 if (process.env.NODE_ENV === 'production') {

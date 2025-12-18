@@ -310,6 +310,17 @@ function transformJob(job: any) {
       paidAt: inv.paidAt,
     })),
     hasPaidInvoice: (job.Invoice || []).some((inv: any) => inv.paidAt !== null) || job.customerPaymentDate !== null,
+
+    // Vendor portal status (from JobPortal model)
+    portal: job.JobPortal ? {
+      confirmedAt: job.JobPortal.confirmedAt,
+      confirmedByName: job.JobPortal.confirmedByName,
+      confirmedByEmail: job.JobPortal.confirmedByEmail,
+      vendorStatus: job.JobPortal.vendorStatus,
+      statusUpdatedAt: job.JobPortal.statusUpdatedAt,
+      trackingNumber: job.JobPortal.trackingNumber,
+      trackingCarrier: job.JobPortal.trackingCarrier,
+    } : null,
   };
 }
 
@@ -403,6 +414,7 @@ export const getJob = async (req: Request, res: Response) => {
           },
         },
         ProfitSplit: true, // NEW: Include cached profit split
+        JobPortal: true, // Vendor portal status tracking
       },
     });
 
@@ -673,10 +685,33 @@ export const createJob = async (req: Request, res: Response) => {
 
       // Check if vendor exists and is NOT a Bradford partner
       if (vendor && !vendor.isPartner) {
-        const timestamp = Date.now();
         const vendorTotalCost = lineItems?.reduce((sum: number, item: any) => {
           return sum + ((parseInt(item.quantity) || 0) * (parseFloat(item.unitCost) || 0));
         }, 0) || 0;
+
+        // Ensure vendor has a code (auto-generate if missing for existing vendors)
+        let vendorCode = vendor.vendorCode;
+        if (!vendorCode) {
+          let isUnique = false;
+          while (!isUnique) {
+            vendorCode = Math.floor(1000 + Math.random() * 9000).toString();
+            const existing = await prisma.vendor.findUnique({ where: { vendorCode } });
+            if (!existing) isUnique = true;
+          }
+          await prisma.vendor.update({
+            where: { id: vendorId },
+            data: { vendorCode },
+          });
+        }
+
+        // Count existing POs for this job to get sequence number
+        const existingPOCount = await prisma.purchaseOrder.count({
+          where: { jobId, targetVendorId: { not: null } },
+        });
+        const sequenceNum = existingPOCount + 1;
+
+        // New PO format: {jobNo}-{vendorCode}.{seq} (jobNo already has J- prefix)
+        const poNumber = `${jobNo}-${vendorCode}.${sequenceNum}`;
 
         // Create PO: Impact Direct → Vendor
         const vendorPO = await prisma.purchaseOrder.create({
@@ -685,7 +720,7 @@ export const createJob = async (req: Request, res: Response) => {
             jobId,
             originCompanyId: 'impact-direct',
             targetVendorId: vendorId,
-            poNumber: `PO-${jobNo}-IV-${timestamp}`,
+            poNumber,
             description: `Impact to ${vendor.name} - ${title || 'Job'} x ${quantity}`,
             buyCost: vendorTotalCost > 0 ? vendorTotalCost : null,
             status: 'PENDING',
@@ -783,6 +818,7 @@ export const updateJob = async (req: Request, res: Response) => {
       dueDate,
       customerId,
       vendorId,
+      notes,
       quantity: inputQuantity,
       sellPrice: inputSellPrice,
       sizeName: inputSizeName,
@@ -828,6 +864,7 @@ export const updateJob = async (req: Request, res: Response) => {
     if (dueDate !== undefined) updateData.deliveryDate = dueDate ? new Date(dueDate) : null;
     if (customerId !== undefined) updateData.customerId = customerId;
     if (vendorId !== undefined) updateData.vendorId = vendorId;
+    if (notes !== undefined) updateData.notes = notes;
 
     // Handle specs - merge lineItems into specs if either changed
     if (specs !== undefined || lineItems !== undefined) {
@@ -1821,22 +1858,63 @@ export const createJobPO = async (req: Request, res: Response) => {
     let originCompanyId: string;
     let targetCompanyId: string | null = null;
     let targetVendorId: string | null = null;
+    let poNumber: string;
 
     if (poType === 'bradford-jd') {
       // Bradford → JD Graphic (internal tracking, NOT Impact's cost)
       originCompanyId = 'bradford';
       targetCompanyId = 'jd-graphic';
+
+      // Keep existing format for Bradford→JD POs
+      const timestamp = Date.now();
+      const random = Math.random().toString(36).substring(2, 6);
+      poNumber = `PO-BJ-${timestamp}-${random}`;
     } else {
       // Impact → Vendor (counts as our cost) - default
       originCompanyId = 'impact-direct';
       targetVendorId = vendorId || null;
-    }
 
-    // Generate unique PO number with type prefix and random suffix
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2, 6);
-    const prefix = poType === 'bradford-jd' ? 'BJ' : 'IV';
-    const poNumber = `PO-${prefix}-${timestamp}-${random}`;
+      // New PO format: J-{jobNo}-{vendorCode}.{seq}
+      if (vendorId) {
+        // Fetch vendor to get vendorCode
+        const vendor = await prisma.vendor.findUnique({ where: { id: vendorId } });
+
+        if (vendor) {
+          // Ensure vendor has a code (auto-generate if missing)
+          let vendorCode = vendor.vendorCode;
+          if (!vendorCode) {
+            let isUnique = false;
+            while (!isUnique) {
+              vendorCode = Math.floor(1000 + Math.random() * 9000).toString();
+              const existing = await prisma.vendor.findUnique({ where: { vendorCode } });
+              if (!existing) isUnique = true;
+            }
+            await prisma.vendor.update({
+              where: { id: vendorId },
+              data: { vendorCode },
+            });
+          }
+
+          // Count existing POs for this job to this vendor
+          const existingPOCount = await prisma.purchaseOrder.count({
+            where: { jobId, targetVendorId: vendorId },
+          });
+          const sequenceNum = existingPOCount + 1;
+
+          poNumber = `${job.jobNo}-${vendorCode}.${sequenceNum}`;
+        } else {
+          // Vendor not found, use fallback format
+          const timestamp = Date.now();
+          const random = Math.random().toString(36).substring(2, 6);
+          poNumber = `PO-IV-${timestamp}-${random}`;
+        }
+      } else {
+        // No vendor specified, use fallback format
+        const timestamp = Date.now();
+        const random = Math.random().toString(36).substring(2, 6);
+        poNumber = `PO-IV-${timestamp}-${random}`;
+      }
+    }
 
     const po = await prisma.purchaseOrder.create({
       data: {

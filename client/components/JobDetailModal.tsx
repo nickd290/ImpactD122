@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   X, Calendar, User, Package, FileText, Edit2, Mail, Printer, Receipt,
-  DollarSign, Plus, Trash2, Building2, Check, Save, Download, AlertTriangle, Send, ChevronDown, Link, ExternalLink, MessageSquare
+  DollarSign, Plus, Trash2, Building2, Check, Save, Download, AlertTriangle, Send, ChevronDown, Link, ExternalLink, MessageSquare, Upload, Truck
 } from 'lucide-react';
 import { EditableField } from './EditableField';
 import { pdfApi, emailApi, communicationsApi } from '../lib/api';
@@ -163,6 +163,16 @@ interface Job {
   invoiceEmailedCount?: number;
   artworkEmailedAt?: string;
   artworkEmailedTo?: string;
+  // Vendor portal status
+  portal?: {
+    confirmedAt?: string;
+    confirmedByName?: string;
+    confirmedByEmail?: string;
+    vendorStatus?: 'PENDING' | 'PO_RECEIVED' | 'IN_PRODUCTION' | 'PRINTING_COMPLETE' | 'SHIPPED';
+    statusUpdatedAt?: string;
+    trackingNumber?: string;
+    trackingCarrier?: string;
+  } | null;
 }
 
 interface JobDetailModalProps {
@@ -227,7 +237,13 @@ export function JobDetailModal({
   const [showEmailInvoiceModal, setShowEmailInvoiceModal] = useState(false);
   const [showEmailDropdown, setShowEmailDropdown] = useState(false);
   const [emailType, setEmailType] = useState<'invoice' | 'po' | null>(null);
-  const [selectedPOForEmail, setSelectedPOForEmail] = useState<{id: string; poNumber: string; vendorName: string; vendorEmail?: string} | null>(null);
+  const [selectedPOForEmail, setSelectedPOForEmail] = useState<{
+    id: string;
+    poNumber: string;
+    vendorName: string;
+    vendorEmail?: string;
+    vendorContacts?: Array<{ id: string; name: string; email: string; title?: string; isPrimary?: boolean }>;
+  } | null>(null);
 
   // Artwork notification state
   const [artworkUrl, setArtworkUrl] = useState('');
@@ -236,6 +252,19 @@ export function JobDetailModal({
 
   // Specs display state
   const [showAllSpecs, setShowAllSpecs] = useState(false);
+
+  // Send proof to customer state
+  const [showSendProofModal, setShowSendProofModal] = useState(false);
+  const [selectedProofFiles, setSelectedProofFiles] = useState<any[]>([]);
+  const [proofMessage, setProofMessage] = useState('');
+  const [isSendingProof, setIsSendingProof] = useState(false);
+
+  // File upload state
+  const [uploadedFiles, setUploadedFiles] = useState<any[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Fetch vendors when edit mode is enabled OR when adding PO
   useEffect(() => {
@@ -312,6 +341,19 @@ export function JobDetailModal({
     }
   }, [job?.id]);
 
+  // Fetch uploaded files when job changes
+  useEffect(() => {
+    if (job?.id) {
+      fetch(`/api/jobs/${job.id}/files`)
+        .then(res => res.json())
+        .then(files => setUploadedFiles(files || []))
+        .catch(() => setUploadedFiles([]));
+    } else {
+      setUploadedFiles([]);
+    }
+    setUploadError('');
+  }, [job?.id]);
+
   // Fetch pending communications count for badge - MUST be before early return
   const { data: commData } = useQuery({
     queryKey: ['communications', job?.id],
@@ -336,6 +378,62 @@ export function JobDetailModal({
       style: 'currency',
       currency: 'USD',
     }).format(amount);
+  };
+
+  // File upload handler
+  const handleFileUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0 || !job?.id) return;
+    setUploadError('');
+    setIsUploading(true);
+
+    for (const file of Array.from(files)) {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('kind', 'ARTWORK');
+
+      try {
+        const response = await fetch(`/api/jobs/${job.id}/files`, {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Upload failed');
+        }
+
+        const result = await response.json();
+        setUploadedFiles(prev => [...prev, result.file]);
+      } catch (error: any) {
+        setUploadError(error.message || 'Failed to upload file');
+      }
+    }
+    setIsUploading(false);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // File delete handler
+  const handleDeleteFile = async (fileId: string) => {
+    if (!job?.id) return;
+    try {
+      const response = await fetch(`/api/jobs/${job.id}/files/${fileId}`, {
+        method: 'DELETE',
+      });
+      if (response.ok) {
+        setUploadedFiles(prev => prev.filter(f => f.id !== fileId));
+      }
+    } catch (error) {
+      console.error('Failed to delete file:', error);
+    }
+  };
+
+  // Format file size
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
   // Calculate totals - ensure all values are numbers (database may return strings)
@@ -1024,6 +1122,170 @@ export function JobDetailModal({
           )}
         </div>
       )}
+
+      {/* Vendor Status Section */}
+      {job.portal && (
+        <div className="bg-card border border-border rounded-lg p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Truck className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase">Vendor Status</span>
+          </div>
+          <div className="space-y-2">
+            {/* Confirmation Status */}
+            <div className="flex items-center gap-2">
+              {job.portal.confirmedAt ? (
+                <>
+                  <Check className="w-4 h-4 text-green-600" />
+                  <span className="text-sm text-foreground">
+                    Confirmed by {job.portal.confirmedByName}
+                    <span className="text-muted-foreground ml-1">
+                      ({new Date(job.portal.confirmedAt).toLocaleDateString()})
+                    </span>
+                  </span>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="w-4 h-4 text-amber-500" />
+                  <span className="text-sm text-amber-600">Awaiting PO confirmation</span>
+                </>
+              )}
+            </div>
+
+            {/* Production Status Badge */}
+            {job.portal.vendorStatus && job.portal.vendorStatus !== 'PENDING' && (
+              <div className="flex items-center gap-2">
+                <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${
+                  job.portal.vendorStatus === 'SHIPPED' ? 'bg-green-100 text-green-700' :
+                  job.portal.vendorStatus === 'PRINTING_COMPLETE' ? 'bg-blue-100 text-blue-700' :
+                  job.portal.vendorStatus === 'IN_PRODUCTION' ? 'bg-purple-100 text-purple-700' :
+                  'bg-gray-100 text-gray-700'
+                }`}>
+                  {job.portal.vendorStatus === 'PO_RECEIVED' ? 'PO Received' :
+                   job.portal.vendorStatus === 'IN_PRODUCTION' ? 'In Production' :
+                   job.portal.vendorStatus === 'PRINTING_COMPLETE' ? 'Printing Complete' :
+                   job.portal.vendorStatus === 'SHIPPED' ? 'Shipped' :
+                   job.portal.vendorStatus}
+                </span>
+                {job.portal.statusUpdatedAt && (
+                  <span className="text-[10px] text-muted-foreground">
+                    Updated {new Date(job.portal.statusUpdatedAt).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Tracking Info */}
+            {job.portal.vendorStatus === 'SHIPPED' && job.portal.trackingNumber && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">Tracking:</span>
+                <span className="font-mono text-foreground">
+                  {job.portal.trackingCarrier && `${job.portal.trackingCarrier}: `}
+                  {job.portal.trackingNumber}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* File Upload Section */}
+      <div className="bg-card border border-border rounded-lg p-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Upload className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase">Files</span>
+          </div>
+          {uploadedFiles.length > 0 && (
+            <span className="text-[10px] text-muted-foreground">{uploadedFiles.length} file{uploadedFiles.length !== 1 ? 's' : ''}</span>
+          )}
+        </div>
+
+        {/* Drag & Drop Zone */}
+        <div
+          className={`relative border-2 border-dashed rounded-lg p-3 text-center transition-colors ${
+            isDragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
+          }`}
+          onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={(e) => { e.preventDefault(); setIsDragging(false); handleFileUpload(e.dataTransfer.files); }}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            onChange={(e) => handleFileUpload(e.target.files)}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            accept="*/*"
+          />
+          <Upload className="w-5 h-5 mx-auto text-muted-foreground mb-1" />
+          <p className="text-xs text-muted-foreground">
+            {isUploading ? 'Uploading...' : 'Drop files or click to browse'}
+          </p>
+        </div>
+
+        {/* Upload Error */}
+        {uploadError && (
+          <p className="mt-2 text-xs text-destructive">{uploadError}</p>
+        )}
+
+        {/* Uploaded Files List */}
+        {uploadedFiles.length > 0 && (
+          <div className="mt-2 space-y-1">
+            {uploadedFiles.map((file) => (
+              <div key={file.id} className="flex items-center justify-between p-2 bg-muted/50 rounded text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                  <span className="truncate">{file.fileName}</span>
+                  <span className="text-muted-foreground flex-shrink-0">{formatFileSize(file.size)}</span>
+                  {file.kind === 'VENDOR_PROOF' && (
+                    <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-semibold rounded flex-shrink-0">
+                      VENDOR PROOF
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {file.kind === 'VENDOR_PROOF' && job.customer?.email && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedProofFiles([file]);
+                        setShowSendProofModal(true);
+                      }}
+                      className="p-1 text-primary hover:bg-primary/10 rounded"
+                      title="Send to customer"
+                    >
+                      <Send className="w-3 h-3" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteFile(file.id)}
+                    className="p-1 text-destructive hover:bg-destructive/10 rounded"
+                    title="Delete file"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Send All Proofs Button */}
+        {uploadedFiles.filter(f => f.kind === 'VENDOR_PROOF').length > 0 && job.customer?.email && (
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedProofFiles(uploadedFiles.filter(f => f.kind === 'VENDOR_PROOF'));
+              setShowSendProofModal(true);
+            }}
+            className="mt-2 w-full px-3 py-2 bg-primary/10 text-primary text-sm font-medium rounded hover:bg-primary/20 flex items-center justify-center gap-2"
+          >
+            <Send className="w-4 h-4" />
+            Send {uploadedFiles.filter(f => f.kind === 'VENDOR_PROOF').length} Proof{uploadedFiles.filter(f => f.kind === 'VENDOR_PROOF').length !== 1 ? 's' : ''} to Customer
+          </button>
+        )}
+      </div>
 
       {/* Paper Details - Condensed */}
       {job.paperData && (
@@ -2185,8 +2447,9 @@ export function JobDetailModal({
                                 setSelectedPOForEmail({
                                   id: po.id,
                                   poNumber: po.poNumber,
-                                  vendorName: po.targetCompany?.name || 'Vendor',
-                                  vendorEmail: po.targetCompany?.email
+                                  vendorName: po.vendor?.name || po.targetCompany?.name || job.vendor?.name || 'Vendor',
+                                  vendorEmail: po.vendor?.email || po.targetCompany?.email || job.vendor?.email,
+                                  vendorContacts: po.vendor?.contacts || job.vendor?.contacts || [],
                                 });
                                 setShowEmailDropdown(false);
                               }}
@@ -2310,6 +2573,11 @@ export function JobDetailModal({
           poNumber={selectedPOForEmail.poNumber}
           defaultEmail={selectedPOForEmail.vendorEmail || ''}
           recipientName={selectedPOForEmail.vendorName}
+          vendorInfo={{
+            email: selectedPOForEmail.vendorEmail,
+            name: selectedPOForEmail.vendorName,
+            contacts: selectedPOForEmail.vendorContacts,
+          }}
           onClose={() => setSelectedPOForEmail(null)}
           onSuccess={() => {
             setSelectedPOForEmail(null);
@@ -2392,6 +2660,110 @@ export function JobDetailModal({
                   <>
                     <Send className="w-4 h-4" />
                     Send Notification
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Send Proof to Customer Modal */}
+      {showSendProofModal && job && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[80]">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">Send Proof to Customer</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Recipient</label>
+                <p className="text-sm bg-gray-50 p-2 rounded border border-gray-200">
+                  <span className="font-medium">{job.customer?.name}</span>
+                  <span className="text-gray-500 ml-2">({job.customer?.email || 'No email'})</span>
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Files to Send ({selectedProofFiles.length})</label>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {selectedProofFiles.map(file => (
+                    <div key={file.id} className="flex items-center justify-between text-sm bg-purple-50 p-2 rounded border border-purple-200">
+                      <span className="truncate">{file.fileName}</span>
+                      <button
+                        onClick={() => setSelectedProofFiles(prev => prev.filter(f => f.id !== file.id))}
+                        className="text-gray-400 hover:text-red-500 ml-2"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Message (optional)
+                </label>
+                <textarea
+                  value={proofMessage}
+                  onChange={(e) => setProofMessage(e.target.value)}
+                  placeholder="Add a personal message to the customer..."
+                  className="w-full h-24 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
+                />
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-xs text-blue-700">
+                  The customer will receive a branded email with the proof files attached and instructions to approve or request changes.
+                </p>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowSendProofModal(false);
+                  setSelectedProofFiles([]);
+                  setProofMessage('');
+                }}
+                disabled={isSendingProof}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (!job.customer?.email || selectedProofFiles.length === 0) return;
+                  setIsSendingProof(true);
+                  try {
+                    await emailApi.sendProofToCustomer(
+                      job.id,
+                      job.customer.email,
+                      selectedProofFiles.map(f => f.id),
+                      proofMessage || undefined
+                    );
+                    setShowSendProofModal(false);
+                    setSelectedProofFiles([]);
+                    setProofMessage('');
+                    onRefresh?.();
+                  } catch (error: any) {
+                    alert(error.message || 'Failed to send proof');
+                  } finally {
+                    setIsSendingProof(false);
+                  }
+                }}
+                disabled={isSendingProof || !job.customer?.email || selectedProofFiles.length === 0}
+                className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary/90 disabled:bg-gray-400 flex items-center gap-2"
+              >
+                {isSendingProof ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" />
+                    Send Proof
                   </>
                 )}
               </button>

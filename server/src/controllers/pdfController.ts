@@ -21,6 +21,8 @@ function transformJobForPDF(job: any) {
     title: job.title || '',
     status: job.status,
     notes: job.notes || '',
+    quantity: quantity,
+    sizeName: job.sizeName || '',
     customerPONumber: job.customerPONumber || '',
     vendorPONumber: job.customerPONumber || job.jobNo, // Use as PO number
     invoiceNumber: job.jobNo, // Use job number as invoice number
@@ -204,6 +206,12 @@ export const generateVendorPO = async (req: Request, res: Response) => {
     });
 
     const transformedJob = transformJobForPDF(job);
+
+    // DEBUG: Log line items to verify unitCost values
+    const specsObj = job.specs as Record<string, any> | null;
+    console.log('📋 Vendor PO - Job specs.lineItems:', JSON.stringify(specsObj?.lineItems, null, 2));
+    console.log('📋 Vendor PO - Transformed lineItems:', JSON.stringify(transformedJob.lineItems, null, 2));
+
     const pdfBuffer = generateVendorPOPDF(transformedJob);
 
     res.contentType('application/pdf');

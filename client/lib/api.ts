@@ -153,15 +153,30 @@ export const emailApi = {
       method: 'POST',
       body: JSON.stringify({ recipientEmail }),
     }),
-  sendPO: (poId: string, recipientEmail: string) =>
+  sendPO: (
+    poId: string,
+    recipientEmails: string | string[],
+    options?: {
+      artworkFilesLink?: string;
+      specialInstructions?: string;
+    }
+  ) =>
     apiFetch(`/email/po/${poId}`, {
       method: 'POST',
-      body: JSON.stringify({ recipientEmail }),
+      body: JSON.stringify({
+        recipientEmails: Array.isArray(recipientEmails) ? recipientEmails : [recipientEmails],
+        ...options,
+      }),
     }),
   sendArtworkNotification: (jobId: string, artworkUrl: string) =>
     apiFetch(`/email/artwork/${jobId}`, {
       method: 'POST',
       body: JSON.stringify({ artworkUrl }),
+    }),
+  sendProofToCustomer: (jobId: string, recipientEmail: string, fileIds: string[], message?: string) =>
+    apiFetch(`/email/proof/${jobId}`, {
+      method: 'POST',
+      body: JSON.stringify({ recipientEmail, fileIds, message }),
     }),
 };
 
@@ -239,6 +254,29 @@ export const communicationsApi = {
       method: 'POST',
       body: JSON.stringify({ customMessage }),
     }),
+};
+
+// Portal API - Public vendor job portal (no auth required)
+export const portalApi = {
+  // Get portal data by token
+  getPortalData: async (token: string) => {
+    const response = await fetch(`${API_BASE_URL}/portal/${token}`);
+    if (response.status === 410) {
+      throw new Error('expired');
+    }
+    if (!response.ok) {
+      throw new Error('Portal not found');
+    }
+    return response.json();
+  },
+  // Download PO (opens in new tab)
+  downloadPO: (token: string) => {
+    window.open(`${API_BASE_URL}/portal/${token}/po`, '_blank');
+  },
+  // Download file (opens in new tab)
+  downloadFile: (token: string, fileId: string) => {
+    window.open(`${API_BASE_URL}/portal/${token}/files/${fileId}`, '_blank');
+  },
 };
 
 // Vendor RFQ API - Request for Quotes from vendors

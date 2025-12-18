@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Plus, Trash2, Upload, FileText, Image, File as FileIcon, Loader2 } from 'lucide-react';
 import { getBradfordSizes, getBradfordPricing, isBradfordSize, BRADFORD_SIZE_PRICING } from '../utils/bradfordPricing';
 
 interface JobFormModalProps {
@@ -214,6 +214,132 @@ export function JobFormModal({
   const [sellPrice, setSellPrice] = useState<string>(initialData?.sellPrice ? String(initialData.sellPrice) : '');
   const [sellPriceError, setSellPriceError] = useState<string>('');
   const [overrideSellPrice, setOverrideSellPrice] = useState(false);
+
+  // File upload state
+  const [uploadedFiles, setUploadedFiles] = useState<any[]>([]); // Already uploaded (for existing jobs)
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]); // Queued for upload (for new jobs)
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string>('');
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch existing files when editing a job
+  useEffect(() => {
+    if (isOpen && initialData?.id) {
+      fetch(`/api/jobs/${initialData.id}/files`)
+        .then(res => res.json())
+        .then(files => setUploadedFiles(files || []))
+        .catch(() => setUploadedFiles([]));
+    } else {
+      setUploadedFiles([]);
+    }
+    // Clear pending files when modal opens/closes
+    setPendingFiles([]);
+    setUploadError('');
+  }, [isOpen, initialData?.id]);
+
+  // File selection handler - works for both new and existing jobs
+  const handleFileSelect = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploadError('');
+
+    if (initialData?.id) {
+      // Existing job: upload immediately
+      setIsUploading(true);
+      for (const file of Array.from(files)) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('kind', 'ARTWORK');
+
+        try {
+          const response = await fetch(`/api/jobs/${initialData.id}/files`, {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Upload failed');
+          }
+
+          const result = await response.json();
+          setUploadedFiles(prev => [...prev, result.file]);
+        } catch (error: any) {
+          setUploadError(error.message || 'Failed to upload file');
+        }
+      }
+      setIsUploading(false);
+    } else {
+      // New job: queue files for later upload
+      setPendingFiles(prev => [...prev, ...Array.from(files)]);
+    }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // Upload pending files after job creation
+  const uploadPendingFiles = async (jobId: string) => {
+    for (const file of pendingFiles) {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('kind', 'ARTWORK');
+
+      try {
+        await fetch(`/api/jobs/${jobId}/files`, {
+          method: 'POST',
+          body: formData,
+        });
+      } catch (error) {
+        console.error('Failed to upload file:', file.name, error);
+      }
+    }
+  };
+
+  // Delete file handler
+  const handleDeleteFile = async (fileId: string, isPending: boolean = false) => {
+    if (isPending) {
+      // Remove from pending files (for new jobs)
+      setPendingFiles(prev => prev.filter((_, idx) => `pending-${idx}` !== fileId));
+    } else if (initialData?.id) {
+      // Delete from server (for existing jobs)
+      try {
+        const response = await fetch(`/api/jobs/${initialData.id}/files/${fileId}`, {
+          method: 'DELETE',
+        });
+        if (response.ok) {
+          setUploadedFiles(prev => prev.filter(f => f.id !== fileId));
+        }
+      } catch (error) {
+        console.error('Failed to delete file:', error);
+      }
+    }
+  };
+
+  // Remove pending file by index
+  const removePendingFile = (index: number) => {
+    setPendingFiles(prev => prev.filter((_, idx) => idx !== index));
+  };
+
+  // Get file icon based on type
+  const getFileIcon = (fileName: string) => {
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    if (['jpg', 'jpeg', 'png', 'gif', 'tif', 'tiff', 'psd', 'ai', 'eps'].includes(ext || '')) {
+      return <Image className="w-5 h-5 text-blue-500" />;
+    }
+    if (['pdf'].includes(ext || '')) {
+      return <FileText className="w-5 h-5 text-red-500" />;
+    }
+    return <FileIcon className="w-5 h-5 text-gray-500" />;
+  };
+
+  // Format file size
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
 
   // Auto-sync sellPrice from line items total (when not overridden)
   useEffect(() => {
@@ -434,6 +560,8 @@ export function JobFormModal({
       financials: financialsData,
       bradfordCut: !isBradfordVendor && bradfordCut > 0 ? bradfordCut : null,
       bradfordPaperLbs: specs.paperLbs ? parseFloat(specs.paperLbs as any) : null,
+      // Include pending files for upload after job creation
+      pendingFiles: pendingFiles.length > 0 ? pendingFiles : undefined,
     });
     onClose();
   };
@@ -476,6 +604,68 @@ export function JobFormModal({
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="p-6 space-y-6">
+            {/* FILE UPLOAD - Prominent at top */}
+            <div className="bg-green-100 border-2 border-green-400 rounded-lg p-4">
+              <h3 className="text-lg font-bold text-green-800 mb-3 flex items-center gap-2">
+                <Upload className="w-6 h-6" />
+                {initialData?.id ? 'Upload Files' : 'Add Files to Job'}
+              </h3>
+
+              <div
+                className={`relative border-2 border-dashed rounded-lg p-4 text-center transition-colors bg-white ${
+                  isDragging ? 'border-green-500 bg-green-50' : 'border-green-400 hover:border-green-500'
+                }`}
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(e) => { e.preventDefault(); setIsDragging(false); handleFileSelect(e.dataTransfer.files); }}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  onChange={(e) => handleFileSelect(e.target.files)}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  accept="*/*"
+                />
+                <Upload className="w-8 h-8 mx-auto text-green-600 mb-2" />
+                <p className="text-sm font-medium text-gray-700">
+                  {isUploading ? 'Uploading...' : 'Drop files here or click to browse'}
+                </p>
+              </div>
+
+              {/* Pending files for new jobs */}
+              {pendingFiles.length > 0 && (
+                <div className="mt-3 space-y-1">
+                  <p className="text-xs font-medium text-amber-700">Pending ({pendingFiles.length}):</p>
+                  {pendingFiles.map((file, idx) => (
+                    <div key={idx} className="flex items-center justify-between bg-amber-50 p-2 rounded text-sm">
+                      <span className="truncate">{file.name}</span>
+                      <button type="button" onClick={() => removePendingFile(idx)} className="text-red-500 ml-2">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Uploaded files for existing jobs */}
+              {uploadedFiles.length > 0 && (
+                <div className="mt-3 space-y-1">
+                  <p className="text-xs font-medium text-green-700">Uploaded ({uploadedFiles.length}):</p>
+                  {uploadedFiles.map((file) => (
+                    <div key={file.id} className="flex items-center justify-between bg-green-50 p-2 rounded text-sm">
+                      <span className="truncate">{file.fileName}</span>
+                      <button type="button" onClick={() => handleDeleteFile(file.id)} className="text-red-500 ml-2">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {uploadError && <p className="mt-2 text-sm text-red-600">{uploadError}</p>}
+            </div>
+
             {/* Basic Info */}
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -900,7 +1090,143 @@ export function JobFormModal({
                   </p>
                 )}
               </div>
+
             </div>
+
+            {/* File Upload Section - Always visible */}
+            <div className="border-t pt-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <Upload className="w-5 h-5 text-green-600" />
+                Upload Files to Job
+              </h3>
+
+              <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+                <p className="text-sm text-green-700 mb-3">
+                  {initialData?.id
+                    ? 'Upload artwork, proofs, or data files. These will be available in the vendor portal.'
+                    : 'Add files now - they will be uploaded when you create the job.'}
+                </p>
+
+                {/* Drag & Drop Zone */}
+                <div
+                  className={`relative border-2 border-dashed rounded-lg p-6 text-center transition-colors bg-white ${
+                    isDragging
+                      ? 'border-green-500 bg-green-50'
+                      : 'border-green-300 hover:border-green-400'
+                  }`}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDragging(true);
+                  }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                    handleFileSelect(e.dataTransfer.files);
+                  }}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    onChange={(e) => handleFileSelect(e.target.files)}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    accept="*/*"
+                  />
+                  <Upload className="w-10 h-10 mx-auto text-green-500 mb-2" />
+                  <p className="text-sm text-gray-700">
+                    {isUploading ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Uploading...
+                      </span>
+                    ) : (
+                      <>
+                        <span className="font-medium">Drag & drop files here</span>, or <span className="text-green-600 font-medium underline">click to browse</span>
+                      </>
+                    )}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Images, PDFs, AI, EPS, PSD, ZIP, CSV, Excel (max 50MB each)
+                  </p>
+                </div>
+
+                {/* Upload Error */}
+                {uploadError && (
+                  <p className="mt-2 text-sm text-red-600">{uploadError}</p>
+                )}
+
+                {/* Pending Files (for new jobs) */}
+                {pendingFiles.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    <h5 className="text-xs font-medium text-amber-700 uppercase tracking-wide">
+                      Files to Upload ({pendingFiles.length}) - Will upload when job is created
+                    </h5>
+                    {pendingFiles.map((file, index) => (
+                      <div
+                        key={`pending-${index}`}
+                        className="flex items-center justify-between p-2 bg-amber-50 rounded border border-amber-200"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          {getFileIcon(file.name)}
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">
+                              {file.name}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {formatFileSize(file.size)} • Pending upload
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removePendingFile(index)}
+                          className="p-1 text-red-500 hover:bg-red-50 rounded"
+                          title="Remove file"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Uploaded Files List (for existing jobs) */}
+                {uploadedFiles.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    <h5 className="text-xs font-medium text-green-700 uppercase tracking-wide">
+                      Uploaded Files ({uploadedFiles.length})
+                    </h5>
+                    {uploadedFiles.map((file) => (
+                      <div
+                        key={file.id}
+                        className="flex items-center justify-between p-2 bg-white rounded border border-green-200"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          {getFileIcon(file.fileName)}
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">
+                              {file.fileName}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {formatFileSize(file.size)} • {file.kind}
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteFile(file.id)}
+                            className="p-1 text-red-500 hover:bg-red-50 rounded"
+                            title="Delete file"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
 
             {/* Paper Source Section */}
             <div className="border-t pt-6">

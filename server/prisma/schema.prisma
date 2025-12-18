@@ -131,6 +131,7 @@ model Job {
   status                    JobStatus        @default(ACTIVE)
   title                     String?
   description               String?
+  notes                     String?
   specs                     Json
 
   // === EXTERNAL PORTAL INTEGRATION ===
@@ -240,6 +241,7 @@ model Job {
   Shipment                  Shipment[]
   ProfitSplit               ProfitSplit?     // Calculated profit split for this job
   VendorRFQs                VendorRFQ[]      // RFQs linked to this job
+  JobPortal                 JobPortal?       // Shareable portal for vendor access
 
   @@index([customerId])
   @@index([paperSource])
@@ -266,6 +268,44 @@ model JobActivity {
 
   @@index([createdAt])
   @@index([jobId])
+}
+
+// ============================================
+// JOB PORTAL - Shareable file links for vendors
+// ============================================
+model JobPortal {
+  id          String    @id @default(cuid())
+  jobId       String    @unique
+  shareToken  String    @unique       // Random token for URL access
+  expiresAt   DateTime                // 14 days from creation
+  accessedAt  DateTime?               // Last access time
+  accessCount Int       @default(0)   // How many times viewed
+  createdAt   DateTime  @default(now())
+
+  // Vendor PO Confirmation
+  purchaseOrderId   String?
+  confirmedAt       DateTime?
+  confirmedByName   String?
+  confirmedByEmail  String?
+
+  // Vendor Status Tracking
+  vendorStatus      VendorPortalStatus  @default(PENDING)
+  statusUpdatedAt   DateTime?
+  trackingNumber    String?
+  trackingCarrier   String?
+
+  Job         Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([shareToken])
+  @@index([expiresAt])
+}
+
+enum VendorPortalStatus {
+  PENDING
+  PO_RECEIVED
+  IN_PRODUCTION
+  PRINTING_COMPLETE
+  SHIPPED
 }
 
 // ============================================
@@ -531,6 +571,11 @@ model PurchaseOrder {
   emailedAt                                      DateTime? // When PO was emailed to vendor
   emailedTo                                      String?   // Email address PO was sent to
 
+  // PO Email Enhancement
+  artworkFilesLink                               String?   // URL for artwork (Dropbox, Drive, etc.)
+  specialInstructions                            String?   @db.Text  // Vendor-specific notes
+  pdfUrl                                         String?   // R2-hosted PDF link
+
   Job                                            Job?      @relation(fields: [jobId], references: [id])
   Company_PurchaseOrder_originCompanyIdToCompany Company   @relation("PurchaseOrder_originCompanyIdToCompany", fields: [originCompanyId], references: [id])
   File                                           File?     @relation(fields: [pdfFileId], references: [id])
@@ -595,19 +640,21 @@ model SampleShipment {
 }
 
 model Shipment {
-  id                String              @id
-  jobId             String
-  carrier           String
-  trackingNo        String?
-  weight            Decimal?
-  boxes             Int?
-  scheduledAt       DateTime?
-  shippedAt         DateTime?
-  deliveredAt       DateTime?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime
-  Job               Job                 @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  ShipmentRecipient ShipmentRecipient[]
+  id                 String              @id
+  jobId              String
+  carrier            String
+  trackingNo         String?
+  weight             Decimal?
+  boxes              Int?
+  scheduledAt        DateTime?
+  shippedAt          DateTime?
+  deliveredAt        DateTime?
+  trackingEmailedAt  DateTime?           // When tracking notification was sent
+  trackingEmailedTo  String?             // Email address tracking was sent to
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime
+  Job                Job                 @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  ShipmentRecipient  ShipmentRecipient[]
 
   @@index([jobId])
   @@index([trackingNo])
@@ -724,6 +771,7 @@ enum FileKind {
   PROOF
   INVOICE
   PO_PDF
+  VENDOR_PROOF
 }
 
 enum JobStatus {

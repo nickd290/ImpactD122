@@ -491,6 +491,11 @@ export function POManager({
           poNumber={emailingPO.poNumber}
           defaultEmail={emailingPO.vendor?.email || emailingPO.targetVendor?.email || ''}
           recipientName={emailingPO.vendor?.name || emailingPO.targetVendor?.name || ''}
+          vendorInfo={{
+            email: emailingPO.vendor?.email || emailingPO.targetVendor?.email,
+            name: emailingPO.vendor?.name || emailingPO.targetVendor?.name,
+            contacts: (emailingPO.vendor as any)?.contacts || [],
+          }}
           onClose={() => setEmailingPO(null)}
           onSuccess={() => {
             setEmailingPO(null);

@@ -9,13 +9,21 @@ if (apiKey) {
   console.warn('⚠️ SENDGRID_API_KEY not set - email functionality disabled');
 }
 
+interface EmailAttachment {
+  content: string; // base64 encoded
+  filename: string;
+  type?: string;
+  disposition?: string;
+}
+
 interface SendEmailOptions {
-  to: string;
+  to: string | string[];
   cc?: string | string[];
   subject: string;
   body: string;
   attachmentBuffer?: Buffer;
   attachmentFilename?: string;
+  attachments?: EmailAttachment[]; // Support multiple attachments
   replyTo?: string; // Job-specific email for thread management
 }
 
@@ -64,16 +72,31 @@ async function sendEmail(options: SendEmailOptions): Promise<EmailResult> {
     msg.replyTo = options.replyTo;
   }
 
-  // Add attachment if provided
+  // Add attachments if provided
+  const allAttachments: any[] = [];
+
+  // Single attachment (legacy support)
   if (options.attachmentBuffer && options.attachmentFilename) {
-    msg.attachments = [
-      {
-        content: options.attachmentBuffer.toString('base64'),
-        filename: options.attachmentFilename,
-        type: 'application/pdf',
-        disposition: 'attachment',
-      },
-    ];
+    allAttachments.push({
+      content: options.attachmentBuffer.toString('base64'),
+      filename: options.attachmentFilename,
+      type: 'application/pdf',
+      disposition: 'attachment',
+    });
+  }
+
+  // Multiple attachments
+  if (options.attachments && options.attachments.length > 0) {
+    allAttachments.push(...options.attachments.map(att => ({
+      content: att.content,
+      filename: att.filename,
+      type: att.type || 'application/octet-stream',
+      disposition: att.disposition || 'attachment',
+    })));
+  }
+
+  if (allAttachments.length > 0) {
+    msg.attachments = allAttachments;
   }
 
   try {
@@ -131,9 +154,78 @@ function getInvoiceEmailBody(job: any, customerName: string): string {
 }
 
 // Generate email body for PO
-function getPOEmailBody(po: any, vendorName: string, job: any): string {
+function getPOEmailBody(
+  po: any,
+  vendorName: string,
+  job: any,
+  options?: {
+    artworkFilesLink?: string;
+    specialInstructions?: string;
+    pdfUrl?: string;
+    portalUrl?: string;
+  }
+): string {
   const poNumber = po.poNumber || po.id;
   const buyCost = po.buyCost ? `$${Number(po.buyCost).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '';
+
+  // Job specs for email body
+  const specs = job?.specs || {};
+  const quantity = job?.quantity ? Number(job.quantity).toLocaleString() : '';
+  const sizeName = job?.sizeName || specs.finishedSize || '';
+  const dueDate = job?.dueDate ? new Date(job.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+  const mailDate = job?.mailDate ? new Date(job.mailDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+
+  // Build specs rows
+  const specsRows: string[] = [];
+  if (quantity) specsRows.push(`<tr><td style="padding: 6px 12px; color: #666;">Quantity:</td><td style="padding: 6px 12px; font-weight: 500;">${quantity}</td></tr>`);
+  if (sizeName) specsRows.push(`<tr><td style="padding: 6px 12px; color: #666;">Size:</td><td style="padding: 6px 12px; font-weight: 500;">${sizeName}</td></tr>`);
+  if (specs.paperType) specsRows.push(`<tr><td style="padding: 6px 12px; color: #666;">Paper:</td><td style="padding: 6px 12px; font-weight: 500;">${specs.paperType}</td></tr>`);
+  if (specs.colors) specsRows.push(`<tr><td style="padding: 6px 12px; color: #666;">Colors:</td><td style="padding: 6px 12px; font-weight: 500;">${specs.colors}</td></tr>`);
+  if (specs.finishing) specsRows.push(`<tr><td style="padding: 6px 12px; color: #666;">Finishing:</td><td style="padding: 6px 12px; font-weight: 500;">${specs.finishing}</td></tr>`);
+  if (dueDate) specsRows.push(`<tr><td style="padding: 6px 12px; color: #666;">Due Date:</td><td style="padding: 6px 12px; font-weight: 500;">${dueDate}</td></tr>`);
+  if (mailDate) specsRows.push(`<tr><td style="padding: 6px 12px; color: #666;">Mail Date:</td><td style="padding: 6px 12px; font-weight: 500;">${mailDate}</td></tr>`);
+
+  // Job specs table
+  const specsSection = specsRows.length > 0 ? `
+      <div style="background: #f3f4f6; padding: 16px; border-radius: 8px; margin: 16px 0;">
+        <strong style="color: #374151; font-size: 14px;">JOB SPECIFICATIONS</strong>
+        <table style="width: 100%; margin-top: 8px; border-collapse: collapse;">
+          ${specsRows.join('')}
+        </table>
+      </div>
+  ` : '';
+
+  // Portal link section (prominent green box)
+  const portalSection = options?.portalUrl ? `
+      <div style="background: #dcfce7; padding: 16px; border-radius: 8px; margin: 20px 0; border: 2px solid #22c55e; text-align: center;">
+        <strong style="color: #166534; font-size: 16px;">📁 Access Job Portal</strong><br/>
+        <p style="color: #166534; margin: 8px 0 12px 0; font-size: 13px;">Download PO, artwork, and all job files:</p>
+        <a href="${options.portalUrl}" style="display: inline-block; background: #22c55e; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: bold;">
+          Open Job Portal →
+        </a>
+      </div>
+  ` : '';
+
+  // Artwork link section (blue box)
+  const artworkSection = options?.artworkFilesLink ? `
+      <div style="background: #dbeafe; padding: 12px; border-radius: 6px; margin: 16px 0; border: 1px solid #3b82f6;">
+        <strong style="color: #1e40af;">Artwork Files:</strong><br/>
+        <a href="${options.artworkFilesLink}" style="color: #2563eb; word-break: break-all;">${options.artworkFilesLink}</a>
+      </div>
+  ` : '';
+
+  // Special instructions section (yellow box)
+  const instructionsSection = (options?.specialInstructions || specs.specialInstructions) ? `
+      <div style="background: #fef9c3; padding: 12px; border-radius: 6px; margin: 16px 0; border: 1px solid #eab308;">
+        <strong style="color: #a16207;">⚠️ Special Instructions:</strong><br/>
+        <span style="white-space: pre-wrap;">${options?.specialInstructions || specs.specialInstructions}</span>
+      </div>
+  ` : '';
+
+  // PDF link section
+  const pdfLinkSection = options?.pdfUrl ? `
+      <p><a href="${options.pdfUrl}" style="color: #2563eb;">View/Download PO PDF</a></p>
+  ` : '';
 
   return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -141,11 +233,17 @@ function getPOEmailBody(po: any, vendorName: string, job: any): string {
 
       <p>Dear ${vendorName},</p>
 
-      <p>Please find attached the Purchase Order #${poNumber}${job?.jobNo ? ` for Job #${job.jobNo}` : ''}.</p>
+      <p>Please find attached the Purchase Order #${poNumber}${job?.jobNo ? ` for Job #${job.jobNo}` : ''}${job?.title ? ` - ${job.title}` : ''}.</p>
 
       ${buyCost ? `<p><strong>PO Amount:</strong> ${buyCost}</p>` : ''}
 
-      <p>Please confirm receipt and let us know if you have any questions.</p>
+      ${specsSection}
+      ${portalSection}
+      ${artworkSection}
+      ${instructionsSection}
+      ${pdfLinkSection}
+
+      <p>Please confirm receipt by replying to this email.</p>
 
       <p>Thank you!</p>
 
@@ -153,7 +251,7 @@ function getPOEmailBody(po: any, vendorName: string, job: any): string {
 
       <p style="color: #666; font-size: 12px;">
         Impact Direct Printing<br />
-        brandon@impactdirectprinting.com
+        Reply to this email and it will be attached to Job #${job?.jobNo || 'N/A'}
       </p>
     </div>
   `;
@@ -196,34 +294,82 @@ const VENDOR_PO_CC_EMAIL = 'nick@jdgraphic.com';
 export async function sendPOEmail(
   po: any,
   job: any,
-  recipientEmail: string,
-  vendorName: string
-): Promise<EmailResult> {
+  recipientEmail: string | string[],
+  vendorName: string,
+  options?: {
+    artworkFilesLink?: string;
+    specialInstructions?: string;
+    jobFiles?: Array<{ content: string; filename: string; mimeType: string }>; // Base64 encoded files
+    portalUrl?: string; // Link to vendor portal for file downloads
+  }
+): Promise<EmailResult & { pdfUrl?: string }> {
   try {
     // Generate PDF - include Job's artworkToFollow flag from specs AND PO's buyCost
+    // Plus the new PO-specific fields
     const jobWithPOData = {
       ...job,
       artworkToFollow: job.specs?.artworkToFollow || false,
       buyCost: po.buyCost ? Number(po.buyCost) : 0,
+      poArtworkFilesLink: options?.artworkFilesLink,
+      poSpecialInstructions: options?.specialInstructions,
     };
     const pdfBuffer = generateVendorPOPDF(jobWithPOData);
 
     const jobNo = job.jobNo || job.id;
     const poNumber = po.poNumber || po.id;
-    const subject = `Purchase Order #${poNumber} - Impact Direct Printing`;
-    const body = getPOEmailBody(po, vendorName, job);
     const filename = `PO-${poNumber}.pdf`;
+
+    // Upload PDF to R2 if configured
+    let pdfUrl: string | undefined;
+    try {
+      const { uploadPDF, isR2Configured } = await import('./storageService');
+      if (isR2Configured()) {
+        pdfUrl = await uploadPDF(pdfBuffer, filename);
+        console.log('📄 PDF uploaded to R2:', pdfUrl);
+      }
+    } catch (uploadError) {
+      console.warn('⚠️ R2 upload failed, continuing without hosted PDF:', uploadError);
+    }
+
+    const subject = `Purchase Order #${poNumber} - Impact Direct Printing`;
+    const body = getPOEmailBody(po, vendorName, job, {
+      artworkFilesLink: options?.artworkFilesLink,
+      specialInstructions: options?.specialInstructions,
+      pdfUrl,
+      portalUrl: options?.portalUrl,
+    });
     const replyTo = getJobEmailAddress(jobNo);
 
-    return await sendEmail({
+    // Build additional attachments from job files
+    const additionalAttachments: EmailAttachment[] = [];
+    if (options?.jobFiles && options.jobFiles.length > 0) {
+      for (const file of options.jobFiles) {
+        additionalAttachments.push({
+          content: file.content,
+          filename: file.filename,
+          type: file.mimeType,
+          disposition: 'attachment',
+        });
+      }
+    }
+
+    // Determine CC - exclude if already in recipient list to avoid SendGrid duplicate error
+    const recipientList = Array.isArray(recipientEmail) ? recipientEmail : [recipientEmail];
+    const recipientLower = recipientList.map(e => e.toLowerCase().trim());
+    const ccEmail = recipientLower.includes(VENDOR_PO_CC_EMAIL.toLowerCase()) ? undefined : VENDOR_PO_CC_EMAIL;
+
+    const result = await sendEmail({
       to: recipientEmail,
-      cc: VENDOR_PO_CC_EMAIL,
+      cc: ccEmail,
       subject,
       body,
       attachmentBuffer: pdfBuffer,
       attachmentFilename: filename,
+      attachments: additionalAttachments.length > 0 ? additionalAttachments : undefined,
       replyTo,
     });
+
+    return { ...result, pdfUrl };
   } catch (error: any) {
     console.error('Error sending PO email:', error);
     return { success: false, error: error.message || 'Failed to generate or send PO' };
@@ -810,5 +956,456 @@ export async function sendThreeZPOEmail(
       errors: error.response?.body?.errors,
     });
     return { success: false, error: error.message || 'Failed to send ThreeZ email' };
+  }
+}
+
+// ============================================
+// CUSTOMER ORDER CONFIRMATION EMAIL
+// ============================================
+function getCustomerConfirmationEmailBody(job: any, customerName: string): string {
+  const jobNo = job.jobNo || job.id;
+  const specs = job.specs || {};
+  const productType = specs.productType || job.title || 'Print Job';
+  const quantity = job.quantity ? job.quantity.toLocaleString() : 'TBD';
+  const dueDate = job.deliveryDate
+    ? new Date(job.deliveryDate).toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      })
+    : 'TBD';
+
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+      <div style="background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); padding: 30px; border-radius: 8px 8px 0 0;">
+        <h1 style="color: white; margin: 0; font-size: 24px;">Order Confirmed</h1>
+        <p style="color: #dbeafe; margin: 5px 0 0 0;">Job #${jobNo}</p>
+      </div>
+
+      <div style="padding: 25px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+        <p>Dear ${customerName},</p>
+
+        <p>Thank you for your order! Here's what happens next:</p>
+
+        <div style="background: #f3f4f6; border-radius: 8px; padding: 20px; margin: 20px 0;">
+          <div style="display: flex; margin-bottom: 15px;">
+            <div style="background: #2563eb; color: white; width: 30px; height: 30px; border-radius: 50%; text-align: center; line-height: 30px; font-weight: bold; margin-right: 15px;">1</div>
+            <div>
+              <strong style="color: #1e40af;">PROOF REVIEW</strong><br/>
+              <span style="color: #6b7280;">You'll receive a proof shortly for your approval. Please review carefully and approve to proceed to production.</span>
+            </div>
+          </div>
+
+          <div style="display: flex; margin-bottom: 15px;">
+            <div style="background: #2563eb; color: white; width: 30px; height: 30px; border-radius: 50%; text-align: center; line-height: 30px; font-weight: bold; margin-right: 15px;">2</div>
+            <div>
+              <strong style="color: #1e40af;">PRODUCTION</strong><br/>
+              <span style="color: #6b7280;">Once approved, we'll begin manufacturing your order.</span>
+            </div>
+          </div>
+
+          <div style="display: flex;">
+            <div style="background: #2563eb; color: white; width: 30px; height: 30px; border-radius: 50%; text-align: center; line-height: 30px; font-weight: bold; margin-right: 15px;">3</div>
+            <div>
+              <strong style="color: #1e40af;">DELIVERY</strong><br/>
+              <span style="color: #6b7280;">When complete, you'll receive tracking information for shipment to your location.</span>
+            </div>
+          </div>
+        </div>
+
+        <p style="color: #6b7280;">Questions? Reply to this email or call us at (330) 963-0970.</p>
+
+        <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; margin-top: 25px;">
+          <h3 style="margin: 0 0 10px 0; color: #374151; font-size: 16px;">Order Details</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 5px 0; color: #6b7280;">Job #:</td>
+              <td style="padding: 5px 0; font-weight: 600;">${jobNo}</td>
+            </tr>
+            <tr>
+              <td style="padding: 5px 0; color: #6b7280;">Product:</td>
+              <td style="padding: 5px 0; font-weight: 600;">${productType}</td>
+            </tr>
+            <tr>
+              <td style="padding: 5px 0; color: #6b7280;">Quantity:</td>
+              <td style="padding: 5px 0; font-weight: 600;">${quantity}</td>
+            </tr>
+            <tr>
+              <td style="padding: 5px 0; color: #6b7280;">Due Date:</td>
+              <td style="padding: 5px 0; font-weight: 600;">${dueDate}</td>
+            </tr>
+          </table>
+        </div>
+
+        <p style="margin-top: 25px;">Thank you for choosing Impact Direct Printing!</p>
+
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 25px 0;" />
+
+        <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+          Impact Direct Printing<br />
+          (330) 963-0970<br />
+          brandon@impactdirectprinting.com
+        </p>
+      </div>
+    </div>
+  `;
+}
+
+export async function sendCustomerConfirmationEmail(
+  job: any,
+  recipientEmail: string,
+  customerName: string
+): Promise<EmailResult> {
+  try {
+    const jobNo = job.jobNo || job.id;
+    const subject = `Order Confirmed - Job #${jobNo} - Impact Direct Printing`;
+    const body = getCustomerConfirmationEmailBody(job, customerName);
+    const replyTo = getJobEmailAddress(jobNo);
+
+    return await sendEmail({
+      to: recipientEmail,
+      subject,
+      body,
+      replyTo,
+    });
+  } catch (error: any) {
+    console.error('Error sending customer confirmation email:', error);
+    return { success: false, error: error.message || 'Failed to send confirmation email' };
+  }
+}
+
+// ============================================
+// SHIPMENT TRACKING EMAIL
+// ============================================
+function getShipmentTrackingEmailBody(
+  job: any,
+  shipment: any,
+  customerName: string
+): string {
+  const jobNo = job.jobNo || job.id;
+  const carrier = shipment.carrier || 'Carrier';
+  const trackingNumber = shipment.trackingNo || shipment.trackingNumber || '';
+  const productTitle = job.title || 'Print Job';
+
+  // Generate tracking URL based on carrier
+  let trackingUrl = '';
+  if (trackingNumber) {
+    const carrierLower = carrier.toLowerCase();
+    if (carrierLower.includes('ups')) {
+      trackingUrl = `https://www.ups.com/track?tracknum=${trackingNumber}`;
+    } else if (carrierLower.includes('fedex')) {
+      trackingUrl = `https://www.fedex.com/fedextrack/?trknbr=${trackingNumber}`;
+    } else if (carrierLower.includes('usps')) {
+      trackingUrl = `https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`;
+    } else if (carrierLower.includes('dhl')) {
+      trackingUrl = `https://www.dhl.com/en/express/tracking.html?AWB=${trackingNumber}`;
+    }
+  }
+
+  const trackingSection = trackingUrl
+    ? `<a href="${trackingUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; margin-top: 10px;">Track Your Package</a>`
+    : `<p style="font-family: monospace; font-size: 16px; background: #f3f4f6; padding: 10px; border-radius: 4px;">${trackingNumber}</p>`;
+
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+      <div style="background: linear-gradient(135deg, #059669 0%, #10b981 100%); padding: 30px; border-radius: 8px 8px 0 0; text-align: center;">
+        <div style="font-size: 48px; margin-bottom: 10px;">📦</div>
+        <h1 style="color: white; margin: 0; font-size: 24px;">Your Order Has Shipped!</h1>
+        <p style="color: #d1fae5; margin: 5px 0 0 0;">Job #${jobNo}</p>
+      </div>
+
+      <div style="padding: 25px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+        <p>Hi ${customerName},</p>
+
+        <p>Great news! Your order is on its way.</p>
+
+        <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
+          <h3 style="margin: 0 0 10px 0; color: #166534;">Tracking Information</h3>
+          <p style="margin: 5px 0; color: #6b7280;">Carrier: <strong>${carrier}</strong></p>
+          <p style="margin: 5px 0; color: #6b7280;">Tracking #: <strong>${trackingNumber}</strong></p>
+          ${trackingSection}
+        </div>
+
+        <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; margin-top: 25px;">
+          <h3 style="margin: 0 0 10px 0; color: #374151; font-size: 16px;">Order Details</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 5px 0; color: #6b7280;">Job #:</td>
+              <td style="padding: 5px 0; font-weight: 600;">${jobNo}</td>
+            </tr>
+            <tr>
+              <td style="padding: 5px 0; color: #6b7280;">Product:</td>
+              <td style="padding: 5px 0; font-weight: 600;">${productTitle}</td>
+            </tr>
+          </table>
+        </div>
+
+        <p style="margin-top: 25px;">Thank you for your business!</p>
+
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 25px 0;" />
+
+        <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+          Impact Direct Printing<br />
+          (330) 963-0970<br />
+          brandon@impactdirectprinting.com
+        </p>
+      </div>
+    </div>
+  `;
+}
+
+export async function sendShipmentTrackingEmail(
+  job: any,
+  shipment: any,
+  recipientEmail: string,
+  customerName: string
+): Promise<EmailResult> {
+  try {
+    const jobNo = job.jobNo || job.id;
+    const subject = `Your Order Has Shipped - Job #${jobNo} - Impact Direct Printing`;
+    const body = getShipmentTrackingEmailBody(job, shipment, customerName);
+    const replyTo = getJobEmailAddress(jobNo);
+
+    return await sendEmail({
+      to: recipientEmail,
+      subject,
+      body,
+      replyTo,
+    });
+  } catch (error: any) {
+    console.error('Error sending shipment tracking email:', error);
+    return { success: false, error: error.message || 'Failed to send tracking email' };
+  }
+}
+
+// ============================================
+// VENDOR PO EMAIL WITH PORTAL LINK
+// ============================================
+function getVendorPOWithPortalEmailBody(
+  po: any,
+  vendorName: string,
+  job: any,
+  portalUrl: string,
+  options?: {
+    specialInstructions?: string;
+  }
+): string {
+  const poNumber = po.poNumber || po.id;
+  const jobNo = job.jobNo || job.id;
+  const buyCost = po.buyCost ? `$${Number(po.buyCost).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '';
+  const dueDate = job.deliveryDate
+    ? new Date(job.deliveryDate).toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      })
+    : 'TBD';
+
+  const instructionsSection = options?.specialInstructions ? `
+    <div style="background: #fef9c3; border: 1px solid #fde047; border-radius: 8px; padding: 15px; margin: 20px 0;">
+      <h4 style="margin: 0 0 10px 0; color: #854d0e;">Special Instructions:</h4>
+      <p style="margin: 0; white-space: pre-wrap; color: #713f12;">${options.specialInstructions}</p>
+    </div>
+  ` : '';
+
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+      <div style="padding: 25px; border: 1px solid #e5e7eb; border-radius: 8px;">
+        <h2 style="margin: 0 0 5px 0; color: #1f2937;">Purchase Order #${poNumber}</h2>
+        <p style="margin: 0 0 20px 0; color: #6b7280;">Job #${jobNo}</p>
+
+        <p>${vendorName},</p>
+
+        <p>Please find your purchase order details below.</p>
+
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+          <tr>
+            <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #e5e7eb;">PO #:</td>
+            <td style="padding: 8px 0; font-weight: 600; border-bottom: 1px solid #e5e7eb;">${poNumber}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #e5e7eb;">Job #:</td>
+            <td style="padding: 8px 0; font-weight: 600; border-bottom: 1px solid #e5e7eb;">${jobNo}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #e5e7eb;">Due Date:</td>
+            <td style="padding: 8px 0; font-weight: 600; border-bottom: 1px solid #e5e7eb;">${dueDate}</td>
+          </tr>
+          ${buyCost ? `
+          <tr>
+            <td style="padding: 8px 0; color: #6b7280;">PO Amount:</td>
+            <td style="padding: 8px 0; font-weight: 600;">${buyCost}</td>
+          </tr>
+          ` : ''}
+        </table>
+
+        <div style="background: #eff6ff; border: 1px solid #3b82f6; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
+          <h4 style="margin: 0 0 10px 0; color: #1e40af;">ACCESS FILES</h4>
+          <p style="margin: 0 0 15px 0; color: #6b7280;">Click below to view PO PDF and artwork files</p>
+          <a href="${portalUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600;">View Files</a>
+        </div>
+
+        ${instructionsSection}
+
+        <p>Questions? Reply to this email.</p>
+
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 25px 0;" />
+
+        <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+          Impact Direct Printing<br />
+          (330) 963-0970<br />
+          brandon@impactdirectprinting.com
+        </p>
+      </div>
+    </div>
+  `;
+}
+
+export async function sendVendorPOWithPortalEmail(
+  po: any,
+  job: any,
+  recipientEmail: string,
+  vendorName: string,
+  portalUrl: string,
+  options?: {
+    specialInstructions?: string;
+  }
+): Promise<EmailResult> {
+  try {
+    const jobNo = job.jobNo || job.id;
+    const poNumber = po.poNumber || po.id;
+    const subject = `Purchase Order #${poNumber} - ${job.title || 'Job #' + jobNo}`;
+    const body = getVendorPOWithPortalEmailBody(po, vendorName, job, portalUrl, options);
+    const replyTo = getJobEmailAddress(jobNo);
+
+    // Exclude CC if recipient is the same to avoid SendGrid duplicate error
+    const ccEmail = recipientEmail.toLowerCase().trim() === VENDOR_PO_CC_EMAIL.toLowerCase()
+      ? undefined
+      : VENDOR_PO_CC_EMAIL;
+
+    return await sendEmail({
+      to: recipientEmail,
+      cc: ccEmail,
+      subject,
+      body,
+      replyTo,
+    });
+  } catch (error: any) {
+    console.error('Error sending vendor PO with portal email:', error);
+    return { success: false, error: error.message || 'Failed to send PO email' };
+  }
+}
+
+// ============================================
+// CUSTOMER PROOF EMAIL
+// ============================================
+
+function getCustomerProofEmailBody(
+  job: any,
+  customerName: string,
+  fileNames: string[],
+  customMessage?: string
+): string {
+  const jobNo = job.jobNo || job.id;
+  const productTitle = job.title || 'Print Job';
+
+  const filesList = fileNames.map(name => `<li style="padding: 4px 0;">${name}</li>`).join('');
+
+  const messageSection = customMessage ? `
+    <div style="background: #f3f4f6; padding: 15px; border-radius: 6px; margin: 20px 0;">
+      <p style="margin: 0; color: #374151; white-space: pre-wrap;">${customMessage}</p>
+    </div>
+  ` : '';
+
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+      <div style="background: #1A1A1A; padding: 25px 30px;">
+        <h1 style="color: white; margin: 0; font-size: 22px; font-weight: 600;">IMPACT DIRECT PRINTING</h1>
+        <p style="color: #9CA3AF; margin: 5px 0 0 0; font-size: 14px;">Your Proof is Ready for Review</p>
+      </div>
+
+      <div style="padding: 25px 30px; border: 1px solid #e5e7eb; border-top: none;">
+        <p style="font-size: 15px;">Hi ${customerName},</p>
+
+        <p style="font-size: 15px; line-height: 1.6;">
+          Your proof for <strong>Job #${jobNo}</strong> - ${productTitle} is ready for review.
+        </p>
+
+        <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 15px; margin: 20px 0;">
+          <p style="margin: 0 0 10px 0; font-weight: 600; color: #1e40af;">📎 Attached Files:</p>
+          <ul style="margin: 0; padding-left: 20px; color: #374151;">
+            ${filesList}
+          </ul>
+        </div>
+
+        ${messageSection}
+
+        <div style="background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; padding: 15px; margin: 20px 0;">
+          <p style="margin: 0; font-weight: 600; color: #92400e;">⚠️ IMPORTANT</p>
+          <p style="margin: 8px 0 0 0; color: #78350f; font-size: 14px;">
+            Please reply with <strong>"APPROVED"</strong> to proceed with printing, or let us know what changes are needed.
+          </p>
+        </div>
+
+        <p style="font-size: 14px; color: #6b7280;">
+          Questions? Reply to this email or call us at (330) 963-0970.
+        </p>
+
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 25px 0;" />
+
+        <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+          Impact Direct Printing<br />
+          (330) 963-0970<br />
+          brandon@impactdirectprinting.com
+        </p>
+      </div>
+    </div>
+  `;
+}
+
+export async function sendCustomerProofEmail(
+  job: any,
+  recipientEmail: string,
+  customerName: string,
+  attachments: Array<{ content: string; filename: string; mimeType: string }>,
+  customMessage?: string
+): Promise<EmailResult> {
+  try {
+    const jobNo = job.jobNo || job.id;
+    const fileNames = attachments.map(a => a.filename);
+    const subject = `Proof Ready for Review - Job #${jobNo} - Impact Direct Printing`;
+    const body = getCustomerProofEmailBody(job, customerName, fileNames, customMessage);
+    const replyTo = getJobEmailAddress(jobNo);
+
+    // Convert attachments to email format
+    const emailAttachments: EmailAttachment[] = attachments.map(a => ({
+      content: a.content,
+      filename: a.filename,
+      type: a.mimeType,
+      disposition: 'attachment',
+    }));
+
+    const result = await sendEmail({
+      to: recipientEmail,
+      subject,
+      body,
+      attachments: emailAttachments,
+      replyTo,
+    });
+
+    if (result.success) {
+      console.log('📧 Customer proof email sent:', {
+        to: recipientEmail,
+        jobNo,
+        fileCount: attachments.length,
+      });
+    }
+
+    return result;
+  } catch (error: any) {
+    console.error('Error sending customer proof email:', error);
+    return { success: false, error: error.message || 'Failed to send proof email' };
   }
 }

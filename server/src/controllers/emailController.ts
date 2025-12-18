@@ -1,6 +1,16 @@
 import { Request, Response } from 'express';
+import crypto from 'crypto';
+import fs from 'fs';
 import { prisma } from '../utils/prisma';
-import { sendInvoiceEmail, sendPOEmail, sendArtworkNotificationEmail } from '../services/emailService';
+import {
+  sendInvoiceEmail,
+  sendPOEmail,
+  sendArtworkNotificationEmail,
+  sendCustomerConfirmationEmail,
+  sendShipmentTrackingEmail,
+  sendVendorPOWithPortalEmail,
+  sendCustomerProofEmail,
+} from '../services/emailService';
 
 // Helper to transform job to PDF-compatible format (same as pdfController)
 function transformJobForPDF(job: any) {
@@ -123,10 +133,20 @@ export const emailInvoice = async (req: Request, res: Response) => {
 export const emailPO = async (req: Request, res: Response) => {
   try {
     const { poId } = req.params;
-    const { recipientEmail } = req.body;
+    const {
+      recipientEmail,      // Can be string or array of strings
+      recipientEmails,     // Alternative: array of emails
+      artworkFilesLink,    // URL for artwork files
+      specialInstructions, // Vendor-specific notes
+      includeJobFiles = true, // Whether to attach job files
+    } = req.body;
 
-    if (!recipientEmail) {
-      return res.status(400).json({ error: 'Recipient email is required' });
+    // Support both single email and array of emails
+    const emails: string[] = recipientEmails || (Array.isArray(recipientEmail) ? recipientEmail : [recipientEmail]);
+    const validEmails = emails.filter(e => e && typeof e === 'string' && e.includes('@'));
+
+    if (validEmails.length === 0) {
+      return res.status(400).json({ error: 'At least one valid recipient email is required' });
     }
 
     const po = await prisma.purchaseOrder.findUnique({
@@ -136,6 +156,7 @@ export const emailPO = async (req: Request, res: Response) => {
           include: {
             Company: true,
             Vendor: true,
+            JobPortal: true,
           },
         },
         Vendor: true,
@@ -159,30 +180,93 @@ export const emailPO = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'PO is not linked to a job' });
     }
 
-    // Send the email
-    const result = await sendPOEmail(po, jobData, recipientEmail, vendorName);
+    // Fetch and prepare job files as attachments
+    let jobFiles: Array<{ content: string; filename: string; mimeType: string }> = [];
+    if (includeJobFiles && po.Job?.id) {
+      const files = await prisma.file.findMany({
+        where: { jobId: po.Job.id },
+      });
+
+      for (const file of files) {
+        if (file.objectKey && fs.existsSync(file.objectKey)) {
+          try {
+            const fileBuffer = fs.readFileSync(file.objectKey);
+            jobFiles.push({
+              content: fileBuffer.toString('base64'),
+              filename: file.fileName,
+              mimeType: file.mimeType,
+            });
+          } catch (err) {
+            console.warn(`Could not read file ${file.fileName}:`, err);
+          }
+        }
+      }
+    }
+
+    // Create or get portal link for the job
+    let portalUrl: string | undefined;
+    if (po.Job?.id) {
+      let portal = po.Job.JobPortal;
+      if (!portal || portal.expiresAt < new Date()) {
+        // Create new portal (delete expired one first)
+        if (portal) {
+          await prisma.jobPortal.delete({ where: { id: portal.id } });
+        }
+        const shareToken = crypto.randomBytes(32).toString('hex');
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 14); // 14 day expiry
+
+        portal = await prisma.jobPortal.create({
+          data: {
+            jobId: po.Job.id,
+            shareToken,
+            expiresAt,
+          },
+        });
+      }
+      // Use APP_URL for production, or construct from request host for dev
+      const baseUrl = process.env.APP_URL || 'http://localhost:3002';
+      portalUrl = `${baseUrl}/portal/${portal.shareToken}`;
+    }
+
+    // Send the email with new options
+    const result = await sendPOEmail(po, jobData, validEmails, vendorName, {
+      artworkFilesLink: artworkFilesLink || undefined,
+      specialInstructions: specialInstructions || undefined,
+      jobFiles: jobFiles.length > 0 ? jobFiles : undefined,
+      portalUrl,
+    });
 
     if (!result.success) {
       return res.status(500).json({ error: result.error || 'Failed to send email' });
     }
 
-    // Update PO with email tracking info
+    // Update PO with email tracking info AND new fields
     const updatedPO = await prisma.purchaseOrder.update({
       where: { id: poId },
       data: {
         emailedAt: result.emailedAt,
-        emailedTo: recipientEmail,
+        emailedTo: validEmails.join(', '),
+        artworkFilesLink: artworkFilesLink || null,
+        specialInstructions: specialInstructions || null,
+        pdfUrl: result.pdfUrl || null,
       },
     });
 
     res.json({
       success: true,
-      message: `PO emailed to ${recipientEmail}`,
+      message: `PO emailed to ${validEmails.join(', ')}`,
+      recipientCount: validEmails.length,
+      attachmentCount: jobFiles.length + 1, // +1 for PO PDF
       emailedAt: result.emailedAt,
+      pdfUrl: result.pdfUrl,
       purchaseOrder: {
         id: updatedPO.id,
         emailedAt: updatedPO.emailedAt,
         emailedTo: updatedPO.emailedTo,
+        artworkFilesLink: updatedPO.artworkFilesLink,
+        specialInstructions: updatedPO.specialInstructions,
+        pdfUrl: updatedPO.pdfUrl,
       },
     });
   } catch (error: any) {
@@ -303,5 +387,311 @@ export const emailArtworkNotification = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Error emailing artwork notification:', error);
     res.status(500).json({ error: error.message || 'Failed to email artwork notification' });
+  }
+};
+
+// Email customer order confirmation
+export const emailCustomerConfirmation = async (req: Request, res: Response) => {
+  try {
+    const { jobId } = req.params;
+    const { recipientEmail } = req.body;
+
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      include: {
+        Company: true,
+      },
+    });
+
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    // Use provided email or customer email
+    const email = recipientEmail || job.Company?.email;
+    if (!email) {
+      return res.status(400).json({ error: 'No customer email available' });
+    }
+
+    const customerName = job.Company?.name || 'Customer';
+
+    const result = await sendCustomerConfirmationEmail(job, email, customerName);
+
+    if (!result.success) {
+      return res.status(500).json({ error: result.error || 'Failed to send email' });
+    }
+
+    res.json({
+      success: true,
+      message: `Order confirmation emailed to ${email}`,
+      emailedAt: result.emailedAt,
+    });
+  } catch (error: any) {
+    console.error('Error emailing customer confirmation:', error);
+    res.status(500).json({ error: error.message || 'Failed to email confirmation' });
+  }
+};
+
+// Email shipment tracking notification
+export const emailShipmentTracking = async (req: Request, res: Response) => {
+  try {
+    const { jobId, shipmentId } = req.params;
+    const { recipientEmail } = req.body;
+
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      include: {
+        Company: true,
+        Shipment: {
+          where: { id: shipmentId },
+        },
+      },
+    });
+
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    const shipment = job.Shipment[0];
+    if (!shipment) {
+      return res.status(404).json({ error: 'Shipment not found' });
+    }
+
+    if (!shipment.trackingNo) {
+      return res.status(400).json({ error: 'Shipment has no tracking number' });
+    }
+
+    // Use provided email or customer email
+    const email = recipientEmail || job.Company?.email;
+    if (!email) {
+      return res.status(400).json({ error: 'No customer email available' });
+    }
+
+    const customerName = job.Company?.name || 'Customer';
+
+    const result = await sendShipmentTrackingEmail(job, shipment, email, customerName);
+
+    if (!result.success) {
+      return res.status(500).json({ error: result.error || 'Failed to send email' });
+    }
+
+    // Update shipment with email tracking
+    await prisma.shipment.update({
+      where: { id: shipmentId },
+      data: {
+        trackingEmailedAt: result.emailedAt,
+        trackingEmailedTo: email,
+      },
+    });
+
+    res.json({
+      success: true,
+      message: `Tracking notification emailed to ${email}`,
+      emailedAt: result.emailedAt,
+    });
+  } catch (error: any) {
+    console.error('Error emailing shipment tracking:', error);
+    res.status(500).json({ error: error.message || 'Failed to email tracking' });
+  }
+};
+
+// Email vendor PO with portal link
+export const emailVendorPOWithPortal = async (req: Request, res: Response) => {
+  try {
+    const { jobId, poId } = req.params;
+    const { recipientEmail, specialInstructions } = req.body;
+
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      include: {
+        Company: true,
+        Vendor: true,
+        PurchaseOrder: {
+          where: { id: poId },
+          include: { Vendor: true },
+        },
+        JobPortal: true,
+      },
+    });
+
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    const po = job.PurchaseOrder[0];
+    if (!po) {
+      return res.status(404).json({ error: 'Purchase order not found' });
+    }
+
+    // Get or create portal link
+    let portal = job.JobPortal;
+    if (!portal || portal.expiresAt < new Date()) {
+      // Create new portal
+      if (portal) {
+        await prisma.jobPortal.delete({ where: { id: portal.id } });
+      }
+      const shareToken = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 14);
+
+      portal = await prisma.jobPortal.create({
+        data: {
+          jobId,
+          shareToken,
+          expiresAt,
+        },
+      });
+    }
+
+    // Get vendor info
+    const vendor = po.Vendor || job.Vendor;
+    if (!vendor) {
+      return res.status(400).json({ error: 'No vendor found for this PO' });
+    }
+
+    const email = recipientEmail || vendor.email;
+    if (!email) {
+      return res.status(400).json({ error: 'No vendor email available' });
+    }
+
+    const vendorName = vendor.name || 'Vendor';
+    const baseUrl = process.env.APP_URL || 'https://app.impactdirectprinting.com';
+    const portalUrl = `${baseUrl}/api/portal/${portal.shareToken}`;
+
+    const result = await sendVendorPOWithPortalEmail(
+      po,
+      job,
+      email,
+      vendorName,
+      portalUrl,
+      { specialInstructions: specialInstructions || (job.specs as any)?.specialInstructions }
+    );
+
+    if (!result.success) {
+      return res.status(500).json({ error: result.error || 'Failed to send email' });
+    }
+
+    // Update PO with email tracking
+    await prisma.purchaseOrder.update({
+      where: { id: poId },
+      data: {
+        emailedAt: result.emailedAt,
+        emailedTo: email,
+      },
+    });
+
+    res.json({
+      success: true,
+      message: `Vendor PO emailed to ${email} with portal link`,
+      emailedAt: result.emailedAt,
+      portalUrl,
+    });
+  } catch (error: any) {
+    console.error('Error emailing vendor PO with portal:', error);
+    res.status(500).json({ error: error.message || 'Failed to email PO' });
+  }
+};
+
+// Send proof to customer
+export const sendProofToCustomer = async (req: Request, res: Response) => {
+  try {
+    const { jobId } = req.params;
+    const { recipientEmail, fileIds, message } = req.body;
+
+    console.log('📧 Sending proof to customer:', { jobId, recipientEmail, fileIds });
+
+    if (!recipientEmail) {
+      return res.status(400).json({ error: 'Recipient email is required' });
+    }
+
+    if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
+      return res.status(400).json({ error: 'At least one file must be selected' });
+    }
+
+    // Fetch job with company
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      include: {
+        Company: true,
+        File: {
+          where: {
+            id: { in: fileIds },
+          },
+        },
+      },
+    });
+
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    if (job.File.length === 0) {
+      return res.status(404).json({ error: 'No files found with the provided IDs' });
+    }
+
+    const customerName = job.Company?.name || 'Customer';
+
+    // Read file contents and prepare attachments
+    const attachments: Array<{ content: string; filename: string; mimeType: string }> = [];
+
+    for (const file of job.File) {
+      // Try to find file in uploads directory
+      const filePath = `uploads/${file.objectKey}`;
+      if (fs.existsSync(filePath)) {
+        try {
+          const fileBuffer = fs.readFileSync(filePath);
+          attachments.push({
+            content: fileBuffer.toString('base64'),
+            filename: file.fileName,
+            mimeType: file.mimeType,
+          });
+        } catch (err) {
+          console.warn(`Could not read file ${file.fileName}:`, err);
+        }
+      } else {
+        console.warn(`File not found on disk: ${filePath}`);
+      }
+    }
+
+    if (attachments.length === 0) {
+      return res.status(500).json({ error: 'Could not read any of the selected files' });
+    }
+
+    // Send the email
+    const result = await sendCustomerProofEmail(
+      job,
+      recipientEmail,
+      customerName,
+      attachments,
+      message
+    );
+
+    if (!result.success) {
+      return res.status(500).json({ error: result.error || 'Failed to send email' });
+    }
+
+    // Log activity
+    await prisma.jobActivity.create({
+      data: {
+        id: crypto.randomUUID(),
+        jobId,
+        action: 'PROOF_SENT_TO_CUSTOMER',
+        field: 'proofEmail',
+        oldValue: null,
+        newValue: `Sent to ${recipientEmail}: ${job.File.map(f => f.fileName).join(', ')}`,
+        changedBy: 'admin',
+        changedByRole: 'BROKER_ADMIN',
+      },
+    });
+
+    res.json({
+      success: true,
+      message: `Proof sent to ${recipientEmail}`,
+      emailedAt: result.emailedAt,
+      fileCount: attachments.length,
+    });
+  } catch (error: any) {
+    console.error('Error sending proof to customer:', error);
+    res.status(500).json({ error: error.message || 'Failed to send proof email' });
   }
 };

@@ -5,3 +5,5 @@ export { Badge, badgeVariants } from "./Badge";
 export { Label } from "./Label";
 export { Textarea } from "./Textarea";
 export { Tabs } from "./Tabs";
+export { WorkflowProgress, WorkflowProgressInline, WORKFLOW_STAGES } from "./WorkflowProgress";
+export type { WorkflowStageId } from "./WorkflowProgress";

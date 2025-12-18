@@ -921,46 +921,167 @@ export const generateVendorPOPDF = (jobData: any): Buffer => {
     currentY += 18;
   }
 
-  // ===== FULL DESCRIPTION SECTION (matches customer PO format) =====
-  const specs = jobData.specs || {};
-  const fullDescription = buildFullDescriptionFromSpecs(specs, jobData);
+  // ===== PO-SPECIFIC ARTWORK FILES LINK (from email popup) =====
+  if (jobData.poArtworkFilesLink) {
+    doc.setFillColor(219, 234, 254); // Light blue background
+    doc.setDrawColor(59, 130, 246); // Blue border
+    doc.setLineWidth(1);
+    doc.rect(20, currentY, 170, 18, 'FD');
 
-  if (fullDescription.trim()) {
-    drawSectionHeader(doc, 'JOB SPECIFICATIONS', 20, currentY, 170);
-    currentY += 10;
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 64, 175); // Dark blue text
+    doc.text('ARTWORK FILES:', 25, currentY + 6);
 
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(37, 99, 235); // Blue link color
+
+    const displayUrl = jobData.poArtworkFilesLink.length > 70
+      ? jobData.poArtworkFilesLink.substring(0, 67) + '...'
+      : jobData.poArtworkFilesLink;
+    doc.text(displayUrl, 25, currentY + 12);
+
+    doc.setTextColor(100, 100, 100);
+    doc.setFontSize(7);
+    doc.text('Click or copy this link to access artwork files', 25, currentY + 16);
+
+    currentY += 22;
+  }
+
+  // ===== PO-SPECIFIC SPECIAL INSTRUCTIONS (from email popup) =====
+  if (jobData.poSpecialInstructions) {
+    doc.setFillColor(254, 249, 195); // Light yellow background
+    doc.setDrawColor(234, 179, 8); // Yellow border
+    doc.setLineWidth(1);
+
+    // Calculate height based on text length
+    const instructionLines = doc.splitTextToSize(jobData.poSpecialInstructions, 160);
+    const boxHeight = Math.min(14 + (instructionLines.length * 4), 40);
+    doc.rect(20, currentY, 170, boxHeight, 'FD');
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(161, 98, 7); // Dark yellow text
+    doc.text('SPECIAL INSTRUCTIONS:', 25, currentY + 6);
+
+    doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(0, 0, 0);
-    doc.setFont('helvetica', 'normal');
+    // Show up to 3 lines
+    doc.text(instructionLines.slice(0, 3), 25, currentY + 12);
 
-    // Split description into lines that fit the page width
-    const descriptionLines = doc.splitTextToSize(fullDescription, 165);
+    currentY += boxHeight + 4;
+  }
 
-    descriptionLines.forEach((line: string) => {
-      // Check for page break
-      if (currentY > 270) {
-        doc.addPage();
-        drawCrosshairs(doc);
-        currentY = 20;
-      }
-      doc.text(line, 22, currentY);
-      currentY += 4.5;
+  // ===== PRINT SPECIFICATIONS SECTION =====
+  const specs = jobData.specs || {};
+
+  // Build specs table data - only include populated fields
+  const specsData: string[][] = [];
+
+  if (specs.productType) specsData.push(['Product Type:', specs.productType]);
+  if (jobData.quantity) specsData.push(['Quantity:', jobData.quantity.toLocaleString()]);
+  if (specs.finishedSize || jobData.sizeName) specsData.push(['Finished Size:', specs.finishedSize || jobData.sizeName]);
+  if (specs.flatSize) specsData.push(['Flat Size:', specs.flatSize]);
+  if (specs.paperType) specsData.push(['Paper Stock:', specs.paperType]);
+  if (specs.paperLbs || specs.paperWeight) specsData.push(['Paper Weight:', specs.paperLbs ? `${specs.paperLbs}#` : specs.paperWeight]);
+  if (specs.pageCount) specsData.push(['Page Count:', `${specs.pageCount} pages`]);
+  if (specs.colors) specsData.push(['Colors:', specs.colors]);
+  if (specs.coating) specsData.push(['Coating:', specs.coating]);
+  if (specs.bindingStyle) specsData.push(['Binding:', specs.bindingStyle]);
+  if (specs.finishing) specsData.push(['Finishing:', specs.finishing]);
+  if (specs.folds) specsData.push(['Folds:', specs.folds]);
+  if (specs.perforations) specsData.push(['Perforations:', specs.perforations]);
+  if (specs.dieCut) specsData.push(['Die Cut:', specs.dieCut]);
+  if (specs.bleed) specsData.push(['Bleed:', specs.bleed]);
+  if (specs.proofType) specsData.push(['Proof Type:', specs.proofType]);
+  // Only show cover fields for BOOK products
+  if (specs.productType === 'BOOK') {
+    if (specs.coverType) specsData.push(['Cover Type:', specs.coverType === 'PLUS' ? 'Plus Cover' : specs.coverType === 'SELF' ? 'Self Cover' : specs.coverType]);
+    if (specs.coverPaperType) specsData.push(['Cover Stock:', specs.coverPaperType]);
+  }
+
+  if (specsData.length > 0) {
+    drawSectionHeader(doc, 'PRINT SPECIFICATIONS', 20, currentY, 170);
+    currentY += 10;
+
+    autoTable(doc, {
+      startY: currentY,
+      body: specsData,
+      theme: 'plain',
+      styles: { fontSize: 9, cellPadding: 2 },
+      columnStyles: {
+        0: { fontStyle: 'bold', cellWidth: 40, textColor: [80, 80, 80] },
+        1: { cellWidth: 130 },
+      },
+      margin: { left: 20, right: 20 },
     });
 
-    currentY += 5;
+    currentY = (doc as any).lastAutoTable.finalY + 8;
+  }
+
+  // ===== JOB NOTES SECTION =====
+  if (jobData.notes && jobData.notes.trim()) {
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+
+    // Split notes into lines that fit the page width
+    const notesLines = doc.splitTextToSize(jobData.notes, 165);
+    const lineHeight = 4.5;
+    const notesContentHeight = notesLines.length * lineHeight + 6; // Add padding
+
+    // Check if we need a page break before starting notes section
+    if (currentY + notesContentHeight + 15 > 240) {
+      doc.addPage();
+      drawCrosshairs(doc);
+      currentY = 20;
+    }
+
+    drawSectionHeader(doc, 'JOB NOTES', 20, currentY, 170);
+    currentY += 10;
+
+    // Draw background box for notes content
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(200, 200, 200);
+    doc.rect(20, currentY - 2, 170, notesContentHeight, 'FD');
+
+    // Render text
+    doc.setTextColor(0, 0, 0);
+    notesLines.forEach((line: string) => {
+      doc.text(line, 22, currentY + 2);
+      currentY += lineHeight;
+    });
+
+    currentY += 10;
   }
 
   // ===== LINE ITEMS TABLE WITH GRID HEADER =====
+  // Check if we need a new page for ORDER DETAILS (need ~80pt minimum for table + total + footer)
+  if (currentY > 200) {
+    doc.addPage();
+    drawCrosshairs(doc);
+    currentY = 20;
+  }
+
   drawSectionHeader(doc, 'ORDER DETAILS', 20, currentY, 170);
   currentY += 10;
 
   const tableData = jobData.lineItems?.map((item: any) => {
-    const unitCost = Number(item.unitCost) || 0;
+    let unitCost = Number(item.unitCost) || 0;
     const quantity = Number(item.quantity) || 0;
+    const unitPrice = Number(item.unitPrice) || 0;
+    const markupPercent = Number(item.markupPercent) || 0;
+
+    // Back-calculate unitCost if it's 0 but unitPrice exists
+    if (unitCost === 0 && unitPrice > 0 && markupPercent > 0) {
+      unitCost = unitPrice / (1 + markupPercent / 100);
+    }
+
     return [
       item.description,
       quantity.toLocaleString(),
-      `$${unitCost.toFixed(2)}`,
+      `$${unitCost.toFixed(4)}`,
       `$${(quantity * unitCost).toFixed(2)}`
     ];
   }) || [];
@@ -992,8 +1113,19 @@ export const generateVendorPOPDF = (jobData: any): Buffer => {
   // Use buyCost directly if available, otherwise calculate from lineItems
   const total = jobData.buyCost
     ? Number(jobData.buyCost)
-    : jobData.lineItems?.reduce((sum: number, item: any) =>
-        sum + (Number(item.quantity) || 0) * (Number(item.unitCost) || 0), 0) || 0;
+    : jobData.lineItems?.reduce((sum: number, item: any) => {
+        let unitCost = Number(item.unitCost) || 0;
+        const quantity = Number(item.quantity) || 0;
+        const unitPrice = Number(item.unitPrice) || 0;
+        const markupPercent = Number(item.markupPercent) || 0;
+
+        // Back-calculate unitCost if it's 0 but unitPrice exists
+        if (unitCost === 0 && unitPrice > 0 && markupPercent > 0) {
+          unitCost = unitPrice / (1 + markupPercent / 100);
+        }
+
+        return sum + quantity * unitCost;
+      }, 0) || 0;
 
   // Draw grid border around total box
   drawSectionGrid(doc, 128, finalY + 6, 64, 20);

@@ -143,10 +143,40 @@ function App() {
 
   const handleSubmitJobForm = async (jobData: any) => {
     try {
-      const newJob = await jobsApi.create(jobData);
+      // Extract pending files before creating job
+      const { pendingFiles, ...jobDataWithoutFiles } = jobData;
+
+      // Create the job
+      const newJob = await jobsApi.create(jobDataWithoutFiles);
       setJobs([newJob, ...jobs]);
       setSelectedJob(newJob);
-      toast.success('Job created successfully');
+
+      // Upload any pending files after job creation
+      if (pendingFiles && pendingFiles.length > 0) {
+        let uploadedCount = 0;
+        for (const file of pendingFiles) {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('kind', 'ARTWORK');
+
+          try {
+            await fetch(`/api/jobs/${newJob.id}/files`, {
+              method: 'POST',
+              body: formData,
+            });
+            uploadedCount++;
+          } catch (error) {
+            console.error('Failed to upload file:', file.name, error);
+          }
+        }
+        if (uploadedCount > 0) {
+          toast.success(`Job created with ${uploadedCount} file(s) uploaded`);
+        } else {
+          toast.success('Job created successfully');
+        }
+      } else {
+        toast.success('Job created successfully');
+      }
     } catch (error) {
       console.error('Failed to create job:', error);
       toast.error('Failed to create job. Please try again.');
@@ -352,6 +382,34 @@ function App() {
     setShowDeleteModal(true);
   };
 
+  // Copy Job - opens form with pre-filled data
+  const handleCopyJob = (job: any) => {
+    // Create a copy of the job data, clearing transactional/unique fields
+    const copyData = {
+      title: `Copy of ${job.title || ''}`,
+      customerId: job.Company?.id || job.customerId || '',
+      vendorId: job.Vendor?.id || job.vendorId || '',
+      // Keep specs and pricing
+      specs: job.specs || {},
+      quantity: job.quantity || 0,
+      sellPrice: job.sellPrice || 0,
+      paperCostCPM: job.paperCostCPM || 0,
+      notes: job.notes || '',
+      // Clear transactional data
+      customerPONumber: '',
+      status: 'ACTIVE',
+      // Dates should be fresh
+      dueDate: '',
+      mailDate: job.mailDate || '',
+      inHomesDate: job.inHomesDate || '',
+    };
+
+    setJobFormInitialData(copyData);
+    setEditingJob(null);
+    setShowJobFormModal(true);
+    toast.info('Creating copy of job - review and save');
+  };
+
   const handleCreateEntity = (type: 'customer' | 'vendor') => {
     setEntityCreateType(type);
     setShowEntityCreateModal(true);
@@ -499,6 +557,7 @@ function App() {
               onCreateJob={handleCreateJob}
               onEditJob={handleEditJob}
               onDeleteJob={handleDeleteJob}
+              onCopyJob={handleCopyJob}
               onUpdateStatus={handleUpdateJobStatus}
               onUpdateJob={handleUpdateJob}
               onRefresh={loadData}

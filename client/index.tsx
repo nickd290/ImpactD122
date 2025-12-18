@@ -1,10 +1,17 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useParams } from 'react-router-dom';
 import App from './App';
 import VendorQuoteForm from './components/VendorQuoteForm';
+import { VendorPortalView } from './components/VendorPortalView';
 import './index.css';
+
+// Wrapper to pass token from URL params
+function PortalWrapper() {
+  const { token } = useParams<{ token: string }>();
+  return <VendorPortalView token={token || ''} />;
+}
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -29,6 +36,8 @@ root.render(
         <Routes>
           {/* Public vendor quote submission form */}
           <Route path="/vendor-quote/:rfqId/:token" element={<VendorQuoteForm />} />
+          {/* Public vendor job portal */}
+          <Route path="/portal/:token" element={<PortalWrapper />} />
           {/* Main app */}
           <Route path="/*" element={<App />} />
         </Routes>

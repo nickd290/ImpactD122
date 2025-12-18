@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Plus, Search, Sparkles, Upload, FileText, Edit, Trash2, FileSpreadsheet, CheckSquare, Square, ChevronDown, ChevronRight, MoreVertical, DollarSign, Printer, Receipt, Building2 } from 'lucide-react';
+import { Plus, Search, Sparkles, Upload, FileText, Edit, Trash2, FileSpreadsheet, CheckSquare, Square, ChevronDown, ChevronRight, MoreVertical, DollarSign, Printer, Receipt, Building2, Copy, FileDown, Mail } from 'lucide-react';
 import { Button, Tabs } from './ui';
 import { Input } from './ui';
 import { Badge } from './ui';
@@ -47,6 +47,7 @@ interface JobsViewProps {
   onCreateJob: () => void;
   onEditJob: (job: Job) => void;
   onDeleteJob: (job: Job) => void;
+  onCopyJob?: (job: Job) => void;
   onUpdateStatus: (jobId: string, status: string) => void;
   onUpdateJob?: (jobId: string, jobData: any) => Promise<void>;
   onRefresh: () => void;
@@ -68,6 +69,7 @@ export function JobsView({
   onCreateJob,
   onEditJob,
   onDeleteJob,
+  onCopyJob,
   onUpdateStatus,
   onUpdateJob,
   onRefresh,
@@ -88,6 +90,8 @@ export function JobsView({
   const paymentMenuRef = useRef<HTMLDivElement>(null);
   const docMenuRef = useRef<HTMLDivElement>(null);
   const [optimisticallyPaidIds, setOptimisticallyPaidIds] = useState<Set<string>>(new Set());
+  const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+  const actionMenuRef = useRef<HTMLDivElement>(null);
 
   // Filter jobs by active tab
   const tabFilteredJobs = useMemo(() => {
@@ -128,13 +132,20 @@ export function JobsView({
       if (docMenuRef.current && !docMenuRef.current.contains(event.target as Node)) {
         setIsDocMenuOpen(false);
       }
+      // Close action menu when clicking outside
+      if (openActionMenuId) {
+        const target = event.target as HTMLElement;
+        if (!target.closest('[data-action-menu]')) {
+          setOpenActionMenuId(null);
+        }
+      }
     };
 
-    if (isPaymentMenuOpen || isDocMenuOpen) {
+    if (isPaymentMenuOpen || isDocMenuOpen || openActionMenuId) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [isPaymentMenuOpen, isDocMenuOpen]);
+  }, [isPaymentMenuOpen, isDocMenuOpen, openActionMenuId]);
 
   // Apply search filter on top of tab filter
   const filteredJobs = tabFilteredJobs.filter((job: Job) =>
@@ -588,8 +599,79 @@ export function JobsView({
                             Mark Paid
                           </Button>
                         )}
-                        <Button onClick={(e) => { e.stopPropagation(); onEditJob(job); }} variant="ghost" size="icon" className="h-7 w-7"><Edit className="w-3.5 h-3.5" /></Button>
-                        <Button onClick={(e) => { e.stopPropagation(); onDeleteJob(job); }} variant="ghost" size="icon" className="h-7 w-7 text-destructive"><Trash2 className="w-3.5 h-3.5" /></Button>
+                        {/* Actions Dropdown */}
+                        <div className="relative" data-action-menu>
+                          <Button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenActionMenuId(openActionMenuId === job.id ? null : job.id);
+                            }}
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs"
+                          >
+                            Actions
+                            <ChevronDown className="w-3 h-3 ml-1" />
+                          </Button>
+                          {openActionMenuId === job.id && (
+                            <div className="absolute right-0 mt-1 w-44 bg-card rounded-lg shadow-lg border border-border py-1 z-50">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); pdfApi.generateQuote(job.id); setOpenActionMenuId(null); }}
+                                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                              >
+                                <FileText className="w-4 h-4 text-blue-500" />
+                                Download Quote
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); pdfApi.generateVendorPO(job.id); setOpenActionMenuId(null); }}
+                                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                              >
+                                <FileDown className="w-4 h-4 text-orange-500" />
+                                Download Vendor PO
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); pdfApi.generateInvoice(job.id); setOpenActionMenuId(null); }}
+                                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                              >
+                                <Receipt className="w-4 h-4 text-green-500" />
+                                Download Invoice
+                              </button>
+                              <div className="border-t border-border my-1" />
+                              {job.status !== 'PAID' && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleMarkPaid(job.id, e); setOpenActionMenuId(null); }}
+                                  className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 text-green-600"
+                                >
+                                  <DollarSign className="w-4 h-4" />
+                                  Mark as Paid
+                                </button>
+                              )}
+                              {onCopyJob && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); onCopyJob(job); setOpenActionMenuId(null); }}
+                                  className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                                >
+                                  <Copy className="w-4 h-4 text-purple-500" />
+                                  Copy Job
+                                </button>
+                              )}
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onEditJob(job); setOpenActionMenuId(null); }}
+                                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                              >
+                                <Edit className="w-4 h-4" />
+                                Edit Job
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onDeleteJob(job); setOpenActionMenuId(null); }}
+                                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 text-destructive"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                Delete Job
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </td>
                   </tr>
