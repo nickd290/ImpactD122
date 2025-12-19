@@ -22,6 +22,7 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
   const [statementCustomerId, setStatementCustomerId] = useState<string>('');
+  const [filterCustomerId, setFilterCustomerId] = useState<string>('');
 
   useEffect(() => {
     loadJobs();
@@ -164,6 +165,9 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
   };
 
   const filteredJobs = jobs.filter(job => {
+    // Customer filter
+    if (filterCustomerId && job.customer?.id !== filterCustomerId) return false;
+    // Payment status filter
     if (filter === 'active') return !job.customerPaymentDate; // Not paid by customer
     if (filter === 'paid') return !!job.customerPaymentDate; // Paid by customer
     return true;
@@ -213,7 +217,7 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
 
       {/* Filter Tabs + Statement Download */}
       <div className="mb-4 flex justify-between items-center">
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           <button
             onClick={() => setFilter('all')}
             className={`px-4 py-2 rounded-lg font-medium ${
@@ -244,6 +248,26 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
           >
             Paid ({jobs.filter(j => !!j.customerPaymentDate).length})
           </button>
+
+          {/* Customer Filter */}
+          <select
+            value={filterCustomerId}
+            onChange={(e) => setFilterCustomerId(e.target.value)}
+            className="ml-4 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="">All Customers</option>
+            {uniqueCustomers.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+          {filterCustomerId && (
+            <button
+              onClick={() => setFilterCustomerId('')}
+              className="text-xs text-gray-500 hover:text-gray-700"
+            >
+              Clear
+            </button>
+          )}
         </div>
 
         {/* Customer Statement Download */}
