@@ -1882,40 +1882,34 @@ export const createJobPO = async (req: Request, res: Response) => {
       originCompanyId = 'impact-direct';
       targetVendorId = vendorId || null;
 
-      // New PO format: J-{jobNo}-{vendorCode}.{seq}
+      // PO format: {jobDigits}-{random4}.{seq} (per vendor per job)
       if (vendorId) {
-        // Fetch vendor to get vendorCode
-        const vendor = await prisma.vendor.findUnique({ where: { id: vendorId } });
+        // Get job number digits only (strip "J-" prefix)
+        const jobDigits = job.jobNo.replace(/^J-/i, '');
 
-        if (vendor) {
-          // Ensure vendor has a code (auto-generate if missing)
-          let vendorCode = vendor.vendorCode;
-          if (!vendorCode) {
-            let isUnique = false;
-            while (!isUnique) {
-              vendorCode = Math.floor(1000 + Math.random() * 9000).toString();
-              const existing = await prisma.vendor.findUnique({ where: { vendorCode } });
-              if (!existing) isUnique = true;
-            }
-            await prisma.vendor.update({
-              where: { id: vendorId },
-              data: { vendorCode },
-            });
-          }
+        // Check if this vendor already has a PO for this job (reuse random4)
+        const existingVendorPO = await prisma.purchaseOrder.findFirst({
+          where: { jobId, targetVendorId: vendorId },
+          orderBy: { createdAt: 'asc' },
+        });
 
-          // Count existing POs for this job to this vendor
-          const existingPOCount = await prisma.purchaseOrder.count({
-            where: { jobId, targetVendorId: vendorId },
-          });
-          const sequenceNum = existingPOCount + 1;
-
-          poNumber = `${job.jobNo}-${vendorCode}.${sequenceNum}`;
+        let random4: string;
+        if (existingVendorPO?.poNumber) {
+          // Extract random4 from existing PO: "2056-9283.1" → "9283"
+          const match = existingVendorPO.poNumber.match(/-(\d{4})\./);
+          random4 = match?.[1] || Math.floor(1000 + Math.random() * 9000).toString();
         } else {
-          // Vendor not found, use fallback format
-          const timestamp = Date.now();
-          const random = Math.random().toString(36).substring(2, 6);
-          poNumber = `PO-IV-${timestamp}-${random}`;
+          // Generate new random 4-digit suffix for this vendor on this job
+          random4 = Math.floor(1000 + Math.random() * 9000).toString();
         }
+
+        // Count existing POs for sequence
+        const existingPOCount = await prisma.purchaseOrder.count({
+          where: { jobId, targetVendorId: vendorId },
+        });
+        const sequenceNum = existingPOCount + 1;
+
+        poNumber = `${jobDigits}-${random4}.${sequenceNum}`;
       } else {
         // No vendor specified, use fallback format
         const timestamp = Date.now();
