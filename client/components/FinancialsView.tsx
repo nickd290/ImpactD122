@@ -21,6 +21,7 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
   const [selectedJob, setSelectedJob] = useState<any | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
+  const [statementCustomerId, setStatementCustomerId] = useState<string>('');
 
   useEffect(() => {
     loadJobs();
@@ -168,6 +169,17 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
     return true;
   });
 
+  // Extract unique customers for statement dropdown
+  const uniqueCustomers = React.useMemo(() => {
+    const customerMap = new Map<string, { id: string; name: string }>();
+    jobs.forEach(job => {
+      if (job.customer?.id && job.customer?.name) {
+        customerMap.set(job.customer.id, { id: job.customer.id, name: job.customer.name });
+      }
+    });
+    return Array.from(customerMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [jobs]);
+
   // Calculate totals using new model
   const totals = filteredJobs.reduce((acc, job) => {
     const fin = getJobFinancials(job);
@@ -199,38 +211,70 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
         <p className="text-gray-600 mt-1">All jobs with payment tracking</p>
       </div>
 
-      {/* Filter Tabs */}
-      <div className="mb-4 flex gap-2">
-        <button
-          onClick={() => setFilter('all')}
-          className={`px-4 py-2 rounded-lg font-medium ${
-            filter === 'all'
-              ? 'bg-gray-900 text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          }`}
-        >
-          All Jobs ({jobs.length})
-        </button>
-        <button
-          onClick={() => setFilter('active')}
-          className={`px-4 py-2 rounded-lg font-medium ${
-            filter === 'active'
-              ? 'bg-yellow-600 text-white'
-              : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
-          }`}
-        >
-          Unpaid ({jobs.filter(j => !j.customerPaymentDate).length})
-        </button>
-        <button
-          onClick={() => setFilter('paid')}
-          className={`px-4 py-2 rounded-lg font-medium ${
-            filter === 'paid'
-              ? 'bg-green-600 text-white'
-              : 'bg-green-100 text-green-700 hover:bg-green-200'
-          }`}
-        >
-          Paid ({jobs.filter(j => !!j.customerPaymentDate).length})
-        </button>
+      {/* Filter Tabs + Statement Download */}
+      <div className="mb-4 flex justify-between items-center">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setFilter('all')}
+            className={`px-4 py-2 rounded-lg font-medium ${
+              filter === 'all'
+                ? 'bg-gray-900 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            All Jobs ({jobs.length})
+          </button>
+          <button
+            onClick={() => setFilter('active')}
+            className={`px-4 py-2 rounded-lg font-medium ${
+              filter === 'active'
+                ? 'bg-yellow-600 text-white'
+                : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+            }`}
+          >
+            Unpaid ({jobs.filter(j => !j.customerPaymentDate).length})
+          </button>
+          <button
+            onClick={() => setFilter('paid')}
+            className={`px-4 py-2 rounded-lg font-medium ${
+              filter === 'paid'
+                ? 'bg-green-600 text-white'
+                : 'bg-green-100 text-green-700 hover:bg-green-200'
+            }`}
+          >
+            Paid ({jobs.filter(j => !!j.customerPaymentDate).length})
+          </button>
+        </div>
+
+        {/* Customer Statement Download */}
+        <div className="flex items-center gap-2">
+          <select
+            value={statementCustomerId}
+            onChange={(e) => setStatementCustomerId(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="">Download Statement...</option>
+            {uniqueCustomers.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+          {statementCustomerId && (
+            <>
+              <button
+                onClick={() => pdfApi.generateStatement(statementCustomerId, 'all')}
+                className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+              >
+                All
+              </button>
+              <button
+                onClick={() => pdfApi.generateStatement(statementCustomerId, 'unpaid')}
+                className="px-3 py-2 bg-yellow-600 text-white rounded-lg text-sm font-medium hover:bg-yellow-700"
+              >
+                Unpaid Only
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Batch Actions */}

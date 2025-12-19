@@ -4,7 +4,7 @@ import {
   DollarSign, Plus, Trash2, Building2, Check, Save, Download, AlertTriangle, Send, ChevronDown, Link, ExternalLink, MessageSquare, Upload, Truck
 } from 'lucide-react';
 import { EditableField } from './EditableField';
-import { pdfApi, emailApi, communicationsApi } from '../lib/api';
+import { pdfApi, emailApi, communicationsApi, invoiceApi } from '../lib/api';
 import { SendEmailModal } from './SendEmailModal';
 import { CommunicationThread } from './CommunicationThread';
 import { useQuery } from '@tanstack/react-query';
@@ -173,6 +173,13 @@ interface Job {
     trackingNumber?: string;
     trackingCarrier?: string;
   } | null;
+  // Invoices
+  invoices?: Array<{
+    id: string;
+    amount?: number | null;
+    paidAt?: string | null;
+  }>;
+  hasPaidInvoice?: boolean;
 }
 
 interface JobDetailModalProps {
@@ -808,7 +815,7 @@ export function JobDetailModal({
   const updateEditedSpec = (field: string, value: any) => {
     setEditedJob(prev => ({
       ...prev,
-      specs: { ...prev.specs, [field]: value }
+      specs: { ...(prev.specs || {}), [field]: value }
     }));
   };
 
@@ -2483,6 +2490,34 @@ export function JobDetailModal({
                       <Check className="w-3 h-3" />
                       Inv sent {new Date(job.invoiceEmailedAt).toLocaleDateString()}
                     </span>
+                  )}
+                  {/* Invoice payment status toggle */}
+                  {job.invoices && job.invoices.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      {job.invoices.map((inv) => (
+                        <select
+                          key={inv.id}
+                          value={inv.paidAt ? 'paid' : 'unpaid'}
+                          onChange={async (e) => {
+                            try {
+                              await invoiceApi.updateStatus(inv.id, e.target.value as 'paid' | 'unpaid');
+                              onRefresh?.();
+                            } catch (err) {
+                              console.error('Failed to update invoice status:', err);
+                            }
+                          }}
+                          className={`text-xs px-2 py-1 rounded border cursor-pointer ${
+                            inv.paidAt
+                              ? 'bg-green-50 text-green-700 border-green-200'
+                              : 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                          }`}
+                          title={inv.amount ? `$${Number(inv.amount).toFixed(2)}` : 'Invoice'}
+                        >
+                          <option value="unpaid">Unpaid</option>
+                          <option value="paid">Paid</option>
+                        </select>
+                      ))}
+                    </div>
                   )}
                   {onDownloadQuote && (
                     <button

@@ -26,6 +26,8 @@ import {
   sendJDInvoice,
   downloadJDInvoicePDF,
   markJDPaid,
+  // Invoice status
+  updateInvoiceStatus,
 } from '../controllers/jobsController';
 
 const router = Router();
@@ -66,5 +68,8 @@ router.get('/:jobId/pos', getJobPOs);
 router.post('/:jobId/pos', createJobPO);
 router.put('/pos/:poId', updatePO);
 router.delete('/pos/:poId', deletePO);
+
+// Invoice status
+router.patch('/invoices/:invoiceId/status', updateInvoiceStatus);
 
 export default router;

@@ -2163,3 +2163,164 @@ export const generateJDToBradfordInvoicePDF = (jobData: any): Buffer => {
 
   return Buffer.from(doc.output('arraybuffer'));
 };
+
+// ===== CUSTOMER STATEMENT PDF =====
+export function generateStatementPDF(company: any, invoices: any[]): Buffer {
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.width;
+
+  // ===== HEADER =====
+  // Dark header bar
+  doc.setFillColor(26, 26, 26);
+  doc.rect(0, 0, pageWidth, 35, 'F');
+
+  // White background for logo
+  doc.setFillColor(255, 255, 255);
+  doc.rect(12, 4, 80, 27, 'F');
+
+  // Company logo area
+  drawLogo(doc, 20, 8, 25);
+
+  // Title
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(20);
+  doc.setFont('helvetica', 'bold');
+  doc.text('CUSTOMER STATEMENT', pageWidth - 20, 20, { align: 'right' });
+
+  // Statement date
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Generated: ${new Date().toLocaleDateString()}`, pageWidth - 20, 28, { align: 'right' });
+
+  // ===== CUSTOMER INFO =====
+  let currentY = 50;
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Bill To:', 20, currentY);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  currentY += 7;
+  doc.text(company.name, 20, currentY);
+  if (company.address) {
+    currentY += 5;
+    doc.setFontSize(10);
+    doc.text(company.address, 20, currentY);
+  }
+  if (company.email) {
+    currentY += 5;
+    doc.text(company.email, 20, currentY);
+  }
+
+  // ===== SUMMARY BOX =====
+  const totalAmount = invoices.reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0);
+  const unpaidAmount = invoices.filter(inv => !inv.paidAt).reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0);
+  const paidAmount = totalAmount - unpaidAmount;
+
+  // Summary box on right side
+  doc.setDrawColor(BRAND_ORANGE);
+  doc.setLineWidth(1);
+  doc.rect(120, 45, 70, 30);
+
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Total Invoiced:', 125, 53);
+  doc.text('Paid:', 125, 61);
+  doc.text('Balance Due:', 125, 69);
+
+  doc.setTextColor(0, 0, 0);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`$${totalAmount.toFixed(2)}`, 185, 53, { align: 'right' });
+  doc.setTextColor(34, 197, 94);
+  doc.text(`$${paidAmount.toFixed(2)}`, 185, 61, { align: 'right' });
+  doc.setTextColor(239, 68, 68);
+  doc.setFontSize(11);
+  doc.text(`$${unpaidAmount.toFixed(2)}`, 185, 69, { align: 'right' });
+
+  // ===== INVOICE TABLE =====
+  currentY = 90;
+
+  if (invoices.length === 0) {
+    doc.setTextColor(100, 100, 100);
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(11);
+    doc.text('No invoices found.', 20, currentY);
+  } else {
+    const tableData = invoices.map(inv => [
+      inv.invoiceNo || inv.id.slice(0, 8),
+      inv.issuedAt ? new Date(inv.issuedAt).toLocaleDateString() : '-',
+      inv.dueAt ? new Date(inv.dueAt).toLocaleDateString() : '-',
+      `$${(Number(inv.amount) || 0).toFixed(2)}`,
+      inv.paidAt ? 'Paid' : 'Unpaid'
+    ]);
+
+    autoTable(doc, {
+      startY: currentY,
+      head: [['Invoice #', 'Date', 'Due Date', 'Amount', 'Status']],
+      body: tableData,
+      theme: 'striped',
+      headStyles: {
+        fillColor: [26, 26, 26],
+        fontSize: 10,
+        fontStyle: 'bold',
+      },
+      styles: {
+        fontSize: 9,
+      },
+      columnStyles: {
+        0: { cellWidth: 35 },
+        1: { cellWidth: 35, halign: 'center' },
+        2: { cellWidth: 35, halign: 'center' },
+        3: { cellWidth: 35, halign: 'right' },
+        4: { cellWidth: 30, halign: 'center' },
+      },
+      didParseCell: (data: any) => {
+        // Color status column
+        if (data.column.index === 4 && data.section === 'body') {
+          if (data.cell.raw === 'Paid') {
+            data.cell.styles.textColor = [34, 197, 94];
+            data.cell.styles.fontStyle = 'bold';
+          } else {
+            data.cell.styles.textColor = [239, 68, 68];
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+      },
+    });
+
+    // Add totals row below table
+    const finalY = (doc as any).lastAutoTable.finalY || currentY + 20;
+
+    doc.setDrawColor(26, 26, 26);
+    doc.setLineWidth(0.5);
+    doc.line(20, finalY + 5, 190, finalY + 5);
+
+    doc.setFontSize(11);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Total:', 140, finalY + 12);
+    doc.text(`$${totalAmount.toFixed(2)}`, 185, finalY + 12, { align: 'right' });
+
+    if (unpaidAmount > 0) {
+      doc.setTextColor(239, 68, 68);
+      doc.text('Balance Due:', 140, finalY + 20);
+      doc.text(`$${unpaidAmount.toFixed(2)}`, 185, finalY + 20, { align: 'right' });
+    }
+  }
+
+  // ===== FOOTER =====
+  const pageHeight = doc.internal.pageSize.height;
+
+  doc.setDrawColor(BRAND_ORANGE);
+  doc.setLineWidth(0.5);
+  doc.line(20, pageHeight - 25, 190, pageHeight - 25);
+
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Impact Direct Printing', 105, pageHeight - 18, { align: 'center' });
+  doc.text('brandon@impactdirectprinting.com | (330) 963-0970', 105, pageHeight - 12, { align: 'center' });
+
+  return Buffer.from(doc.output('arraybuffer'));
+}

@@ -415,6 +415,14 @@ export const getJob = async (req: Request, res: Response) => {
         },
         ProfitSplit: true, // NEW: Include cached profit split
         JobPortal: true, // Vendor portal status tracking
+        Invoice: {
+          select: {
+            id: true,
+            paidAt: true,
+            amount: true,
+            invoiceNo: true,
+          },
+        },
       },
     });
 
@@ -2580,5 +2588,26 @@ export const markJDPaid = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Mark JD paid error:', error);
     res.status(500).json({ error: 'Failed to mark JD paid' });
+  }
+};
+
+// Update invoice payment status (toggle paidAt)
+export const updateInvoiceStatus = async (req: Request, res: Response) => {
+  try {
+    const { invoiceId } = req.params;
+    const { status } = req.body; // 'paid' | 'unpaid'
+
+    const invoice = await prisma.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        paidAt: status === 'paid' ? new Date() : null,
+        updatedAt: new Date()
+      }
+    });
+
+    res.json({ success: true, invoice });
+  } catch (error) {
+    console.error('Update invoice status error:', error);
+    res.status(500).json({ error: 'Failed to update invoice status' });
   }
 };

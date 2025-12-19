@@ -374,3 +374,42 @@ export const generatePurchaseOrderPDF = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to generate purchase order PDF' });
   }
 };
+
+// Generate Customer Statement PDF
+export const generateCustomerStatement = async (req: Request, res: Response) => {
+  try {
+    const { companyId } = req.params;
+    const { filter } = req.query; // 'all' | 'unpaid'
+
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+    });
+
+    if (!company) {
+      return res.status(404).json({ error: 'Company not found' });
+    }
+
+    const invoices = await prisma.invoice.findMany({
+      where: {
+        toCompanyId: companyId,
+        ...(filter === 'unpaid' ? { paidAt: null } : {}),
+      },
+      orderBy: { issuedAt: 'desc' },
+    });
+
+    // Import the statement PDF generator
+    const { generateStatementPDF } = await import('../services/pdfService');
+    const pdfBuffer = generateStatementPDF(company, invoices);
+
+    // Sanitize company name for filename
+    const sanitizedName = company.name.replace(/[^a-z0-9]/gi, '_');
+    const dateStr = new Date().toISOString().split('T')[0];
+
+    res.contentType('application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Statement_${sanitizedName}_${dateStr}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Generate customer statement error:', error);
+    res.status(500).json({ error: 'Failed to generate customer statement' });
+  }
+};

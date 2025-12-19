@@ -144,6 +144,18 @@ export const pdfApi = {
   generatePO: (poId: string) => {
     window.open(`${API_BASE_URL}/pdf/po/${poId}`, '_blank');
   },
+  generateStatement: (companyId: string, filter: 'all' | 'unpaid' = 'all') => {
+    window.open(`${API_BASE_URL}/pdf/statement/${companyId}?filter=${filter}`, '_blank');
+  },
+};
+
+// Invoice API
+export const invoiceApi = {
+  updateStatus: (invoiceId: string, status: 'paid' | 'unpaid') =>
+    apiFetch(`/jobs/invoices/${invoiceId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }),
 };
 
 // Email API
