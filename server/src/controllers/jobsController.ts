@@ -186,6 +186,8 @@ function transformJob(job: any) {
 
   return {
     ...job,
+    // Fix Decimal serialization - ensure sellPrice is a number
+    sellPrice: Number(job.sellPrice) || 0,
     // Preserve IDs explicitly for filtering
     customerId: job.customerId,
     vendorId: job.vendorId,
