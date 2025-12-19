@@ -2220,7 +2220,7 @@ export const deletePO = async (req: Request, res: Response) => {
 export const markCustomerPaid = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { date } = req.body;
+    const { date, status } = req.body; // status: 'paid' | 'unpaid'
 
     const existingJob = await prisma.job.findUnique({
       where: { id },
@@ -2235,6 +2235,28 @@ export const markCustomerPaid = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Job not found' });
     }
 
+    // Handle unpaid status - clear payment date
+    if (status === 'unpaid') {
+      await logPaymentChange(id, 'customerPaymentDate', existingJob.customerPaymentDate, null, 'admin');
+
+      const job = await prisma.job.update({
+        where: { id },
+        data: {
+          customerPaymentDate: null,
+          customerPaymentAmount: null,
+          updatedAt: new Date(),
+        },
+        include: {
+          Company: true,
+          Vendor: true,
+          PurchaseOrder: { include: { Vendor: true } },
+          ProfitSplit: true,
+        },
+      });
+      return res.json(transformJob(job));
+    }
+
+    // Default: mark as paid
     const paymentDate = date ? new Date(date) : new Date();
     const paymentAmount = Number(existingJob.sellPrice) || 0;
 

@@ -2491,33 +2491,33 @@ export function JobDetailModal({
                       Inv sent {new Date(job.invoiceEmailedAt).toLocaleDateString()}
                     </span>
                   )}
-                  {/* Invoice payment status toggle */}
-                  {job.invoices && job.invoices.length > 0 && (
-                    <div className="flex items-center gap-2">
-                      {job.invoices.map((inv) => (
-                        <select
-                          key={inv.id}
-                          value={inv.paidAt ? 'paid' : 'unpaid'}
-                          onChange={async (e) => {
-                            try {
-                              await invoiceApi.updateStatus(inv.id, e.target.value as 'paid' | 'unpaid');
-                              onRefresh?.();
-                            } catch (err) {
-                              console.error('Failed to update invoice status:', err);
-                            }
-                          }}
-                          className={`text-xs px-2 py-1 rounded border cursor-pointer ${
-                            inv.paidAt
-                              ? 'bg-green-50 text-green-700 border-green-200'
-                              : 'bg-yellow-50 text-yellow-700 border-yellow-200'
-                          }`}
-                          title={inv.amount ? `$${Number(inv.amount).toFixed(2)}` : 'Invoice'}
-                        >
-                          <option value="unpaid">Unpaid</option>
-                          <option value="paid">Paid</option>
-                        </select>
-                      ))}
-                    </div>
+                  {/* Invoice payment status toggle - shows when invoice has been sent */}
+                  {job.invoiceEmailedAt && (
+                    <select
+                      value={job.customerPaymentDate ? 'paid' : 'unpaid'}
+                      onChange={async (e) => {
+                        try {
+                          const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/jobs/${job.id}/customer-paid`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ status: e.target.value }),
+                          });
+                          if (!response.ok) throw new Error('Failed to update');
+                          onRefresh?.();
+                        } catch (err) {
+                          console.error('Failed to update payment status:', err);
+                        }
+                      }}
+                      className={`text-xs px-2 py-1 rounded border cursor-pointer ${
+                        job.customerPaymentDate
+                          ? 'bg-green-50 text-green-700 border-green-200'
+                          : 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                      }`}
+                      title={job.sellPrice ? `$${Number(job.sellPrice).toFixed(2)}` : 'Payment status'}
+                    >
+                      <option value="unpaid">Unpaid</option>
+                      <option value="paid">Paid</option>
+                    </select>
                   )}
                   {onDownloadQuote && (
                     <button
