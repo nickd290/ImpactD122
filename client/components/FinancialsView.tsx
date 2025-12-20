@@ -196,9 +196,10 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
     };
   }, { sellPrice: 0, totalCost: 0, spread: 0, bradfordTotal: 0, impactTotal: 0 });
 
-  // Calculate cash position: money received from customers vs paid to Bradford and Vendors
+  // Calculate cash position: money received vs paid vs owed
   const cashPosition = React.useMemo(() => {
     return filteredJobs.reduce((acc, job) => {
+      const fin = getJobFinancials(job);
       const customerPaid = job.customerPaymentDate
         ? (Number(job.customerPaymentAmount) || Number(job.sellPrice) || 0)
         : 0;
@@ -208,16 +209,22 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
       const vendorPaid = job.vendorPaymentDate
         ? (Number(job.vendorPaymentAmount) || 0)
         : 0;
+      // Owed to Bradford: customer paid us, but we haven't paid Bradford yet
+      const owedBradford = (job.customerPaymentDate && !job.bradfordPaymentDate)
+        ? fin.bradfordTotal
+        : 0;
 
       return {
         received: acc.received + customerPaid,
         paidBradford: acc.paidBradford + bradfordPaid,
         paidVendors: acc.paidVendors + vendorPaid,
+        owedBradford: acc.owedBradford + owedBradford,
         jobsReceived: acc.jobsReceived + (job.customerPaymentDate ? 1 : 0),
         jobsPaidBradford: acc.jobsPaidBradford + (job.bradfordPaymentDate ? 1 : 0),
         jobsPaidVendors: acc.jobsPaidVendors + (job.vendorPaymentDate ? 1 : 0),
+        jobsOwedBradford: acc.jobsOwedBradford + ((job.customerPaymentDate && !job.bradfordPaymentDate) ? 1 : 0),
       };
-    }, { received: 0, paidBradford: 0, paidVendors: 0, jobsReceived: 0, jobsPaidBradford: 0, jobsPaidVendors: 0 });
+    }, { received: 0, paidBradford: 0, paidVendors: 0, owedBradford: 0, jobsReceived: 0, jobsPaidBradford: 0, jobsPaidVendors: 0, jobsOwedBradford: 0 });
   }, [filteredJobs]);
 
   if (loading) {
@@ -240,12 +247,19 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
       </div>
 
       {/* Cash Position Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         {/* Received from Customers */}
         <div className="bg-green-50 rounded-lg shadow p-4 border border-green-200">
           <p className="text-xs font-medium text-green-600 uppercase tracking-wide">Received from Customers</p>
           <p className="text-2xl font-bold text-green-700 mt-2">{formatCurrency(cashPosition.received)}</p>
           <p className="text-xs text-green-600 mt-1">{cashPosition.jobsReceived} jobs paid</p>
+        </div>
+
+        {/* Owed to Bradford */}
+        <div className="bg-red-50 rounded-lg shadow p-4 border border-red-200">
+          <p className="text-xs font-medium text-red-600 uppercase tracking-wide">Owed to Bradford</p>
+          <p className="text-2xl font-bold text-red-700 mt-2">{formatCurrency(cashPosition.owedBradford)}</p>
+          <p className="text-xs text-red-600 mt-1">{cashPosition.jobsOwedBradford} jobs pending</p>
         </div>
 
         {/* Paid to Bradford */}
@@ -261,32 +275,37 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
           <p className="text-2xl font-bold text-purple-700 mt-2">{formatCurrency(cashPosition.paidVendors)}</p>
           <p className="text-xs text-purple-600 mt-1">{cashPosition.jobsPaidVendors} jobs paid</p>
         </div>
-
-        {/* Net Cash Position */}
-        {(() => {
-          const netPosition = cashPosition.received - cashPosition.paidBradford - cashPosition.paidVendors;
-          const isPositive = netPosition >= 0;
-          return (
-            <div className={`rounded-lg shadow p-4 border ${
-              isPositive ? 'bg-blue-50 border-blue-200' : 'bg-red-50 border-red-200'
-            }`}>
-              <p className={`text-xs font-medium uppercase tracking-wide ${
-                isPositive ? 'text-blue-600' : 'text-red-600'
-              }`}>Net Cash Position</p>
-              <p className={`text-2xl font-bold mt-2 ${
-                isPositive ? 'text-blue-700' : 'text-red-700'
-              }`}>
-                {formatCurrency(netPosition)}
-              </p>
-              <p className={`text-xs mt-1 ${
-                isPositive ? 'text-blue-600' : 'text-red-600'
-              }`}>
-                {isPositive ? 'Available balance' : 'Outstanding balance'}
-              </p>
-            </div>
-          );
-        })()}
       </div>
+
+      {/* Net Cash Position - Full Width */}
+      {(() => {
+        const totalPaid = cashPosition.paidBradford + cashPosition.paidVendors;
+        const netPosition = cashPosition.received - totalPaid - cashPosition.owedBradford;
+        const isPositive = netPosition >= 0;
+        return (
+          <div className={`rounded-lg shadow p-4 border mb-6 ${
+            isPositive ? 'bg-blue-50 border-blue-200' : 'bg-red-50 border-red-200'
+          }`}>
+            <div className="flex justify-between items-center">
+              <div>
+                <p className={`text-xs font-medium uppercase tracking-wide ${
+                  isPositive ? 'text-blue-600' : 'text-red-600'
+                }`}>Net Cash Position</p>
+                <p className={`text-3xl font-bold mt-1 ${
+                  isPositive ? 'text-blue-700' : 'text-red-700'
+                }`}>
+                  {formatCurrency(netPosition)}
+                </p>
+              </div>
+              <div className={`text-right text-sm ${isPositive ? 'text-blue-600' : 'text-red-600'}`}>
+                <p>Received: {formatCurrency(cashPosition.received)}</p>
+                <p>− Paid: {formatCurrency(totalPaid)}</p>
+                <p>− Owed: {formatCurrency(cashPosition.owedBradford)}</p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Filter Tabs + Statement Download */}
       <div className="mb-4 flex justify-between items-center">
