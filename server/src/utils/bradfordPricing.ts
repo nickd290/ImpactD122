@@ -190,6 +190,44 @@ export const BRADFORD_SIZE_PRICING = Object.fromEntries(
 );
 
 /**
+ * Size → Paper Type Mapping for Bradford Paper Inventory Tracking
+ *
+ * Maps job sizes to the specific paper type used:
+ * - 6x9, 6x11 → 20" 9 Point Gloss
+ * - 22.125x9.75, 26x9.75 → 20" (user selects: 7 Point Matte OR 100# Gloss Text)
+ * - 17.5x8.5 → 18" 7 Point Matte
+ * - 16.375x7.25 → 15" 7 Point Matte
+ */
+export interface SizePaperTypeMapping {
+  rollWidth: number;
+  paperType: string | null;  // null means user must select
+  options?: string[];        // Available options when paperType is null
+}
+
+export const SIZE_TO_PAPER_TYPE: Record<string, SizePaperTypeMapping> = {
+  '6 x 9': { rollWidth: 20, paperType: '9 Point Gloss' },
+  '6 x 11': { rollWidth: 20, paperType: '9 Point Gloss' },
+  '9 3/4 x 22 1/8': { rollWidth: 20, paperType: null, options: ['7 Point Matte', '100# Gloss Text'] },
+  '9 3/4 x 26': { rollWidth: 20, paperType: null, options: ['7 Point Matte', '100# Gloss Text'] },
+  '8 1/2 x 17 1/2': { rollWidth: 18, paperType: '7 Point Matte' },
+  '7 1/4 x 16 3/8': { rollWidth: 15, paperType: '7 Point Matte' },
+};
+
+/**
+ * Get the paper type key for inventory tracking
+ * Format: "20\" 9 Point Gloss" or "18\" 7 Point Matte"
+ */
+export function getPaperTypeKey(sizeName: string, bradfordPaperType?: string | null): string | null {
+  const mapping = SIZE_TO_PAPER_TYPE[sizeName];
+  if (!mapping) return null;
+
+  const paperType = mapping.paperType || bradfordPaperType;
+  if (!paperType) return null;
+
+  return `${mapping.rollWidth}" ${paperType}`;
+}
+
+/**
  * Normalize size string to standard format
  * Handles: decimals to fractions, flipped dimensions, extra spaces
  * Examples:

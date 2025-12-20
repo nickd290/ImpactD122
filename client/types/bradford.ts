@@ -20,6 +20,9 @@ export interface BradfordJob {
   sizeName: string;
   quantity: number;
   paperPounds: number;
+  paperTypeKey: string | null;
+  bradfordPaperType: string | null;
+  paperTypeOptions: string[] | null;
   sellPrice: number;
   totalCost: number;
   spread: number;
@@ -60,6 +63,7 @@ export interface BradfordStats {
   totalPaperSheets: number;
   totalPaperPounds: number;
   paperUsageBySize: Record<string, BradfordPaperUsage>;
+  paperByType: Record<string, { used: number; expected: number }>;
 
   // Warnings
   jobsWithNegativeMargin: number;

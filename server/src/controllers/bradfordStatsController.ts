@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { prisma } from '../utils/prisma';
-import { BRADFORD_SIZE_PRICING } from '../utils/bradfordPricing';
+import { BRADFORD_SIZE_PRICING, SIZE_TO_PAPER_TYPE, getPaperTypeKey } from '../utils/bradfordPricing';
 
 // Calculate job cost from POs - only Impact-origin POs count as our cost
 function calculateJobCost(job: any): number {
@@ -107,6 +107,9 @@ export const getBradfordStats = async (req: Request, res: Response) => {
       totalPaperPounds: 0,
       paperUsageBySize: {} as Record<string, { sheets: number; pounds: number }>,
 
+      // Paper usage by type (for Bradford paper inventory)
+      paperByType: {} as Record<string, { used: number; expected: number }>,
+
       // Warnings
       jobsWithNegativeMargin: 0,
       jobsMissingRefNumber: 0,
@@ -122,6 +125,9 @@ export const getBradfordStats = async (req: Request, res: Response) => {
         sizeName: string;
         quantity: number;
         paperPounds: number;
+        paperTypeKey: string | null;
+        bradfordPaperType: string | null;
+        paperTypeOptions: string[] | null;
         sellPrice: number;
         totalCost: number;
         spread: number;
@@ -248,6 +254,8 @@ export const getBradfordStats = async (req: Request, res: Response) => {
       const finishedSize = specs.finishedSize || specs.sizeName || job.sizeName;
       let jobPaperPounds = 0;
       let paperCost = 0;
+      let paperTypeKey: string | null = null;
+      let paperTypeOptions: string[] | null = null;
 
       if (isBradfordVendor && finishedSize) {
         const pricing = BRADFORD_SIZE_PRICING[finishedSize as keyof typeof BRADFORD_SIZE_PRICING];
@@ -273,6 +281,36 @@ export const getBradfordStats = async (req: Request, res: Response) => {
           }
           stats.paperUsageBySize[finishedSize].sheets += sheets;
           stats.paperUsageBySize[finishedSize].pounds += pounds;
+
+          // Get paper type for this size
+          const sizeMapping = SIZE_TO_PAPER_TYPE[finishedSize];
+          if (sizeMapping) {
+            paperTypeKey = getPaperTypeKey(finishedSize, job.bradfordPaperType);
+            paperTypeOptions = sizeMapping.options || null;
+
+            // Track paper by type (used vs expected)
+            if (paperTypeKey) {
+              if (!stats.paperByType[paperTypeKey]) {
+                stats.paperByType[paperTypeKey] = { used: 0, expected: 0 };
+              }
+
+              // Job is "used" if:
+              // - Job status is PAID, or
+              // - Vendor status is PRINTING_COMPLETE or SHIPPED, or
+              // - Due date (deliveryDate) has passed (job must have ran by then)
+              const isJobRan =
+                job.status === 'PAID' ||
+                job.vendorStatus === 'PRINTING_COMPLETE' ||
+                job.vendorStatus === 'SHIPPED' ||
+                (job.deliveryDate && new Date(job.deliveryDate) < new Date());
+
+              if (isJobRan) {
+                stats.paperByType[paperTypeKey].used += pounds;
+              } else {
+                stats.paperByType[paperTypeKey].expected += pounds;
+              }
+            }
+          }
         }
 
         // Only calculate paper cost for Bradford jobs
@@ -291,6 +329,9 @@ export const getBradfordStats = async (req: Request, res: Response) => {
         sizeName: finishedSize || '',
         quantity: job.quantity || 0,
         paperPounds: Math.round(jobPaperPounds * 100) / 100,
+        paperTypeKey,
+        bradfordPaperType: job.bradfordPaperType || null,
+        paperTypeOptions,
         sellPrice: Math.round(revenue * 100) / 100,
         totalCost: Math.round(cost * 100) / 100,
         spread: Math.round(spread * 100) / 100,
@@ -482,5 +523,45 @@ export const updateBradfordPO = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Update Bradford PO error:', error);
     res.status(500).json({ error: 'Failed to update Bradford PO number' });
+  }
+};
+
+// Update Bradford paper type for a job (for 20" sizes that require selection)
+export const updateBradfordPaperType = async (req: Request, res: Response) => {
+  try {
+    const { jobId } = req.params;
+    const { paperType } = req.body;
+
+    if (!jobId) {
+      return res.status(400).json({ error: 'Job ID is required' });
+    }
+
+    // Valid paper types for 20" sizes
+    const validTypes = ['7 Point Matte', '100# Gloss Text', '9 Point Gloss'];
+    if (paperType && !validTypes.includes(paperType)) {
+      return res.status(400).json({
+        error: 'Invalid paper type',
+        validTypes
+      });
+    }
+
+    const updatedJob = await prisma.job.update({
+      where: { id: jobId },
+      data: { bradfordPaperType: paperType || null },
+      select: {
+        id: true,
+        jobNo: true,
+        bradfordPaperType: true
+      }
+    });
+
+    return res.json({
+      success: true,
+      jobNo: updatedJob.jobNo,
+      bradfordPaperType: updatedJob.bradfordPaperType
+    });
+  } catch (error) {
+    console.error('Update Bradford paper type error:', error);
+    res.status(500).json({ error: 'Failed to update paper type' });
   }
 };

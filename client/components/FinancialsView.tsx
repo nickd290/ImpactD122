@@ -231,8 +231,8 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-impact-red mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading financials...</p>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-zinc-900 mx-auto"></div>
+          <p className="mt-4 text-zinc-500 text-sm">Loading financials...</p>
         </div>
       </div>
     );
@@ -242,38 +242,38 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
     <div>
       {/* Header */}
       <div className="mb-6">
-        <h2 className="text-3xl font-bold text-gray-900">Financials</h2>
-        <p className="text-gray-600 mt-1">All jobs with payment tracking</p>
+        <h1 className="text-xl font-medium text-zinc-900">Financials</h1>
+        <p className="text-sm text-zinc-400 mt-0.5">Payment tracking and cash flow</p>
       </div>
 
       {/* Cash Position Summary */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         {/* Received from Customers */}
-        <div className="bg-green-50 rounded-lg shadow p-4 border border-green-200">
-          <p className="text-xs font-medium text-green-600 uppercase tracking-wide">Received from Customers</p>
-          <p className="text-2xl font-bold text-green-700 mt-2">{formatCurrency(cashPosition.received)}</p>
-          <p className="text-xs text-green-600 mt-1">{cashPosition.jobsReceived} jobs paid</p>
+        <div className="bg-white rounded-lg border border-zinc-200 p-4">
+          <p className="text-xs font-medium text-zinc-500">Received from Customers</p>
+          <p className="text-2xl font-medium text-green-600 mt-2 tabular-nums">{formatCurrency(cashPosition.received)}</p>
+          <p className="text-xs text-zinc-400 mt-1">{cashPosition.jobsReceived} jobs paid</p>
         </div>
 
         {/* Owed to Bradford */}
-        <div className="bg-red-50 rounded-lg shadow p-4 border border-red-200">
-          <p className="text-xs font-medium text-red-600 uppercase tracking-wide">Owed to Bradford</p>
-          <p className="text-2xl font-bold text-red-700 mt-2">{formatCurrency(cashPosition.owedBradford)}</p>
-          <p className="text-xs text-red-600 mt-1">{cashPosition.jobsOwedBradford} jobs pending</p>
+        <div className="bg-white rounded-lg border border-zinc-200 p-4">
+          <p className="text-xs font-medium text-zinc-500">Owed to Bradford</p>
+          <p className="text-2xl font-medium text-red-600 mt-2 tabular-nums">{formatCurrency(cashPosition.owedBradford)}</p>
+          <p className="text-xs text-zinc-400 mt-1">{cashPosition.jobsOwedBradford} jobs pending</p>
         </div>
 
         {/* Paid to Bradford */}
-        <div className="bg-orange-50 rounded-lg shadow p-4 border border-orange-200">
-          <p className="text-xs font-medium text-orange-600 uppercase tracking-wide">Paid to Bradford</p>
-          <p className="text-2xl font-bold text-orange-700 mt-2">{formatCurrency(cashPosition.paidBradford)}</p>
-          <p className="text-xs text-orange-600 mt-1">{cashPosition.jobsPaidBradford} jobs paid</p>
+        <div className="bg-white rounded-lg border border-zinc-200 p-4">
+          <p className="text-xs font-medium text-zinc-500">Paid to Bradford</p>
+          <p className="text-2xl font-medium text-amber-600 mt-2 tabular-nums">{formatCurrency(cashPosition.paidBradford)}</p>
+          <p className="text-xs text-zinc-400 mt-1">{cashPosition.jobsPaidBradford} jobs paid</p>
         </div>
 
         {/* Paid to Vendors */}
-        <div className="bg-purple-50 rounded-lg shadow p-4 border border-purple-200">
-          <p className="text-xs font-medium text-purple-600 uppercase tracking-wide">Paid to Vendors</p>
-          <p className="text-2xl font-bold text-purple-700 mt-2">{formatCurrency(cashPosition.paidVendors)}</p>
-          <p className="text-xs text-purple-600 mt-1">{cashPosition.jobsPaidVendors} jobs paid</p>
+        <div className="bg-white rounded-lg border border-zinc-200 p-4">
+          <p className="text-xs font-medium text-zinc-500">Paid to Vendors</p>
+          <p className="text-2xl font-medium text-zinc-600 mt-2 tabular-nums">{formatCurrency(cashPosition.paidVendors)}</p>
+          <p className="text-xs text-zinc-400 mt-1">{cashPosition.jobsPaidVendors} jobs paid</p>
         </div>
       </div>
 
@@ -283,24 +283,20 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
         const netPosition = cashPosition.received - totalPaid - cashPosition.owedBradford;
         const isPositive = netPosition >= 0;
         return (
-          <div className={`rounded-lg shadow p-4 border mb-6 ${
-            isPositive ? 'bg-blue-50 border-blue-200' : 'bg-red-50 border-red-200'
-          }`}>
+          <div className="bg-white rounded-lg border border-zinc-200 p-4 mb-6">
             <div className="flex justify-between items-center">
               <div>
-                <p className={`text-xs font-medium uppercase tracking-wide ${
-                  isPositive ? 'text-blue-600' : 'text-red-600'
-                }`}>Net Cash Position</p>
-                <p className={`text-3xl font-bold mt-1 ${
-                  isPositive ? 'text-blue-700' : 'text-red-700'
+                <p className="text-xs font-medium text-zinc-500">Net Cash Position</p>
+                <p className={`text-3xl font-medium mt-1 tabular-nums ${
+                  isPositive ? 'text-zinc-900' : 'text-red-600'
                 }`}>
                   {formatCurrency(netPosition)}
                 </p>
               </div>
-              <div className={`text-right text-sm ${isPositive ? 'text-blue-600' : 'text-red-600'}`}>
-                <p>Received: {formatCurrency(cashPosition.received)}</p>
-                <p>− Paid: {formatCurrency(totalPaid)}</p>
-                <p>− Owed: {formatCurrency(cashPosition.owedBradford)}</p>
+              <div className="text-right text-sm text-zinc-500">
+                <p>Received: <span className="tabular-nums">{formatCurrency(cashPosition.received)}</span></p>
+                <p>− Paid: <span className="tabular-nums">{formatCurrency(totalPaid)}</span></p>
+                <p>− Owed: <span className="tabular-nums">{formatCurrency(cashPosition.owedBradford)}</span></p>
               </div>
             </div>
           </div>
@@ -312,40 +308,40 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
         <div className="flex gap-2 items-center">
           <button
             onClick={() => setFilter('all')}
-            className={`px-4 py-2 rounded-lg font-medium ${
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
               filter === 'all'
-                ? 'bg-gray-900 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                ? 'bg-zinc-900 text-white'
+                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900'
             }`}
           >
-            All Jobs ({jobs.length})
+            All Jobs <span className="text-xs tabular-nums ml-1">{jobs.length}</span>
           </button>
           <button
             onClick={() => setFilter('active')}
-            className={`px-4 py-2 rounded-lg font-medium ${
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
               filter === 'active'
-                ? 'bg-yellow-600 text-white'
-                : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+                ? 'bg-amber-600 text-white'
+                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900'
             }`}
           >
-            Unpaid ({jobs.filter(j => !j.customerPaymentDate).length})
+            Unpaid <span className="text-xs tabular-nums ml-1">{jobs.filter(j => !j.customerPaymentDate).length}</span>
           </button>
           <button
             onClick={() => setFilter('paid')}
-            className={`px-4 py-2 rounded-lg font-medium ${
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
               filter === 'paid'
                 ? 'bg-green-600 text-white'
-                : 'bg-green-100 text-green-700 hover:bg-green-200'
+                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900'
             }`}
           >
-            Paid ({jobs.filter(j => !!j.customerPaymentDate).length})
+            Paid <span className="text-xs tabular-nums ml-1">{jobs.filter(j => !!j.customerPaymentDate).length}</span>
           </button>
 
           {/* Customer Filter */}
           <select
             value={filterCustomerId}
             onChange={(e) => setFilterCustomerId(e.target.value)}
-            className="ml-4 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="ml-4 px-3 py-1.5 border border-zinc-200 rounded-lg text-sm text-zinc-600 focus:ring-1 focus:ring-zinc-400 focus:border-zinc-400"
           >
             <option value="">All Customers</option>
             {uniqueCustomers.map(c => (
@@ -355,7 +351,7 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
           {filterCustomerId && (
             <button
               onClick={() => setFilterCustomerId('')}
-              className="text-xs text-gray-500 hover:text-gray-700"
+              className="text-xs text-zinc-400 hover:text-zinc-600"
             >
               Clear
             </button>
@@ -367,7 +363,7 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
           <select
             value={statementCustomerId}
             onChange={(e) => setStatementCustomerId(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="px-3 py-1.5 border border-zinc-200 rounded-lg text-sm text-zinc-600 focus:ring-1 focus:ring-zinc-400 focus:border-zinc-400"
           >
             <option value="">Download Statement...</option>
             {uniqueCustomers.map(c => (
@@ -378,15 +374,15 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
             <>
               <button
                 onClick={() => pdfApi.generateStatement(statementCustomerId, 'all')}
-                className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+                className="px-3 py-1.5 bg-zinc-900 text-white rounded-lg text-sm font-medium hover:bg-zinc-800"
               >
                 All
               </button>
               <button
                 onClick={() => pdfApi.generateStatement(statementCustomerId, 'unpaid')}
-                className="px-3 py-2 bg-yellow-600 text-white rounded-lg text-sm font-medium hover:bg-yellow-700"
+                className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
               >
-                Unpaid Only
+                Unpaid
               </button>
             </>
           )}
@@ -395,22 +391,22 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
 
       {/* Batch Actions */}
       {selectedJobIds.size > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 flex items-center justify-between">
+        <div className="bg-zinc-50 border border-zinc-200 rounded-lg p-4 mb-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <span className="text-sm font-medium text-gray-700">
+            <span className="text-sm font-medium text-zinc-700">
               {selectedJobIds.size} job{selectedJobIds.size !== 1 ? 's' : ''} selected
             </span>
             <button
               onClick={() => setSelectedJobIds(new Set())}
-              className="text-sm text-gray-600 hover:text-gray-800 underline"
+              className="text-sm text-zinc-500 hover:text-zinc-700"
             >
-              Clear selection
+              Clear
             </button>
           </div>
           <div className="flex gap-2">
             <button
               onClick={() => handleBatchUpdateStatus('PAID')}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 flex items-center gap-2"
+              className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 flex items-center gap-2"
             >
               <Check className="w-4 h-4" />
               Mark as Paid
@@ -420,41 +416,41 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
       )}
 
       {/* Total Summary */}
-      <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-        <p className="text-sm text-green-600 font-medium">Total Sell ({filteredJobs.length} jobs)</p>
-        <p className="text-2xl font-bold text-green-700">{formatCurrency(totals.sellPrice)}</p>
+      <div className="mb-4 p-4 bg-white border border-zinc-200 rounded-lg">
+        <p className="text-xs font-medium text-zinc-500">Total Sell ({filteredJobs.length} jobs)</p>
+        <p className="text-2xl font-medium text-zinc-900 tabular-nums mt-1">{formatCurrency(totals.sellPrice)}</p>
       </div>
 
       {/* Jobs Table */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="bg-white rounded-lg border border-zinc-200 overflow-hidden">
         <table className="min-w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
+          <thead className="border-b border-zinc-200">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase w-12">
+              <th className="px-4 py-3 text-left w-12">
                 <input
                   type="checkbox"
                   checked={selectedJobIds.size === filteredJobs.length && filteredJobs.length > 0}
                   onChange={toggleSelectAll}
-                  className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                  className="w-4 h-4 text-zinc-900 rounded border-zinc-300 focus:ring-zinc-400"
                 />
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Job</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Customer PO #</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Customer</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Sell</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Spread</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Split</th>
-              <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Customer Paid</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Job</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Customer PO #</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Customer</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Sell</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Spread</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Split</th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-zinc-500">Customer Paid</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200">
+          <tbody>
             {filteredJobs.map((job) => {
               const fin = getJobFinancials(job);
 
               return (
                 <tr
                   key={job.id}
-                  className="hover:bg-gray-50 transition-colors"
+                  className="border-b border-zinc-100 hover:bg-zinc-50 transition-colors"
                 >
                   <td className="px-4 py-3 text-sm">
                     <input
@@ -464,45 +460,45 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
                         e.stopPropagation();
                         toggleJobSelection(job.id);
                       }}
-                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                      className="w-4 h-4 text-zinc-900 rounded border-zinc-300 focus:ring-zinc-400"
                     />
                   </td>
                   <td
                     onClick={() => handleRowClick(job)}
                     className="px-4 py-3 cursor-pointer"
                   >
-                    <p className="text-sm font-medium text-gray-900">{job.number}</p>
-                    <p className="text-xs text-gray-500 truncate max-w-[150px]">{job.title}</p>
+                    <p className="text-sm font-medium text-zinc-900">{job.number}</p>
+                    <p className="text-xs text-zinc-400 truncate max-w-[150px]">{job.title}</p>
                   </td>
-                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-gray-600 cursor-pointer">
+                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-zinc-600 cursor-pointer">
                     {job.customerPONumber || '-'}
                   </td>
-                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-gray-900 cursor-pointer">
+                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-zinc-600 cursor-pointer">
                     {job.customer?.name || '-'}
                   </td>
-                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-right font-semibold text-green-600 cursor-pointer">
+                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-right font-medium text-green-600 cursor-pointer tabular-nums">
                     {formatCurrency(fin.sellPrice)}
                   </td>
-                  <td onClick={() => handleRowClick(job)} className={`px-4 py-3 text-sm text-right font-bold cursor-pointer ${fin.spread >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                  <td onClick={() => handleRowClick(job)} className={`px-4 py-3 text-sm text-right font-medium cursor-pointer tabular-nums ${fin.spread >= 0 ? 'text-zinc-900' : 'text-red-600'}`}>
                     {formatCurrency(fin.spread)}
                   </td>
-                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-right cursor-pointer relative group">
-                    <span className="font-semibold text-blue-600">{formatCurrency(fin.impactTotal)}</span>
-                    <div className="hidden group-hover:block absolute bg-gray-900 text-white text-xs p-2 rounded -top-12 right-0 whitespace-nowrap z-10 shadow-lg">
-                      <div className="text-orange-300">Bradford: {formatCurrency(fin.bradfordTotal)}</div>
-                      <div className="text-blue-300">Impact: {formatCurrency(fin.impactTotal)}</div>
+                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-right cursor-pointer relative group tabular-nums">
+                    <span className="font-medium text-zinc-600">{formatCurrency(fin.impactTotal)}</span>
+                    <div className="hidden group-hover:block absolute bg-zinc-900 text-white text-xs p-2 rounded -top-12 right-0 whitespace-nowrap z-10 shadow-lg">
+                      <div className="text-amber-300 tabular-nums">Bradford: {formatCurrency(fin.bradfordTotal)}</div>
+                      <div className="text-zinc-300 tabular-nums">Impact: {formatCurrency(fin.impactTotal)}</div>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-sm text-center">
                     {job.customerPaymentDate ? (
-                      <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium inline-flex items-center gap-1">
+                      <span className="px-2 py-1 bg-green-50 text-green-600 rounded-full text-xs font-medium inline-flex items-center gap-1">
                         <Check className="w-3 h-3" />
-                        Customer Paid
+                        Paid
                       </span>
                     ) : (
                       <button
                         onClick={(e) => handleMarkCustomerPaid(job.id, e)}
-                        className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium hover:bg-green-100 hover:text-green-700 transition-colors"
+                        className="px-3 py-1 bg-zinc-100 text-zinc-600 rounded-full text-xs font-medium hover:bg-green-50 hover:text-green-600 transition-colors"
                         title="Mark Customer Paid"
                       >
                         Mark Paid
@@ -513,16 +509,16 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
               );
             })}
           </tbody>
-          <tfoot className="bg-gray-900 text-white">
+          <tfoot className="bg-zinc-900 text-white">
             <tr>
               <td className="px-4 py-3"></td>
-              <td colSpan={3} className="px-4 py-3 text-sm font-bold">TOTALS ({filteredJobs.length} jobs)</td>
-              <td className="px-4 py-3 text-sm text-right font-bold">{formatCurrency(totals.sellPrice)}</td>
-              <td className="px-4 py-3 text-sm text-right font-bold text-blue-400">{formatCurrency(totals.spread)}</td>
-              <td className="px-4 py-3 text-sm text-right font-bold">
-                <span className="text-orange-400">{formatCurrency(totals.bradfordTotal)}</span>
-                <span className="text-gray-500 mx-1">/</span>
-                <span className="text-blue-400">{formatCurrency(totals.impactTotal)}</span>
+              <td colSpan={3} className="px-4 py-3 text-sm font-medium">Totals ({filteredJobs.length} jobs)</td>
+              <td className="px-4 py-3 text-sm text-right font-medium tabular-nums">{formatCurrency(totals.sellPrice)}</td>
+              <td className="px-4 py-3 text-sm text-right font-medium tabular-nums">{formatCurrency(totals.spread)}</td>
+              <td className="px-4 py-3 text-sm text-right font-medium tabular-nums">
+                <span className="text-amber-400">{formatCurrency(totals.bradfordTotal)}</span>
+                <span className="text-zinc-500 mx-1">/</span>
+                <span className="text-zinc-300">{formatCurrency(totals.impactTotal)}</span>
               </td>
               <td className="px-4 py-3"></td>
             </tr>

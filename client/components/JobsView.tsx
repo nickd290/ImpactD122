@@ -398,16 +398,16 @@ export function JobsView({
 
   return (
     <div className="space-y-4">
-      {/* Header - Compact */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">Jobs</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage your print jobs and track their progress
+          <h1 className="text-xl font-medium text-zinc-900">Jobs</h1>
+          <p className="text-sm text-zinc-400 mt-0.5">
+            {tabCounts.active} active, {tabCounts.completed} completed
           </p>
         </div>
-        <Button onClick={onCreateJob} size="sm">
-          <Plus className="w-4 h-4 mr-1" />
+        <Button onClick={onCreateJob} size="sm" className="bg-zinc-900 hover:bg-zinc-800">
+          <Plus className="w-4 h-4 mr-1.5" />
           New Job
         </Button>
       </div>
@@ -423,40 +423,40 @@ export function JobsView({
         }}
       />
 
-      {/* Search and Table Card */}
-      <div className="bg-card rounded-lg border border-border shadow-sm overflow-hidden">
+      {/* Search and Table */}
+      <div className="bg-white rounded-lg border border-zinc-200 overflow-hidden">
         {/* Search Bar */}
-        <div className="px-4 py-3 border-b border-border">
+        <div className="px-4 py-3 border-b border-zinc-200">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-400 w-4 h-4" />
             <Input
               type="text"
-              placeholder="Search jobs by title, number, customer, or vendor..."
+              placeholder="Search jobs..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
+              className="pl-10 border-zinc-200 focus:border-zinc-400 focus:ring-zinc-400"
             />
           </div>
         </div>
 
         {/* Customer Filter Chips */}
-        <div className="px-4 py-2 border-b border-border flex items-center gap-2 overflow-x-auto">
+        <div className="px-4 py-2 border-b border-zinc-100 flex items-center gap-2 overflow-x-auto">
           {customerList.map(({ id, name, count }) => (
             <button
               key={id}
               onClick={() => setSelectedCustomerId(selectedCustomerId === id ? null : id)}
               className={cn(
-                "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors",
+                "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors",
                 selectedCustomerId === id
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  ? "bg-zinc-900 text-white"
+                  : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900"
               )}
             >
               <Building2 className="w-3.5 h-3.5" />
               <span>{name}</span>
               <span className={cn(
-                "text-xs px-1.5 py-0.5 rounded-full",
-                selectedCustomerId === id ? "bg-white/20" : "bg-muted"
+                "text-xs tabular-nums",
+                selectedCustomerId === id ? "text-zinc-400" : "text-zinc-400"
               )}>
                 {count}
               </span>
@@ -466,35 +466,35 @@ export function JobsView({
 
         {/* Batch Actions Bar - only show when jobs selected */}
         {selectedJobIds.size > 0 && (
-          <div className="px-4 py-2 border-b border-border flex items-center gap-3 bg-muted/30">
-            <span className="text-sm text-muted-foreground">
+          <div className="px-4 py-2 border-b border-zinc-200 flex items-center gap-3 bg-zinc-50">
+            <span className="text-sm text-zinc-600">
               {selectedJobIds.size} selected
             </span>
             <div className="relative" ref={docMenuRef}>
-              <Button onClick={() => setIsDocMenuOpen(!isDocMenuOpen)} variant="outline" size="sm">
+              <Button onClick={() => setIsDocMenuOpen(!isDocMenuOpen)} variant="outline" size="sm" className="border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100">
                 <FileText className="w-4 h-4 mr-1" />
                 Docs
                 <ChevronDown className="w-3 h-3 ml-1" />
               </Button>
               {isDocMenuOpen && (
-                <div className="absolute left-0 mt-1 w-40 bg-card rounded-lg shadow-lg border border-border py-1 z-50">
-                  <button onClick={() => handleBatchGenerate('quote')} className="w-full px-3 py-2 text-left text-sm hover:bg-accent">Quotes</button>
-                  <button onClick={() => handleBatchGenerate('po')} className="w-full px-3 py-2 text-left text-sm hover:bg-accent">POs</button>
-                  <button onClick={() => handleBatchGenerate('invoice')} className="w-full px-3 py-2 text-left text-sm hover:bg-accent">Invoices</button>
+                <div className="absolute left-0 mt-1 w-40 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50">
+                  <button onClick={() => handleBatchGenerate('quote')} className="w-full px-3 py-2 text-left text-sm text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900">Quotes</button>
+                  <button onClick={() => handleBatchGenerate('po')} className="w-full px-3 py-2 text-left text-sm text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900">POs</button>
+                  <button onClick={() => handleBatchGenerate('invoice')} className="w-full px-3 py-2 text-left text-sm text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900">Invoices</button>
                 </div>
               )}
             </div>
             <div className="relative" ref={paymentMenuRef}>
-              <Button onClick={() => setIsPaymentMenuOpen(!isPaymentMenuOpen)} disabled={isProcessingPayment} variant="outline" size="sm">
+              <Button onClick={() => setIsPaymentMenuOpen(!isPaymentMenuOpen)} disabled={isProcessingPayment} variant="outline" size="sm" className="border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100">
                 <DollarSign className="w-4 h-4 mr-1" />
                 {isProcessingPayment ? '...' : 'Paid'}
                 <ChevronDown className="w-3 h-3 ml-1" />
               </Button>
               {isPaymentMenuOpen && (
-                <div className="absolute left-0 mt-1 w-40 bg-card rounded-lg shadow-lg border border-border py-1 z-50">
-                  <button onClick={() => handleBatchPayment('customer')} className="w-full px-3 py-2 text-left text-sm hover:bg-accent">Customer</button>
-                  <button onClick={() => handleBatchPayment('vendor')} className="w-full px-3 py-2 text-left text-sm hover:bg-accent">Vendor</button>
-                  <button onClick={() => handleBatchPayment('bradford')} className="w-full px-3 py-2 text-left text-sm hover:bg-accent">Bradford</button>
+                <div className="absolute left-0 mt-1 w-40 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50">
+                  <button onClick={() => handleBatchPayment('customer')} className="w-full px-3 py-2 text-left text-sm text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900">Customer</button>
+                  <button onClick={() => handleBatchPayment('vendor')} className="w-full px-3 py-2 text-left text-sm text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900">Vendor</button>
+                  <button onClick={() => handleBatchPayment('bradford')} className="w-full px-3 py-2 text-left text-sm text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900">Bradford</button>
                 </div>
               )}
             </div>
@@ -509,12 +509,12 @@ export function JobsView({
         {displayJobs.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="min-w-full">
-              <thead className="bg-muted/30 border-b border-border">
+              <thead className="border-b border-zinc-200">
                 <tr>
-                  <th className="px-3 py-2 w-10">
+                  <th className="px-4 py-3 w-10">
                     <button
                       onClick={handleSelectAll}
-                      className="text-muted-foreground hover:text-foreground"
+                      className="text-zinc-400 hover:text-zinc-900"
                     >
                       {selectedJobIds.size === displayJobs.length && displayJobs.length > 0 ? (
                         <CheckSquare className="w-4 h-4" />
@@ -523,70 +523,70 @@ export function JobsView({
                       )}
                     </button>
                   </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Job</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Customer</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Status</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase">PO #</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Due</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground uppercase">Qty</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground uppercase">Spread</th>
-                  <th className="px-3 py-2 w-20"></th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Job</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Customer</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">PO #</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Due</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Qty</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Spread</th>
+                  <th className="px-4 py-3 w-20"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody>
                 {displayJobs.map((job: Job) => (
                   <tr
                     key={job.id}
                     className={cn(
-                      'group hover:bg-accent/50 transition-colors',
-                      selectedJob?.id === job.id && 'bg-accent'
+                      'group border-b border-zinc-100 hover:bg-zinc-50 transition-colors',
+                      selectedJob?.id === job.id && 'bg-zinc-50'
                     )}
                   >
                     {/* Checkbox */}
-                    <td className="px-3 py-2.5">
+                    <td className="px-4 py-3">
                       <button
                         onClick={(e) => { e.stopPropagation(); handleToggleSelection(job.id); }}
-                        className="text-muted-foreground hover:text-foreground"
+                        className="text-zinc-400 hover:text-zinc-900"
                       >
-                        {selectedJobIds.has(job.id) ? <CheckSquare className="w-4 h-4 text-primary" /> : <Square className="w-4 h-4" />}
+                        {selectedJobIds.has(job.id) ? <CheckSquare className="w-4 h-4 text-zinc-900" /> : <Square className="w-4 h-4" />}
                       </button>
                     </td>
                     {/* Job */}
-                    <td onClick={() => handleRowClick(job)} className="px-3 py-2.5 cursor-pointer">
-                      <div className="text-sm font-medium text-foreground hover:text-primary">{job.number} - {job.title}</div>
-                      {job.vendor?.name && <div className="text-xs text-muted-foreground">{job.vendor.name}</div>}
+                    <td onClick={() => handleRowClick(job)} className="px-4 py-3 cursor-pointer">
+                      <div className="text-sm font-medium text-zinc-900 hover:text-zinc-600">{job.number} - {job.title}</div>
+                      {job.vendor?.name && <div className="text-xs text-zinc-400">{job.vendor.name}</div>}
                     </td>
                     {/* Customer */}
-                    <td className="px-3 py-2.5">
-                      <span className="text-sm text-muted-foreground">{job.customer?.name || '—'}</span>
+                    <td className="px-4 py-3">
+                      <span className="text-sm text-zinc-600">{job.customer?.name || '—'}</span>
                     </td>
                     {/* Status */}
-                    <td className="px-3 py-2.5">
+                    <td className="px-4 py-3">
                       <StatusDropdown status={job.status} onStatusChange={(s) => handleStatusChange(job.id, s)} />
                     </td>
                     {/* PO # */}
-                    <td className="px-3 py-2.5">
-                      <InlineEditableCell value={job.customerPONumber} onSave={(v) => handleInlineUpdate(job.id, 'customerPONumber', v)} placeholder="—" className="text-sm" />
+                    <td className="px-4 py-3">
+                      <InlineEditableCell value={job.customerPONumber} onSave={(v) => handleInlineUpdate(job.id, 'customerPONumber', v)} placeholder="—" className="text-sm text-zinc-600" />
                     </td>
                     {/* Due */}
-                    <td className="px-3 py-2.5">
-                      <InlineEditableCell value={job.dueDate} onSave={(v) => handleInlineUpdate(job.id, 'dueDate', v)} type="date" className="text-sm" />
+                    <td className="px-4 py-3">
+                      <InlineEditableCell value={job.dueDate} onSave={(v) => handleInlineUpdate(job.id, 'dueDate', v)} type="date" className="text-sm text-zinc-600" />
                     </td>
                     {/* Qty */}
-                    <td className="px-3 py-2.5 text-right">
-                      <span className="text-sm">{job.quantity?.toLocaleString() || '—'}</span>
+                    <td className="px-4 py-3 text-right">
+                      <span className="text-sm tabular-nums text-zinc-600">{job.quantity?.toLocaleString() || '—'}</span>
                     </td>
                     {/* Spread */}
-                    <td className="px-3 py-2.5 text-right">
+                    <td className="px-4 py-3 text-right">
                       {(() => {
                         const sellPrice = (job as any).sellPrice || 0;
                         const totalCost = (job as any).profit?.totalCost || 0;
                         const spread = sellPrice - totalCost;
-                        return <span className={`text-sm font-medium ${spread >= 0 ? 'text-green-600' : 'text-red-600'}`}>${spread.toFixed(0)}</span>;
+                        return <span className={`text-sm font-medium tabular-nums ${spread >= 0 ? 'text-green-600' : 'text-red-600'}`}>${spread.toFixed(0)}</span>;
                       })()}
                     </td>
                     {/* Actions - show on hover */}
-                    <td className="px-3 py-2.5">
+                    <td className="px-4 py-3">
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         {activeTab === 'completed' && (
                           <Button
@@ -608,39 +608,39 @@ export function JobsView({
                             }}
                             variant="outline"
                             size="sm"
-                            className="h-7 text-xs"
+                            className="h-7 text-xs border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100"
                           >
                             Actions
                             <ChevronDown className="w-3 h-3 ml-1" />
                           </Button>
                           {openActionMenuId === job.id && (
-                            <div className="absolute right-0 mt-1 w-44 bg-card rounded-lg shadow-lg border border-border py-1 z-50">
+                            <div className="absolute right-0 mt-1 w-44 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50">
                               <button
                                 onClick={(e) => { e.stopPropagation(); pdfApi.generateQuote(job.id); setOpenActionMenuId(null); }}
-                                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                                className="w-full px-3 py-2 text-left text-sm text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 flex items-center gap-2"
                               >
-                                <FileText className="w-4 h-4 text-blue-500" />
+                                <FileText className="w-4 h-4 text-zinc-400" />
                                 Download Quote
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); pdfApi.generateVendorPO(job.id); setOpenActionMenuId(null); }}
-                                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                                className="w-full px-3 py-2 text-left text-sm text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 flex items-center gap-2"
                               >
-                                <FileDown className="w-4 h-4 text-orange-500" />
+                                <FileDown className="w-4 h-4 text-zinc-400" />
                                 Download Vendor PO
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); pdfApi.generateInvoice(job.id); setOpenActionMenuId(null); }}
-                                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                                className="w-full px-3 py-2 text-left text-sm text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 flex items-center gap-2"
                               >
-                                <Receipt className="w-4 h-4 text-green-500" />
+                                <Receipt className="w-4 h-4 text-zinc-400" />
                                 Download Invoice
                               </button>
-                              <div className="border-t border-border my-1" />
+                              <div className="border-t border-zinc-100 my-1" />
                               {job.status !== 'PAID' && (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); handleMarkPaid(job.id, e); setOpenActionMenuId(null); }}
-                                  className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 text-green-600"
+                                  className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50 flex items-center gap-2 text-green-600"
                                 >
                                   <DollarSign className="w-4 h-4" />
                                   Mark as Paid
@@ -649,22 +649,22 @@ export function JobsView({
                               {onCopyJob && (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); onCopyJob(job); setOpenActionMenuId(null); }}
-                                  className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                                  className="w-full px-3 py-2 text-left text-sm text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 flex items-center gap-2"
                                 >
-                                  <Copy className="w-4 h-4 text-purple-500" />
+                                  <Copy className="w-4 h-4 text-zinc-400" />
                                   Copy Job
                                 </button>
                               )}
                               <button
                                 onClick={(e) => { e.stopPropagation(); onEditJob(job); setOpenActionMenuId(null); }}
-                                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                                className="w-full px-3 py-2 text-left text-sm text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 flex items-center gap-2"
                               >
-                                <Edit className="w-4 h-4" />
+                                <Edit className="w-4 h-4 text-zinc-400" />
                                 Edit Job
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); onDeleteJob(job); setOpenActionMenuId(null); }}
-                                className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 text-destructive"
+                                className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50 flex items-center gap-2 text-red-600"
                               >
                                 <Trash2 className="w-4 h-4" />
                                 Delete Job
@@ -681,17 +681,17 @@ export function JobsView({
           </div>
         ) : (
           <div className="p-12 text-center">
-            <FileText className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
-            <h3 className="text-lg font-medium text-foreground mb-1">
+            <FileText className="w-12 h-12 mx-auto mb-4 text-zinc-300" />
+            <h3 className="text-lg font-medium text-zinc-900 mb-1">
               {searchTerm ? 'No jobs found' : 'No jobs yet'}
             </h3>
-            <p className="text-sm text-muted-foreground mb-4">
+            <p className="text-sm text-zinc-500 mb-4">
               {searchTerm
                 ? 'Try adjusting your search terms'
                 : 'Get started by creating your first job'}
             </p>
             {!searchTerm && (
-              <Button onClick={onCreateJob}>
+              <Button onClick={onCreateJob} className="bg-zinc-900 hover:bg-zinc-800">
                 <Plus className="w-4 h-4 mr-2" />
                 Create Job
               </Button>

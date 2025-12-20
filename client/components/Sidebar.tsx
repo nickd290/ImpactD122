@@ -1,7 +1,6 @@
 import React from 'react';
-import { BarChart3, Briefcase, Users, Building2, TrendingUp, DollarSign, Command, Package, Calculator, MessageSquare, FileQuestion } from 'lucide-react';
+import { BarChart3, Briefcase, Users, Building2, TrendingUp, DollarSign, Command, Calculator, MessageSquare, FileQuestion, Search } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { Button, Badge } from './ui';
 
 type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
 
@@ -32,36 +31,32 @@ function NavItem({ icon, label, active, onClick, badge, shortcut }: NavItemProps
     <button
       onClick={onClick}
       className={cn(
-        "group relative w-full flex items-center justify-between px-2 py-1.5 rounded-md transition-all duration-150",
-        "hover:bg-accent",
+        "group relative w-full flex items-center justify-between px-3 py-2 transition-colors",
         active
-          ? "bg-primary/10 text-primary font-medium"
-          : "text-muted-foreground hover:text-foreground"
+          ? "text-zinc-900 font-medium border-l-2 border-zinc-900 -ml-px bg-zinc-50"
+          : "text-zinc-500 hover:text-zinc-900"
       )}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         <div className={cn(
           "transition-colors",
-          active ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
+          active ? "text-zinc-900" : "text-zinc-400 group-hover:text-zinc-600"
         )}>
-          {React.cloneElement(icon as React.ReactElement, { className: "w-4 h-4" })}
+          {React.cloneElement(icon as React.ReactElement, { className: "w-4 h-4", strokeWidth: 1.5 })}
         </div>
-        <span className="text-xs">{label}</span>
+        <span className="text-sm">{label}</span>
       </div>
 
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-2">
         {badge !== undefined && badge > 0 && (
-          <span className={cn(
-            "text-[10px] px-1.5 py-0.5 rounded-full font-medium",
-            active ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
-          )}>
+          <span className="text-xs tabular-nums text-zinc-400">
             {badge}
           </span>
         )}
         {shortcut && (
-          <kbd className="hidden lg:inline-flex h-4 px-1 items-center rounded border bg-muted text-[9px] font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+          <span className="hidden lg:block text-[10px] text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity">
             {shortcut}
-          </kbd>
+          </span>
         )}
       </div>
     </button>
@@ -81,51 +76,40 @@ export function Sidebar({
   onShowSearch,
 }: SidebarProps) {
   return (
-    <div className="w-56 bg-card border-r border-border flex flex-col h-screen">
-      {/* Logo Header - Compact */}
-      <div className="px-4 py-3 border-b border-border">
-        <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center">
-            <Briefcase className="h-4 w-4 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-sm font-semibold text-foreground">Impact Direct</h1>
-            <p className="text-[10px] text-muted-foreground">Print Brokerage</p>
-          </div>
-        </div>
+    <div className="w-60 bg-white border-r border-zinc-100 flex flex-col h-screen">
+      {/* Logo Header - Clean */}
+      <div className="px-4 py-5">
+        <h1 className="text-base font-semibold text-zinc-900">Impact Direct</h1>
+        <p className="text-xs text-zinc-400 mt-0.5">Print Brokerage</p>
       </div>
 
-      {/* Search Bar - Compact */}
-      <div className="px-2 py-2">
-        <Button
-          variant="outline"
+      {/* Search */}
+      <div className="px-3 pb-4">
+        <button
           onClick={onShowSearch}
-          size="sm"
-          className="w-full justify-start text-muted-foreground hover:text-foreground h-8"
+          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-400 hover:text-zinc-600 bg-zinc-50 rounded-md transition-colors"
         >
-          <Command className="w-3.5 h-3.5 mr-2" />
-          <span className="text-xs">Search...</span>
-          <kbd className="ml-auto hidden lg:inline-flex h-4 px-1 items-center rounded border bg-muted text-[9px] font-medium">
-            ⌘K
-          </kbd>
-        </Button>
+          <Search className="w-4 h-4" strokeWidth={1.5} />
+          <span>Search...</span>
+          <kbd className="ml-auto text-[10px] text-zinc-300">⌘K</kbd>
+        </button>
       </div>
 
-      {/* Navigation - Compact */}
-      <nav className="flex-1 px-2 py-1 space-y-0.5 overflow-y-auto">
-        <div className="mb-3">
-          <p className="px-2 mb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+      {/* Navigation */}
+      <nav className="flex-1 px-1 overflow-y-auto">
+        <div className="mb-6">
+          <p className="px-3 mb-2 text-xs font-medium text-zinc-400">
             Main
           </p>
           <NavItem
-            icon={<BarChart3 className="w-5 h-5" />}
+            icon={<BarChart3 />}
             label="Dashboard"
             active={currentView === 'DASHBOARD'}
             onClick={() => onViewChange('DASHBOARD')}
             shortcut="D"
           />
           <NavItem
-            icon={<Briefcase className="w-5 h-5" />}
+            icon={<Briefcase />}
             label="Jobs"
             active={currentView === 'JOBS'}
             onClick={() => onViewChange('JOBS')}
@@ -133,7 +117,7 @@ export function Sidebar({
             shortcut="J"
           />
           <NavItem
-            icon={<MessageSquare className="w-5 h-5" />}
+            icon={<MessageSquare />}
             label="Communications"
             active={currentView === 'COMMUNICATIONS'}
             onClick={() => onViewChange('COMMUNICATIONS')}
@@ -141,7 +125,7 @@ export function Sidebar({
             shortcut="M"
           />
           <NavItem
-            icon={<FileQuestion className="w-5 h-5" />}
+            icon={<FileQuestion />}
             label="Vendor RFQs"
             active={currentView === 'VENDOR_RFQS'}
             onClick={() => onViewChange('VENDOR_RFQS')}
@@ -149,12 +133,12 @@ export function Sidebar({
           />
         </div>
 
-        <div className="mb-3">
-          <p className="px-2 mb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+        <div className="mb-6">
+          <p className="px-3 mb-2 text-xs font-medium text-zinc-400">
             Entities
           </p>
           <NavItem
-            icon={<Users className="w-5 h-5" />}
+            icon={<Users />}
             label="Customers"
             active={currentView === 'CUSTOMERS'}
             onClick={() => onViewChange('CUSTOMERS')}
@@ -162,7 +146,7 @@ export function Sidebar({
             shortcut="C"
           />
           <NavItem
-            icon={<Building2 className="w-5 h-5" />}
+            icon={<Building2 />}
             label="Vendors"
             active={currentView === 'VENDORS'}
             onClick={() => onViewChange('VENDORS')}
@@ -171,33 +155,27 @@ export function Sidebar({
           />
         </div>
 
-        <div className="mb-3">
-          <p className="px-2 mb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+        <div className="mb-6">
+          <p className="px-3 mb-2 text-xs font-medium text-zinc-400">
             Analytics
           </p>
           <NavItem
-            icon={<DollarSign className="w-5 h-5" />}
+            icon={<DollarSign />}
             label="Financials"
             active={currentView === 'FINANCIALS'}
             onClick={() => onViewChange('FINANCIALS')}
             shortcut="F"
           />
           <NavItem
-            icon={<TrendingUp className="w-5 h-5" />}
-            label="Bradford Stats"
+            icon={<TrendingUp />}
+            label="Bradford Partner"
             active={currentView === 'PARTNER_STATS'}
             onClick={() => onViewChange('PARTNER_STATS')}
             badge={partnerJobsCount}
+            shortcut="B"
           />
           <NavItem
-            icon={<Package className="w-5 h-5" />}
-            label="Paper Inventory"
-            active={currentView === 'PAPER_INVENTORY'}
-            onClick={() => onViewChange('PAPER_INVENTORY')}
-            shortcut="P"
-          />
-          <NavItem
-            icon={<Calculator className="w-5 h-5" />}
+            icon={<Calculator />}
             label="Accounting"
             active={currentView === 'ACCOUNTING'}
             onClick={() => onViewChange('ACCOUNTING')}
@@ -205,7 +183,6 @@ export function Sidebar({
           />
         </div>
       </nav>
-
     </div>
   );
 }

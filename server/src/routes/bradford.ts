@@ -1,5 +1,5 @@
 import express from 'express';
-import { getBradfordStats, updateBradfordPO, captureBradfordPOFromEmail } from '../controllers/bradfordStatsController';
+import { getBradfordStats, updateBradfordPO, updateBradfordPaperType, captureBradfordPOFromEmail } from '../controllers/bradfordStatsController';
 
 const router = express.Router();
 
@@ -8,6 +8,9 @@ router.get('/stats', getBradfordStats);
 
 // Update Bradford PO number for a job
 router.put('/jobs/:jobId/po', updateBradfordPO);
+
+// Update Bradford paper type for a job (for 20" sizes that require selection)
+router.put('/jobs/:jobId/paper-type', updateBradfordPaperType);
 
 // Capture Bradford PO from email subject (for Zapier integration)
 // POST /api/bradford/capture-po

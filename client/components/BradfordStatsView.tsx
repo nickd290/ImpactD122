@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
-import { StatusBadge } from './ui/StatusBadge';
 import { JobDetailModal } from './JobDetailModal';
 import { pdfApi, jobsApi } from '../lib/api';
 import { BradfordStats, BradfordJob } from '../types/bradford';
-import { AlertTriangle, Search, FileDown, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown, Pencil, Check, X, Mail, CheckCircle } from 'lucide-react';
+import { Search, FileDown, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown, Pencil, Check, X, CheckCircle, ChevronRight, ChevronDown } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -21,7 +20,20 @@ interface BradfordStatsViewProps {
 
 type SortField = 'jobNo' | 'title' | 'bradfordRef' | 'status' | 'sizeName' | 'quantity' | 'paperPounds' | 'sellPrice' | 'totalCost' | 'spread' | 'paperCost' | 'paperMarkup' | 'bradfordShare' | 'marginPercent';
 type SortDirection = 'asc' | 'desc';
-type StatusFilter = 'all' | 'paid' | 'unpaid' | 'readyToPay';
+type MainTab = 'action' | 'completed' | 'paper';
+
+// Helper functions for job status
+const isJobCompleted = (job: any, fullJob: any) =>
+  fullJob?.customerPaymentDate && fullJob?.bradfordPaymentDate && fullJob?.jdPaymentDate;
+
+const isJobIncoming = (job: any, fullJob: any) =>
+  fullJob?.customerPaymentDate && !fullJob?.bradfordPaymentDate;
+
+const isJobOutgoing = (job: any, fullJob: any) =>
+  fullJob?.bradfordPaymentDate && !fullJob?.jdPaymentDate;
+
+const jobNeedsAction = (job: any, fullJob: any) =>
+  !job.bradfordRef || isJobIncoming(job, fullJob) || isJobOutgoing(job, fullJob);
 
 export function BradfordStatsView({
   jobs,
@@ -39,10 +51,12 @@ export function BradfordStatsView({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<SortField>('jobNo');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [mainTab, setMainTab] = useState<MainTab>('action');
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
   const [editingPOValue, setEditingPOValue] = useState<string>('');
   const [savingPO, setSavingPO] = useState(false);
+  const [savingPaperType, setSavingPaperType] = useState<string | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   // Fetch Bradford stats from API
   useEffect(() => {
@@ -62,69 +76,118 @@ export function BradfordStatsView({
     fetchStats();
   }, [jobs]);
 
-  // Count jobs ready to pay Bradford (customer paid, Bradford not paid)
-  const readyToPayCount = useMemo(() => {
-    if (!stats?.jobs) return 0;
-    return stats.jobs.filter(job => {
-      const fullJob = jobs.find(j => j.id === job.id) || allJobs.find(j => j.id === job.id);
-      return fullJob?.customerPaymentDate && !fullJob?.bradfordPaymentPaid;
-    }).length;
-  }, [stats?.jobs, jobs, allJobs]);
+  // Dashboard calculations - incoming, outgoing, counts
+  const dashboard = useMemo(() => {
+    if (!stats?.jobs) return {
+      incoming: { total: 0, count: 0 },
+      outgoing: { total: 0, count: 0 },
+      missingRef: 0,
+      readyToPay: 0,
+      jdDue: 0,
+      completed: 0,
+      paperUsed: 0,
+      paperExpected: 0,
+      paperJobs: 0,
+      paperByType: {} as Record<string, { used: number; expected: number }>
+    };
 
-  // Filter jobs by status
-  const statusFilteredJobs = useMemo(() => {
+    const partnerJobs = stats.jobs;
+    let incoming = { total: 0, count: 0 };
+    let outgoing = { total: 0, count: 0 };
+    let missingRef = 0;
+    let completed = 0;
+    let paperJobs = 0;
+
+    partnerJobs.forEach(job => {
+      const fullJob = jobs.find(j => j.id === job.id) || allJobs.find(j => j.id === job.id);
+
+      // Missing Bradford ref
+      if (!job.bradfordRef || job.bradfordRef.trim() === '') {
+        missingRef++;
+      }
+
+      // Completed (all 3 payments)
+      if (isJobCompleted(job, fullJob)) {
+        completed++;
+      }
+
+      // Incoming (customer paid, Bradford not paid)
+      if (isJobIncoming(job, fullJob)) {
+        incoming.total += job.bradfordShare || 0;
+        incoming.count++;
+      }
+
+      // Outgoing (Bradford paid, JD not paid)
+      if (isJobOutgoing(job, fullJob)) {
+        outgoing.total += job.bradfordShare || 0;
+        outgoing.count++;
+      }
+
+      // Paper usage
+      if (job.paperPounds > 0) {
+        paperJobs++;
+      }
+    });
+
+    // Calculate total paper used vs expected from API data
+    const paperByType = stats.paperByType || {};
+    let paperUsed = 0;
+    let paperExpected = 0;
+    Object.values(paperByType).forEach(({ used, expected }) => {
+      paperUsed += used;
+      paperExpected += expected;
+    });
+
+    return {
+      incoming,
+      outgoing,
+      missingRef,
+      readyToPay: incoming.count,
+      jdDue: outgoing.count,
+      completed,
+      paperUsed,
+      paperExpected,
+      paperJobs,
+      paperByType
+    };
+  }, [stats?.jobs, stats?.paperByType, jobs, allJobs]);
+
+  // Filter jobs by main tab
+  const tabFilteredJobs = useMemo(() => {
     if (!stats?.jobs) return [];
 
-    if (statusFilter === 'all') return stats.jobs;
-    if (statusFilter === 'paid') return stats.jobs.filter(job => job.status === 'PAID');
-    if (statusFilter === 'readyToPay') {
-      // Jobs where customer paid but Bradford not yet paid
-      return stats.jobs.filter(job => {
-        const fullJob = jobs.find(j => j.id === job.id) || allJobs.find(j => j.id === job.id);
-        return fullJob?.customerPaymentDate && !fullJob?.bradfordPaymentPaid;
-      });
-    }
-    return stats.jobs.filter(job => job.status !== 'PAID'); // unpaid
-  }, [stats?.jobs, statusFilter, jobs, allJobs]);
+    return stats.jobs.filter(job => {
+      const fullJob = jobs.find(j => j.id === job.id) || allJobs.find(j => j.id === job.id);
 
-  // Compute filtered stats based on status filter
+      if (mainTab === 'completed') {
+        return isJobCompleted(job, fullJob);
+      }
+      if (mainTab === 'paper') {
+        // Paper tab shows all Bradford jobs (they all use Bradford paper)
+        return true;
+      }
+      // Action tab: not completed (show all jobs that need attention)
+      return !isJobCompleted(job, fullJob);
+    });
+  }, [stats?.jobs, mainTab, jobs, allJobs]);
+
+  // Compute filtered stats based on current tab
   const filteredStats = useMemo(() => {
     if (!stats) return null;
 
-    // If showing all, use the original stats
-    if (statusFilter === 'all') {
-      return {
-        totalJobs: stats.totalJobs,
-        activeJobs: stats.activeJobs,
-        paidJobs: stats.paidJobs,
-        totalRevenue: stats.totalRevenue,
-        totalCost: stats.totalCost,
-        totalProfit: stats.totalProfit,
-        totalBradfordShare: stats.totalBradfordShare,
-        totalImpactShare: stats.totalImpactShare,
-        totalPaperMarkup: stats.totalPaperMarkup,
-        totalPaperPounds: stats.totalPaperPounds,
-        totalPaperSheets: stats.totalPaperSheets,
-        averageJobValue: stats.averageJobValue,
-        // Show unpaid amounts in subtext
-        unpaidRevenue: stats.unpaidRevenue,
-        unpaidBradfordShare: stats.unpaidBradfordShare,
-      };
-    }
-
     // Recalculate from filtered jobs
-    const jobs = statusFilteredJobs;
-    const totalJobs = jobs.length;
-    const activeJobs = jobs.filter(j => j.status === 'ACTIVE').length;
-    const paidJobs = jobs.filter(j => j.status === 'PAID').length;
-    const totalRevenue = jobs.reduce((sum, j) => sum + j.sellPrice, 0);
-    const totalCost = jobs.reduce((sum, j) => sum + j.totalCost, 0);
-    const totalProfit = jobs.reduce((sum, j) => sum + j.spread, 0);
-    const totalBradfordShare = jobs.reduce((sum, j) => sum + j.bradfordShare, 0);
-    const totalImpactShare = jobs.reduce((sum, j) => sum + j.impactShare, 0);
-    const totalPaperMarkup = jobs.reduce((sum, j) => sum + j.paperMarkup, 0);
-    const totalPaperPounds = jobs.reduce((sum, j) => sum + j.paperPounds, 0);
-    const totalPaperSheets = jobs.reduce((sum, j) => sum + j.quantity, 0);
+    const filteredJobs = tabFilteredJobs;
+    const totalJobs = filteredJobs.length;
+    const activeJobs = filteredJobs.filter(j => j.status === 'ACTIVE').length;
+    const paidJobs = filteredJobs.filter(j => j.status === 'PAID').length;
+    const totalRevenue = filteredJobs.reduce((sum, j) => sum + j.sellPrice, 0);
+    const totalCost = filteredJobs.reduce((sum, j) => sum + j.totalCost, 0);
+    const totalProfit = filteredJobs.reduce((sum, j) => sum + j.spread, 0);
+    const totalBradfordShare = filteredJobs.reduce((sum, j) => sum + j.bradfordShare, 0);
+    const totalImpactShare = filteredJobs.reduce((sum, j) => sum + j.impactShare, 0);
+    const totalPaperMarkup = filteredJobs.reduce((sum, j) => sum + j.paperMarkup, 0);
+    const totalPaperPounds = filteredJobs.reduce((sum, j) => sum + j.paperPounds, 0);
+    const totalPaperSheets = filteredJobs.reduce((sum, j) => sum + j.quantity, 0);
     const averageJobValue = totalJobs > 0 ? totalRevenue / totalJobs : 0;
 
     return {
@@ -140,14 +203,102 @@ export function BradfordStatsView({
       totalPaperPounds,
       totalPaperSheets,
       averageJobValue,
-      unpaidRevenue: 0, // Not applicable when filtered
-      unpaidBradfordShare: 0,
+      unpaidRevenue: stats.unpaidRevenue || 0,
+      unpaidBradfordShare: stats.unpaidBradfordShare || 0,
     };
-  }, [stats, statusFilter, statusFilteredJobs]);
+  }, [stats, tabFilteredJobs]);
+
+  // Helper to get job status for paper tracking
+  const getJobPaperStatus = (job: BradfordJob, fullJob: any) => {
+    if (job.status === 'PAID') return 'Paid';
+    if (fullJob?.vendorStatus === 'SHIPPED') return 'Shipped';
+    if (fullJob?.vendorStatus === 'PRINTING_COMPLETE') return 'Printed';
+    return 'Active';
+  };
+
+  // Helper to check if paper is "used" (job complete)
+  const isPaperUsed = (job: BradfordJob, fullJob: any) => {
+    return job.status === 'PAID' ||
+           fullJob?.vendorStatus === 'PRINTING_COMPLETE' ||
+           fullJob?.vendorStatus === 'SHIPPED' ||
+           (fullJob?.deliveryDate && new Date(fullJob.deliveryDate) < new Date());
+  };
+
+  // Group jobs by paper type for the Paper Inventory tab
+  const paperGroups = useMemo(() => {
+    if (!stats?.jobs) return [];
+
+    const groups: Record<string, {
+      paperType: string;
+      used: number;
+      expected: number;
+      nextDue: Date | null;
+      jobs: Array<BradfordJob & { isUsed: boolean; paperStatus: string; deliveryDate?: string }>;
+    }> = {};
+
+    stats.jobs.filter(j => j.paperPounds > 0).forEach(job => {
+      const key = job.paperTypeKey || 'Unknown';
+      const fullJob = jobs.find(j => j.id === job.id) || allJobs.find(j => j.id === job.id);
+      const isUsed = isPaperUsed(job, fullJob);
+
+      if (!groups[key]) {
+        groups[key] = { paperType: key, used: 0, expected: 0, nextDue: null, jobs: [] };
+      }
+
+      if (isUsed) {
+        groups[key].used += job.paperPounds;
+      } else {
+        groups[key].expected += job.paperPounds;
+        // Track earliest due date for expected jobs
+        if (fullJob?.deliveryDate) {
+          const dueDate = new Date(fullJob.deliveryDate);
+          if (!groups[key].nextDue || dueDate < groups[key].nextDue) {
+            groups[key].nextDue = dueDate;
+          }
+        }
+      }
+
+      groups[key].jobs.push({
+        ...job,
+        isUsed,
+        paperStatus: getJobPaperStatus(job, fullJob),
+        deliveryDate: fullJob?.deliveryDate
+      });
+    });
+
+    // Sort jobs within each group: active jobs first (sorted by due date), then used jobs
+    Object.values(groups).forEach(g => {
+      g.jobs.sort((a, b) => {
+        if (a.isUsed && !b.isUsed) return 1;
+        if (!a.isUsed && b.isUsed) return -1;
+        if (!a.deliveryDate) return 1;
+        if (!b.deliveryDate) return -1;
+        return new Date(a.deliveryDate).getTime() - new Date(b.deliveryDate).getTime();
+      });
+    });
+
+    // Sort groups by total paper (highest first)
+    return Object.values(groups).sort((a, b) =>
+      (b.used + b.expected) - (a.used + a.expected)
+    );
+  }, [stats?.jobs, jobs, allJobs]);
+
+  // Toggle expand/collapse for paper groups
+  const toggleGroup = (paperType: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(paperType)) {
+        next.delete(paperType);
+      } else {
+        next.add(paperType);
+      }
+      return next;
+    });
+  };
 
   // Filter and sort jobs
   const filteredAndSortedJobs = useMemo(() => {
-    let filtered = statusFilteredJobs;
+    let filtered = tabFilteredJobs;
 
     // Filter by search query
     if (searchQuery.trim()) {
@@ -182,7 +333,7 @@ export function BradfordStatsView({
       if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [statusFilteredJobs, searchQuery, sortField, sortDirection]);
+  }, [tabFilteredJobs, searchQuery, sortField, sortDirection]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -256,6 +407,36 @@ export function BradfordStatsView({
     }
   };
 
+  // Update paper type for a job
+  const updatePaperType = async (jobId: string, paperType: string) => {
+    setSavingPaperType(jobId);
+    try {
+      const response = await fetch(`/api/bradford/jobs/${jobId}/paper-type`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paperType }),
+      });
+
+      if (response.ok) {
+        // Update local stats
+        if (stats) {
+          const updatedJobs = stats.jobs.map(job =>
+            job.id === jobId ? { ...job, bradfordPaperType: paperType, paperTypeKey: `20" ${paperType}` } : job
+          );
+          setStats({ ...stats, jobs: updatedJobs });
+        }
+        toast.success('Paper type updated');
+      } else {
+        toast.error('Failed to update paper type');
+      }
+    } catch (error) {
+      console.error('Error updating paper type:', error);
+      toast.error('Failed to update paper type');
+    } finally {
+      setSavingPaperType(null);
+    }
+  };
+
   // Payment workflow handlers
   const handleMarkBradfordPaid = async (e: React.MouseEvent, jobId: string) => {
     e.stopPropagation();
@@ -298,29 +479,6 @@ export function BradfordStatsView({
       console.error('Failed to mark JD paid:', error);
       alert('Failed to mark JD paid. Please try again.');
     }
-  };
-
-  const handleResendJDInvoice = async (e: React.MouseEvent, jobId: string) => {
-    e.stopPropagation();
-    try {
-      const result = await jobsApi.sendJDInvoice(jobId);
-      if (result.success) {
-        toast.success('JD Invoice Sent', {
-          description: `Email sent to ${result.emailedTo}`,
-          duration: 3000,
-        });
-      }
-    } catch (error) {
-      console.error('Failed to send JD invoice:', error);
-      toast.error('Failed to send JD invoice', {
-        description: 'Please try again.',
-      });
-    }
-  };
-
-  const handleDownloadJDInvoice = (e: React.MouseEvent, jobId: string) => {
-    e.stopPropagation();
-    jobsApi.downloadJDInvoicePDF(jobId);
   };
 
   // Helper to get full job data (includes payment fields)
@@ -502,7 +660,7 @@ export function BradfordStatsView({
   if (loading || !stats) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">Loading Bradford statistics...</div>
+        <div className="text-zinc-500">Loading Bradford statistics...</div>
       </div>
     );
   }
@@ -510,183 +668,272 @@ export function BradfordStatsView({
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-3xl font-bold text-gray-900">Bradford Stats</h2>
-          <p className="text-gray-600 mt-1">
-            High-level metrics and job details for Bradford Commercial Printing
-          </p>
+      <div className="mb-6">
+        <h1 className="text-xl font-medium text-zinc-900">Bradford Partner Dashboard</h1>
+        <p className="text-sm text-zinc-400 mt-0.5">Action items, payments, and paper tracking</p>
+      </div>
+
+      {/* Mini Dashboard - 3 Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        {/* Incoming - Money owed to Bradford + Net */}
+        {(() => {
+          const net = dashboard.incoming.total - dashboard.outgoing.total;
+          const isPositive = net >= 0;
+          return (
+            <div className="bg-white rounded-lg border border-zinc-200 p-4">
+              <p className="text-xs font-medium text-zinc-500">Incoming</p>
+              <p className="text-2xl font-medium text-green-600 mt-2 tabular-nums">{formatCurrency(dashboard.incoming.total)}</p>
+              <p className="text-xs text-zinc-500 mt-1">{dashboard.incoming.count} jobs • Net: <span className={isPositive ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>{formatCurrency(net)}</span></p>
+            </div>
+          );
+        })()}
+
+        {/* Outgoing - Money Bradford owes JD */}
+        <div className="bg-white rounded-lg border border-zinc-200 p-4">
+          <p className="text-xs font-medium text-zinc-500">Outgoing to JD</p>
+          <p className="text-2xl font-medium text-orange-600 mt-2 tabular-nums">{formatCurrency(dashboard.outgoing.total)}</p>
+          <p className="text-xs text-zinc-500 mt-1">{dashboard.outgoing.count} jobs due</p>
+        </div>
+
+        {/* Paper Usage - Used vs Expected */}
+        <div
+          className="bg-white rounded-lg border border-zinc-200 p-4 cursor-pointer hover:bg-zinc-50 transition-colors"
+          onClick={() => setMainTab('paper')}
+        >
+          <p className="text-xs font-medium text-zinc-500">Paper Inventory</p>
+          <div className="flex items-baseline gap-3 mt-2">
+            <div>
+              <p className="text-lg font-medium text-green-600 tabular-nums">{formatNumber(dashboard.paperUsed, 0)}</p>
+              <p className="text-xs text-zinc-500">Used (lbs)</p>
+            </div>
+            <div className="text-zinc-300">/</div>
+            <div>
+              <p className="text-lg font-medium text-zinc-700 tabular-nums">{formatNumber(dashboard.paperExpected, 0)}</p>
+              <p className="text-xs text-zinc-500">Expected (lbs)</p>
+            </div>
+          </div>
+          <p className="text-xs text-zinc-400 mt-1">{dashboard.paperJobs} jobs → Click for details</p>
         </div>
       </div>
 
-      {/* Status Filter Tabs */}
+      {/* Main Tabs */}
       <div className="flex gap-2 mb-4">
         <button
-          onClick={() => setStatusFilter('all')}
-          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-            statusFilter === 'all'
-              ? 'bg-orange-600 text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          onClick={() => setMainTab('action')}
+          className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+            mainTab === 'action'
+              ? 'bg-zinc-900 text-white'
+              : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
           }`}
         >
-          All Jobs ({stats?.totalJobs || 0})
+          Needs Action ({stats.jobs.length - dashboard.completed})
         </button>
         <button
-          onClick={() => setStatusFilter('readyToPay')}
-          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-            statusFilter === 'readyToPay'
-              ? 'bg-orange-600 text-white'
-              : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+          onClick={() => setMainTab('completed')}
+          className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+            mainTab === 'completed'
+              ? 'bg-zinc-900 text-white'
+              : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
           }`}
         >
-          Ready to Pay ({readyToPayCount})
+          Completed ({dashboard.completed})
         </button>
         <button
-          onClick={() => setStatusFilter('paid')}
-          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-            statusFilter === 'paid'
-              ? 'bg-green-600 text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          onClick={() => setMainTab('paper')}
+          className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+            mainTab === 'paper'
+              ? 'bg-zinc-900 text-white'
+              : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
           }`}
         >
-          Paid ({stats?.paidJobs || 0})
-        </button>
-        <button
-          onClick={() => setStatusFilter('unpaid')}
-          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-            statusFilter === 'unpaid'
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          }`}
-        >
-          Unpaid ({(stats?.totalJobs || 0) - (stats?.paidJobs || 0)})
+          Paper Inventory ({Object.keys(dashboard.paperByType).length} types)
         </button>
       </div>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-        <div className="bg-white rounded-lg shadow p-4">
-          <p className="text-xs font-medium text-gray-500 uppercase">Total Jobs</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{filteredStats?.totalJobs || 0}</p>
-          <p className="text-xs text-gray-500 mt-1">
-            {filteredStats?.activeJobs || 0} active / {filteredStats?.paidJobs || 0} paid
-          </p>
-        </div>
-        <div className="bg-white rounded-lg shadow p-4">
-          <p className="text-xs font-medium text-gray-500 uppercase">Total Revenue</p>
-          <p className="text-2xl font-bold text-green-600 mt-1">{formatCurrency(filteredStats?.totalRevenue || 0)}</p>
-          {statusFilter === 'all' && filteredStats?.unpaidRevenue ? (
-            <p className="text-xs text-gray-500 mt-1">
-              Unpaid: {formatCurrency(filteredStats.unpaidRevenue)}
-            </p>
-          ) : (
-            <p className="text-xs text-gray-500 mt-1">
-              {statusFilter === 'paid' ? 'Paid only' : statusFilter === 'unpaid' ? 'Unpaid only' : ''}
-            </p>
-          )}
-        </div>
-        <div className="bg-white rounded-lg shadow p-4">
-          <p className="text-xs font-medium text-gray-500 uppercase">Bradford Profit</p>
-          <p className="text-2xl font-bold text-orange-600 mt-1">{formatCurrency(filteredStats?.totalBradfordShare || 0)}</p>
-          {statusFilter === 'all' && filteredStats?.unpaidBradfordShare ? (
-            <p className="text-xs text-gray-500 mt-1">
-              Unpaid: {formatCurrency(filteredStats.unpaidBradfordShare)}
-            </p>
-          ) : (
-            <p className="text-xs text-gray-500 mt-1">
-              50% spread + markup
-            </p>
-          )}
-        </div>
-        <div className="bg-white rounded-lg shadow p-4">
-          <p className="text-xs font-medium text-gray-500 uppercase">Paper Used</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{formatNumber(filteredStats?.totalPaperPounds || 0, 0)} lbs</p>
-          <p className="text-xs text-gray-500 mt-1">
-            {formatNumber(filteredStats?.totalPaperSheets || 0)} sheets
-          </p>
-        </div>
-        <div className="bg-white rounded-lg shadow p-4">
-          <p className="text-xs font-medium text-gray-500 uppercase">Paper Markup</p>
-          <p className="text-2xl font-bold text-purple-600 mt-1">{formatCurrency(filteredStats?.totalPaperMarkup || 0)}</p>
-          <p className="text-xs text-gray-500 mt-1">
-            18% markup earned
-          </p>
-        </div>
-        <div className="bg-white rounded-lg shadow p-4">
-          <p className="text-xs font-medium text-gray-500 uppercase">Avg Job Value</p>
-          <p className="text-2xl font-bold text-blue-600 mt-1">{formatCurrency(filteredStats?.averageJobValue || 0)}</p>
-          <p className="text-xs text-gray-500 mt-1">
-            Per job average
-          </p>
-        </div>
-      </div>
-
-      {/* Warnings */}
-      {(stats.jobsWithNegativeMargin > 0 || stats.jobsMissingRefNumber > 0) && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-yellow-600" />
-            <span className="font-medium text-yellow-900">Warnings:</span>
-            {stats.jobsWithNegativeMargin > 0 && (
-              <span className="text-sm text-yellow-800">
-                {stats.jobsWithNegativeMargin} jobs with negative margin
-              </span>
-            )}
-            {stats.jobsWithNegativeMargin > 0 && stats.jobsMissingRefNumber > 0 && (
-              <span className="text-yellow-400">|</span>
-            )}
-            {stats.jobsMissingRefNumber > 0 && (
-              <span className="text-sm text-yellow-800">
-                {stats.jobsMissingRefNumber} jobs missing Bradford ref
-              </span>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Search and Export Bar */}
-      <div className="bg-white rounded-lg shadow p-4 mb-6">
+      <div className="bg-white rounded-lg border border-zinc-200 p-4 mb-6">
         <div className="flex flex-col sm:flex-row justify-between gap-4">
           <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-zinc-400" />
             <input
               type="text"
               placeholder="Search by Job #, Title, Ref, or Customer..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full pl-10 pr-4 py-2 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 placeholder:text-zinc-400"
             />
           </div>
           <div className="flex gap-2">
             <button
               onClick={exportToPDF}
-              className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              className="inline-flex items-center px-3 py-2 text-sm font-medium text-zinc-600 bg-zinc-100 hover:bg-zinc-200 rounded-lg transition-colors"
             >
-              <FileDown className="w-4 h-4 mr-2" />
-              Export PDF
+              <FileDown className="w-4 h-4 mr-1.5" />
+              PDF
             </button>
             <button
               onClick={exportToExcel}
-              className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              className="inline-flex items-center px-3 py-2 text-sm font-medium text-zinc-600 bg-zinc-100 hover:bg-zinc-200 rounded-lg transition-colors"
             >
-              <FileSpreadsheet className="w-4 h-4 mr-2" />
-              Export Excel
+              <FileSpreadsheet className="w-4 h-4 mr-1.5" />
+              Excel
             </button>
           </div>
         </div>
-        <p className="text-sm text-gray-500 mt-2">
+        <p className="text-xs text-zinc-400 mt-2">
           Showing {filteredAndSortedJobs.length} of {stats.jobs.length} jobs
         </p>
       </div>
 
-      {/* Jobs Table */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+      {/* Content based on tab */}
+      {mainTab === 'paper' ? (
+        // Paper Inventory Tab - Grouped by Paper Type
+        <div className="bg-white rounded-lg border border-zinc-200 overflow-hidden">
+          {/* Summary bar */}
+          <div className="px-4 py-3 border-b border-zinc-200 bg-zinc-50 flex items-center justify-between">
+            <span className="text-sm text-zinc-600">
+              <span className="font-medium text-zinc-900">{paperGroups.length}</span> paper types
+              {' • '}
+              <span className="font-medium text-zinc-900 tabular-nums">{formatNumber(dashboard.paperUsed + dashboard.paperExpected, 0)}</span> lbs total
+            </span>
+            <span className="text-xs text-zinc-500">
+              Used: <span className="text-green-600 font-medium tabular-nums">{formatNumber(dashboard.paperUsed, 0)}</span>
+              {' • '}
+              Expected: <span className="text-zinc-900 font-medium tabular-nums">{formatNumber(dashboard.paperExpected, 0)}</span>
+            </span>
+          </div>
+
+          <table className="min-w-full">
+            <thead className="border-b border-zinc-200">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 w-8"></th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Paper Type</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Used</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Expected</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Next Due</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Total</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-zinc-500">Jobs</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paperGroups.map(group => {
+                const isExpanded = expandedGroups.has(group.paperType);
+                const total = group.used + group.expected;
+                return (
+                  <React.Fragment key={group.paperType}>
+                    {/* Group header row */}
+                    <tr
+                      className="bg-zinc-50 border-b border-zinc-200 cursor-pointer hover:bg-zinc-100 transition-colors"
+                      onClick={() => toggleGroup(group.paperType)}
+                    >
+                      <td className="px-4 py-3 text-zinc-500">
+                        {isExpanded ? (
+                          <ChevronDown className="w-4 h-4" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4" />
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-medium text-zinc-900">{group.paperType}</td>
+                      <td className="px-4 py-3 text-sm text-green-600 text-right tabular-nums font-medium">
+                        {formatNumber(group.used, 0)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-zinc-600 text-right tabular-nums">
+                        {formatNumber(group.expected, 0)}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {group.nextDue ? (
+                          <span className={`font-medium ${
+                            group.nextDue <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+                              ? 'text-amber-600'
+                              : 'text-zinc-600'
+                          }`}>
+                            {group.nextDue.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </span>
+                        ) : (
+                          <span className="text-zinc-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-zinc-900 text-right tabular-nums font-medium">
+                        {formatNumber(total, 0)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-zinc-500 text-center tabular-nums">
+                        {group.jobs.length}
+                      </td>
+                    </tr>
+
+                    {/* Expanded job rows */}
+                    {isExpanded && group.jobs.map(job => (
+                      <tr
+                        key={job.id}
+                        className="border-b border-zinc-100 hover:bg-zinc-50 cursor-pointer transition-colors"
+                        onClick={() => handleRowClick(job)}
+                      >
+                        <td className="px-4 py-2"></td>
+                        <td className="pl-8 pr-4 py-2" colSpan={6}>
+                          <div className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-4">
+                              <span className="font-medium text-zinc-900 w-16">{job.jobNo}</span>
+                              <span className="text-zinc-600 w-24 truncate">{job.customerName}</span>
+                              <span className="text-zinc-500 w-20">{job.sizeName}</span>
+                              <span className="text-zinc-500 tabular-nums w-16 text-right">{formatNumber(job.quantity)}</span>
+                              <span className="font-medium text-zinc-900 tabular-nums w-16 text-right">{formatNumber(job.paperPounds, 0)} lbs</span>
+                              {/* Paper type selector for jobs needing selection */}
+                              {job.paperTypeOptions && !job.paperTypeKey ? (
+                                <select
+                                  value={job.bradfordPaperType || ''}
+                                  onChange={(e) => { e.stopPropagation(); updatePaperType(job.id, e.target.value); }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  disabled={savingPaperType === job.id}
+                                  className="px-2 py-1 border border-amber-300 rounded bg-amber-50 text-xs"
+                                >
+                                  <option value="">Select...</option>
+                                  {job.paperTypeOptions.map(opt => (
+                                    <option key={opt} value={opt}>{opt}</option>
+                                  ))}
+                                </select>
+                              ) : null}
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                job.isUsed
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-zinc-100 text-zinc-600'
+                              }`}>
+                                {job.paperStatus}
+                              </span>
+                              <span className="text-xs text-zinc-400 w-16 text-right">
+                                {job.isUsed
+                                  ? '(done)'
+                                  : job.deliveryDate
+                                    ? new Date(job.deliveryDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                                    : '—'
+                                }
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {paperGroups.length === 0 && (
+            <div className="p-8 text-center text-zinc-500">
+              No paper usage data available
+            </div>
+          )}
+        </div>
+      ) : (
+        // Jobs Table for Action/Completed tabs - 7 Columns
+        <div className="bg-white rounded-lg border border-zinc-200 overflow-hidden">
+          <table className="min-w-full">
+            <thead className="border-b border-zinc-200">
               <tr>
                 <th
-                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  className="px-4 py-3 text-left text-xs font-medium text-zinc-500 cursor-pointer hover:bg-zinc-50"
                   onClick={() => handleSort('jobNo')}
                 >
                   <div className="flex items-center">
@@ -694,28 +941,7 @@ export function BradfordStatsView({
                   </div>
                 </th>
                 <th
-                  className="px-4 py-3 text-left text-xs font-medium text-orange-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort('bradfordRef')}
-                >
-                  <div className="flex items-center">
-                    Bradford PO {getSortIcon('bradfordRef')}
-                  </div>
-                </th>
-                <th
-                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort('status')}
-                >
-                  <div className="flex items-center">
-                    Status {getSortIcon('status')}
-                  </div>
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  <div className="flex items-center">
-                    Payment Flow
-                  </div>
-                </th>
-                <th
-                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  className="px-4 py-3 text-left text-xs font-medium text-zinc-500 cursor-pointer hover:bg-zinc-50"
                   onClick={() => handleSort('sizeName')}
                 >
                   <div className="flex items-center">
@@ -723,7 +949,7 @@ export function BradfordStatsView({
                   </div>
                 </th>
                 <th
-                  className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  className="px-4 py-3 text-right text-xs font-medium text-zinc-500 cursor-pointer hover:bg-zinc-50"
                   onClick={() => handleSort('quantity')}
                 >
                   <div className="flex items-center justify-end">
@@ -731,73 +957,52 @@ export function BradfordStatsView({
                   </div>
                 </th>
                 <th
-                  className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  className="px-4 py-3 text-right text-xs font-medium text-zinc-500 cursor-pointer hover:bg-zinc-50"
                   onClick={() => handleSort('paperPounds')}
                 >
                   <div className="flex items-center justify-end">
-                    Paper (lbs) {getSortIcon('paperPounds')}
+                    Paper {getSortIcon('paperPounds')}
                   </div>
                 </th>
                 <th
-                  className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort('sellPrice')}
+                  className="px-4 py-3 text-left text-xs font-medium text-zinc-900 cursor-pointer hover:bg-zinc-50"
+                  onClick={() => handleSort('bradfordRef')}
                 >
-                  <div className="flex items-center justify-end">
-                    Sell {getSortIcon('sellPrice')}
+                  <div className="flex items-center">
+                    Bradford PO {getSortIcon('bradfordRef')}
                   </div>
                 </th>
-                <th
-                  className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort('totalCost')}
-                >
-                  <div className="flex items-center justify-end">
-                    Cost {getSortIcon('totalCost')}
-                  </div>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">
+                  Customer
                 </th>
                 <th
-                  className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort('spread')}
-                >
-                  <div className="flex items-center justify-end">
-                    Spread {getSortIcon('spread')}
-                  </div>
-                </th>
-                <th
-                  className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort('paperMarkup')}
-                >
-                  <div className="flex items-center justify-end">
-                    Paper Markup {getSortIcon('paperMarkup')}
-                  </div>
-                </th>
-                <th
-                  className="px-4 py-3 text-right text-xs font-medium text-orange-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  className="px-4 py-3 text-right text-xs font-medium text-zinc-900 cursor-pointer hover:bg-zinc-50"
                   onClick={() => handleSort('bradfordShare')}
                 >
                   <div className="flex items-center justify-end">
-                    Bradford $ {getSortIcon('bradfordShare')}
+                    Amount {getSortIcon('bradfordShare')}
                   </div>
                 </th>
-                <th
-                  className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort('marginPercent')}
-                >
-                  <div className="flex items-center justify-end">
-                    Margin {getSortIcon('marginPercent')}
-                  </div>
+                <th className="px-4 py-3 text-center text-xs font-medium text-zinc-500">
+                  Action
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody>
               {filteredAndSortedJobs.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="px-4 py-8 text-center text-gray-500">
-                    {searchQuery ? 'No jobs match your search' : 'No Bradford jobs found'}
+                  <td colSpan={8} className="px-6 py-8 text-center text-zinc-500">
+                    {searchQuery ? 'No jobs match your search' : mainTab === 'completed' ? 'No completed jobs yet' : 'No action items'}
                   </td>
                 </tr>
               ) : (
                 filteredAndSortedJobs.map((job) => {
                   const isMissingPO = !job.bradfordRef || job.bradfordRef.trim() === '';
+                  const fullJob = getFullJobData(job.id);
+                  const customerPaid = fullJob?.customerPaymentDate;
+                  const bradfordPaid = fullJob?.bradfordPaymentPaid;
+                  const jdPaid = fullJob?.jdPaymentPaid;
+
                   return (
                     <tr
                       key={job.id}
@@ -805,184 +1010,129 @@ export function BradfordStatsView({
                       className={`group cursor-pointer transition-colors ${
                         isMissingPO
                           ? 'bg-amber-50 hover:bg-amber-100 border-l-4 border-l-amber-400'
-                          : 'hover:bg-gray-50'
+                          : 'border-b border-zinc-100 hover:bg-zinc-50'
                       }`}
                     >
-                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {job.jobNo}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                      {editingJobId === job.id ? (
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="text"
-                            value={editingPOValue}
-                            onChange={(e) => setEditingPOValue(e.target.value)}
-                            className="w-24 px-2 py-1 text-sm border border-orange-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
-                            placeholder="PO #"
-                            autoFocus
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') saveBradfordPO(e as any, job.id);
-                              if (e.key === 'Escape') { setEditingJobId(null); setEditingPOValue(''); }
-                            }}
-                          />
-                          <button
-                            onClick={(e) => saveBradfordPO(e, job.id)}
-                            disabled={savingPO}
-                            className="p-1 text-green-600 hover:bg-green-100 rounded"
-                            title="Save"
-                          >
-                            <Check className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={cancelEditingPO}
-                            className="p-1 text-red-600 hover:bg-red-100 rounded"
-                            title="Cancel"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          {job.bradfordRef ? (
-                            <span className="inline-flex items-center px-2.5 py-1 rounded text-sm font-bold bg-orange-100 text-orange-800">
-                              {job.bradfordRef}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-400 italic">Missing</span>
-                          )}
-                          <button
-                            onClick={(e) => startEditingPO(e, job)}
-                            className="p-1 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                            title="Edit PO #"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <StatusBadge status={job.status} />
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                      {(() => {
-                        const fullJob = getFullJobData(job.id);
-                        const customerPaid = fullJob?.customerPaymentDate;
-                        const bradfordPaid = fullJob?.bradfordPaymentPaid;
-                        const jdPaid = fullJob?.jdPaymentPaid;
-                        const jdInvoiceSent = fullJob?.jdInvoiceEmailedAt;
+                      {/* Job # */}
+                      <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-zinc-900">
+                        {job.jobNo}
+                      </td>
 
-                        return (
-                          <div className="flex flex-col gap-1">
-                            {/* Badge 1: Customer → Impact */}
-                            {customerPaid ? (
-                              <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded inline-flex items-center gap-1 w-fit">
-                                <Check className="w-3 h-3" />
-                                Customer Paid
+                      {/* Size */}
+                      <td className="px-4 py-3 whitespace-nowrap text-sm text-zinc-600">
+                        {job.sizeName || '-'}
+                      </td>
+
+                      {/* Qty */}
+                      <td className="px-4 py-3 whitespace-nowrap text-sm text-zinc-600 text-right tabular-nums">
+                        {formatNumber(job.quantity)}
+                      </td>
+
+                      {/* Paper */}
+                      <td className="px-4 py-3 whitespace-nowrap text-sm text-zinc-600 text-right tabular-nums">
+                        {job.paperPounds > 0 ? `${formatNumber(job.paperPounds, 0)} lbs` : '-'}
+                      </td>
+
+                      {/* Bradford PO - Inline Edit */}
+                      <td className="px-4 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        {editingJobId === job.id ? (
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="text"
+                              value={editingPOValue}
+                              onChange={(e) => setEditingPOValue(e.target.value)}
+                              className="w-24 px-2 py-1 text-sm border border-zinc-300 rounded focus:outline-none focus:ring-2 focus:ring-zinc-900"
+                              placeholder="PO #"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') saveBradfordPO(e as any, job.id);
+                                if (e.key === 'Escape') { setEditingJobId(null); setEditingPOValue(''); }
+                              }}
+                            />
+                            <button
+                              onClick={(e) => saveBradfordPO(e, job.id)}
+                              disabled={savingPO}
+                              className="p-1 text-green-600 hover:bg-green-100 rounded"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={cancelEditingPO}
+                              className="p-1 text-red-600 hover:bg-red-100 rounded"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1">
+                            {job.bradfordRef ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-sm font-medium bg-zinc-100 text-zinc-900">
+                                {job.bradfordRef}
                               </span>
                             ) : (
-                              <span className="bg-gray-100 text-gray-500 text-xs px-2 py-0.5 rounded w-fit">
-                                ○ Awaiting Customer
-                              </span>
+                              <button
+                                onClick={(e) => startEditingPO(e, job)}
+                                className="px-2 py-0.5 text-xs text-amber-700 bg-amber-100 hover:bg-amber-200 rounded border border-amber-300"
+                              >
+                                + Add PO
+                              </button>
                             )}
+                            {job.bradfordRef && (
+                              <button
+                                onClick={(e) => startEditingPO(e, job)}
+                                className="p-0.5 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 rounded opacity-0 group-hover:opacity-100"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </td>
 
-                            {/* Badge 2: Impact → Bradford */}
-                            {bradfordPaid ? (
-                              <span className="bg-orange-100 text-orange-700 text-xs px-2 py-0.5 rounded inline-flex items-center gap-1 w-fit">
-                                <Check className="w-3 h-3" />
-                                Bradford Paid
+                      {/* Customer */}
+                      <td className="px-4 py-3 whitespace-nowrap text-sm text-zinc-600">
+                        {job.customerName}
+                      </td>
+
+                      {/* Amount */}
+                      <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-zinc-900 text-right tabular-nums">
+                        {formatCurrency(job.bradfordShare)}
+                      </td>
+
+                      {/* Action */}
+                      <td className="px-4 py-3 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
+                        {(() => {
+                          if (customerPaid && bradfordPaid && jdPaid) {
+                            return (
+                              <span className="inline-flex items-center gap-1 text-green-600 text-xs">
+                                <CheckCircle className="w-3.5 h-3.5" />
+                                Done
                               </span>
-                            ) : customerPaid ? (
+                            );
+                          }
+                          if (bradfordPaid && !jdPaid) {
+                            return (
+                              <button
+                                onClick={(e) => handleMarkJDPaid(e, job.id)}
+                                className="px-2 py-1 text-xs font-medium text-white bg-zinc-900 hover:bg-zinc-800 rounded"
+                              >
+                                JD Paid
+                              </button>
+                            );
+                          }
+                          if (customerPaid && !bradfordPaid) {
+                            return (
                               <button
                                 onClick={(e) => handleMarkBradfordPaid(e, job.id)}
-                                className="bg-orange-500 text-white text-xs px-2 py-0.5 rounded hover:bg-orange-600 transition-colors w-fit"
+                                className="px-2 py-1 text-xs font-medium text-white bg-zinc-900 hover:bg-zinc-800 rounded"
                               >
-                                Pay Bradford
+                                Pay
                               </button>
-                            ) : (
-                              <span className="bg-gray-100 text-gray-400 text-xs px-2 py-0.5 rounded w-fit">
-                                ○ Pending
-                              </span>
-                            )}
-
-                            {/* Badge 3: Bradford → JD */}
-                            <div className="flex items-center gap-1">
-                              {jdPaid ? (
-                                <span className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded inline-flex items-center gap-1 w-fit">
-                                  <Check className="w-3 h-3" />
-                                  JD Paid
-                                </span>
-                              ) : bradfordPaid ? (
-                                <button
-                                  onClick={(e) => handleMarkJDPaid(e, job.id)}
-                                  className="bg-blue-500 text-white text-xs px-2 py-0.5 rounded hover:bg-blue-600 transition-colors w-fit"
-                                >
-                                  Mark JD Paid
-                                </button>
-                              ) : (
-                                <span className="bg-gray-100 text-gray-400 text-xs px-2 py-0.5 rounded w-fit">
-                                  ○ Pending
-                                </span>
-                              )}
-                              {/* JD Invoice actions */}
-                              {bradfordPaid && (
-                                <>
-                                  {/* Download PDF button */}
-                                  <button
-                                    onClick={(e) => handleDownloadJDInvoice(e, job.id)}
-                                    className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
-                                    title="Download JD Invoice PDF"
-                                  >
-                                    <FileDown className="w-3.5 h-3.5" />
-                                  </button>
-                                  {/* Resend JD Invoice button */}
-                                  {jdInvoiceSent && !jdPaid && (
-                                    <button
-                                      onClick={(e) => handleResendJDInvoice(e, job.id)}
-                                      className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
-                                      title="Resend JD Invoice"
-                                    >
-                                      <Mail className="w-3.5 h-3.5" />
-                                    </button>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                      {job.sizeName || '-'}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">
-                      {formatNumber(job.quantity)}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">
-                      {formatNumber(job.paperPounds, 1)}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-green-600 text-right">
-                      {formatCurrency(job.sellPrice)}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-red-600 text-right">
-                      {formatCurrency(job.totalCost)}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-right">
-                      <span className={`font-medium ${job.spread < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        {formatCurrency(job.spread)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-purple-600 text-right">
-                      {formatCurrency(job.paperMarkup)}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm font-bold text-orange-600 text-right">
-                      {formatCurrency(job.bradfordShare)}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-right">
-                      <span className={`font-medium ${job.marginPercent < 0 ? 'text-red-600' : job.marginPercent < 15 ? 'text-yellow-600' : 'text-green-600'}`}>
-                        {formatNumber(job.marginPercent, 1)}%
-                      </span>
-                    </td>
+                            );
+                          }
+                          return <span className="text-xs text-zinc-400">Awaiting</span>;
+                        })()}
+                      </td>
                     </tr>
                   );
                 })
@@ -990,7 +1140,7 @@ export function BradfordStatsView({
             </tbody>
           </table>
         </div>
-      </div>
+      )}
 
       {/* Job Detail Modal */}
       {selectedJob && (

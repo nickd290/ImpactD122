@@ -212,6 +212,7 @@ model Job {
   bradfordPrintCPM          Decimal?         @db.Decimal(10, 4)  // Print cost per thousand from Bradford
   bradfordBuyCost           Decimal?         @db.Decimal(10, 2)  // Total buy cost from Bradford
   bradfordPaperCostPerLb    Decimal?         @db.Decimal(10, 4)  // Paper cost per lb from Bradford
+  bradfordPaperType         String?          // Paper type: "9 Point Gloss", "7 Point Matte", "100# Gloss Text"
   vendorId                  String?
   deletedAt                 DateTime?
   deletedBy                 String?

@@ -1,7 +1,6 @@
 import React from 'react';
-import { Plus, Upload, Sparkles, ArrowRight, AlertCircle, Clock, DollarSign, Briefcase } from 'lucide-react';
+import { Plus, Upload, Sparkles, ArrowRight, AlertCircle } from 'lucide-react';
 import { Button } from './ui';
-import { Badge } from './ui';
 
 interface Job {
   id: string;
@@ -32,11 +31,10 @@ export function DashboardView({
   onViewAllJobs,
   onSelectJob
 }: DashboardViewProps) {
-  // Calculate real metrics
+  // Calculate metrics
   const activeJobs = jobs.filter(j => j.status === 'ACTIVE');
   const paidJobs = jobs.filter(j => j.status === 'PAID');
 
-  // Jobs due this week
   const now = new Date();
   const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
   const jobsDueThisWeek = activeJobs.filter(j => {
@@ -45,13 +43,11 @@ export function DashboardView({
     return due >= now && due <= weekFromNow;
   });
 
-  // Overdue jobs
   const overdueJobs = activeJobs.filter(j => {
     if (!j.dueDate) return false;
     return new Date(j.dueDate) < now;
   });
 
-  // This month revenue (from paid jobs)
   const thisMonth = new Date().getMonth();
   const thisYear = new Date().getFullYear();
   const monthRevenue = paidJobs
@@ -62,13 +58,10 @@ export function DashboardView({
     })
     .reduce((sum, j) => sum + (j.sellPrice || 0), 0);
 
-  // Total spread from all jobs
   const totalSpread = jobs.reduce((sum, j) => sum + (j.profit?.spread || 0), 0);
+  const marginPercent = monthRevenue > 0 ? (totalSpread / monthRevenue * 100) : 0;
 
-  // Jobs needing attention (overdue or due soon)
   const needsAttention = [...overdueJobs, ...jobsDueThisWeek.slice(0, 3)].slice(0, 5);
-
-  // Recent jobs (last 5)
   const recentJobs = jobs.slice(0, 5);
 
   const formatCurrency = (amount: number) => {
@@ -95,184 +88,177 @@ export function DashboardView({
     }
   };
 
+  // Get current month name
+  const monthName = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
   return (
-    <div className="p-6 max-w-6xl">
-      {/* Header with Quick Actions */}
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-8 max-w-5xl">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-10">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">Overview of your print brokerage</p>
+          <h1 className="text-xl font-medium text-zinc-900">Dashboard</h1>
+          <p className="text-sm text-zinc-400 mt-1">{monthName}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={onCreateJob} size="sm">
-            <Plus className="w-4 h-4 mr-1" />
+          <Button onClick={onCreateJob} size="sm" className="bg-zinc-900 hover:bg-zinc-800">
+            <Plus className="w-4 h-4 mr-1.5" />
             New Job
           </Button>
-          <Button onClick={onShowPOUploader} variant="outline" size="sm">
-            <Upload className="w-4 h-4 mr-1" />
+          <Button onClick={onShowPOUploader} variant="outline" size="sm" className="border-zinc-200 text-zinc-600 hover:text-zinc-900">
+            <Upload className="w-4 h-4 mr-1.5" />
             Upload PO
           </Button>
-          <Button onClick={onShowSpecParser} variant="outline" size="sm">
-            <Sparkles className="w-4 h-4 mr-1" />
+          <Button onClick={onShowSpecParser} variant="outline" size="sm" className="border-zinc-200 text-zinc-600 hover:text-zinc-900">
+            <Sparkles className="w-4 h-4 mr-1.5" />
             Parse Specs
           </Button>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        <div className="bg-card border border-border rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Active Jobs</p>
-              <p className="text-2xl font-semibold text-foreground mt-1">{activeJobs.length}</p>
-            </div>
-            <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center">
-              <Briefcase className="w-5 h-5 text-blue-600" />
-            </div>
-          </div>
+      {/* Metrics Row - No Cards */}
+      <div className="grid grid-cols-4 gap-8 mb-12 pb-8 border-b border-zinc-100">
+        <div>
+          <p className="text-3xl font-medium tabular-nums text-zinc-900">{activeJobs.length}</p>
+          <p className="text-sm text-zinc-500 mt-1">Active Jobs</p>
         </div>
 
-        <div className="bg-card border border-border rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Due This Week</p>
-              <p className="text-2xl font-semibold text-foreground mt-1">{jobsDueThisWeek.length}</p>
-            </div>
-            <div className="w-10 h-10 bg-amber-500/10 rounded-lg flex items-center justify-center">
-              <Clock className="w-5 h-5 text-amber-600" />
-            </div>
-          </div>
+        <div>
+          <p className="text-3xl font-medium tabular-nums text-zinc-900">{jobsDueThisWeek.length}</p>
+          <p className="text-sm text-zinc-500 mt-1">Due This Week</p>
           {overdueJobs.length > 0 && (
-            <p className="text-xs text-red-600 mt-2 flex items-center gap-1">
+            <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
               <AlertCircle className="w-3 h-3" />
               {overdueJobs.length} overdue
             </p>
           )}
         </div>
 
-        <div className="bg-card border border-border rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Month Revenue</p>
-              <p className="text-2xl font-semibold text-foreground mt-1">{formatCurrency(monthRevenue)}</p>
-            </div>
-            <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center">
-              <DollarSign className="w-5 h-5 text-green-600" />
-            </div>
-          </div>
+        <div>
+          <p className="text-3xl font-medium tabular-nums text-zinc-900">{formatCurrency(monthRevenue)}</p>
+          <p className="text-sm text-zinc-500 mt-1">Revenue</p>
         </div>
 
-        <div className="bg-card border border-border rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Spread</p>
-              <p className={`text-2xl font-semibold mt-1 ${totalSpread >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {formatCurrency(totalSpread)}
-              </p>
-            </div>
-            <div className="w-10 h-10 bg-purple-500/10 rounded-lg flex items-center justify-center">
-              <DollarSign className="w-5 h-5 text-purple-600" />
-            </div>
-          </div>
+        <div>
+          <p className={`text-3xl font-medium tabular-nums ${totalSpread >= 0 ? 'text-zinc-900' : 'text-red-600'}`}>
+            {formatCurrency(totalSpread)}
+          </p>
+          <p className="text-sm text-zinc-500 mt-1">Total Spread</p>
+          {marginPercent > 0 && (
+            <p className="text-xs text-zinc-400 mt-1">{marginPercent.toFixed(0)}% margin</p>
+          )}
         </div>
       </div>
 
       {/* Two Column Layout */}
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-2 gap-12">
         {/* Needs Attention */}
-        <div className="bg-card border border-border rounded-lg">
-          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-amber-500" />
-              <h3 className="text-sm font-medium text-foreground">Needs Attention</h3>
-            </div>
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-medium text-zinc-500">Needs Attention</h2>
             {needsAttention.length > 0 && (
-              <Badge variant="warning" className="text-xs">{needsAttention.length}</Badge>
+              <span className="text-xs tabular-nums text-zinc-400">{needsAttention.length}</span>
             )}
           </div>
-          <div className="divide-y divide-border">
-            {needsAttention.length === 0 ? (
-              <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                All caught up! No urgent jobs.
-              </div>
-            ) : (
-              needsAttention.map((job) => {
+
+          {needsAttention.length === 0 ? (
+            <p className="text-sm text-zinc-400 py-4">All caught up</p>
+          ) : (
+            <div className="space-y-0">
+              {needsAttention.map((job) => {
                 const isOverdue = job.dueDate && new Date(job.dueDate) < now;
                 return (
                   <div
                     key={job.id}
                     onClick={() => handleJobClick(job)}
-                    className="px-4 py-3 hover:bg-accent/50 cursor-pointer flex items-center justify-between"
+                    className="py-3 border-b border-zinc-100 last:border-0 cursor-pointer group"
                   >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-foreground truncate">{job.title}</p>
-                      <p className="text-xs text-muted-foreground">{job.number} · {job.customer?.name || 'No customer'}</p>
-                    </div>
-                    <div className="flex items-center gap-2 ml-2">
-                      {isOverdue ? (
-                        <span className="text-xs text-red-600 font-medium">Overdue</span>
-                      ) : job.dueDate ? (
-                        <span className="text-xs text-amber-600">Due {formatDate(job.dueDate)}</span>
-                      ) : null}
+                    <div className="flex items-start justify-between">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-zinc-900 group-hover:text-zinc-600 truncate">
+                          {job.title || job.number}
+                        </p>
+                        <p className="text-xs text-zinc-400 mt-0.5">
+                          {job.number} · {job.customer?.name || 'No customer'}
+                        </p>
+                      </div>
+                      <div className="ml-4 flex-shrink-0">
+                        {isOverdue ? (
+                          <span className="text-xs text-red-600 font-medium">Overdue</span>
+                        ) : job.dueDate ? (
+                          <span className="text-xs text-zinc-400">Due {formatDate(job.dueDate)}</span>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 );
-              })
-            )}
-          </div>
+              })}
+            </div>
+          )}
         </div>
 
         {/* Recent Jobs */}
-        <div className="bg-card border border-border rounded-lg">
-          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-            <h3 className="text-sm font-medium text-foreground">Recent Jobs</h3>
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-medium text-zinc-500">Recent Jobs</h2>
             <button
               onClick={onViewAllJobs}
-              className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
+              className="text-xs text-zinc-400 hover:text-zinc-600 flex items-center gap-1 transition-colors"
             >
               View all
               <ArrowRight className="w-3 h-3" />
             </button>
           </div>
-          <div className="divide-y divide-border">
-            {recentJobs.length === 0 ? (
-              <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                No jobs yet. Create your first job to get started.
-              </div>
-            ) : (
-              recentJobs.map((job) => (
+
+          {recentJobs.length === 0 ? (
+            <p className="text-sm text-zinc-400 py-4">No jobs yet</p>
+          ) : (
+            <div className="space-y-0">
+              {recentJobs.map((job) => (
                 <div
                   key={job.id}
                   onClick={() => handleJobClick(job)}
-                  className="px-4 py-3 hover:bg-accent/50 cursor-pointer flex items-center justify-between"
+                  className="py-3 border-b border-zinc-100 last:border-0 cursor-pointer group"
                 >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-foreground truncate">{job.title}</p>
-                    <p className="text-xs text-muted-foreground">{job.number} · {job.customer?.name || 'No customer'}</p>
+                  <div className="flex items-start justify-between">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-zinc-900 group-hover:text-zinc-600 truncate">
+                        {job.title || job.number}
+                      </p>
+                      <p className="text-xs text-zinc-400 mt-0.5">
+                        {job.number} · {job.customer?.name || 'No customer'}
+                      </p>
+                    </div>
+                    <div className="ml-4 flex-shrink-0">
+                      <StatusText status={job.status} />
+                    </div>
                   </div>
-                  <StatusBadge status={job.status} />
                 </div>
-              ))
-            )}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-// Compact status badge
-function StatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    ACTIVE: 'bg-amber-100 text-amber-700',
-    PAID: 'bg-green-100 text-green-700',
-    CANCELLED: 'bg-red-100 text-red-700',
+// Simple status text - no badge background
+function StatusText({ status }: { status: string }) {
+  const colors: Record<string, string> = {
+    ACTIVE: 'text-amber-600',
+    PAID: 'text-green-600',
+    CANCELLED: 'text-zinc-400',
+  };
+
+  const labels: Record<string, string> = {
+    ACTIVE: 'Active',
+    PAID: 'Paid',
+    CANCELLED: 'Cancelled',
   };
 
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${styles[status] || 'bg-gray-100 text-gray-700'}`}>
-      {status.charAt(0) + status.slice(1).toLowerCase()}
+    <span className={`text-xs ${colors[status] || 'text-zinc-400'}`}>
+      {labels[status] || status}
     </span>
   );
 }

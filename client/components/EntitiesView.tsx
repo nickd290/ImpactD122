@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Plus, Edit, Trash2, Users, Building2 } from 'lucide-react';
 import { Button } from './ui';
-import { Card } from './ui';
 import { EntityJobsDrawer } from './EntityJobsDrawer';
 
 interface EntitiesViewProps {
@@ -64,70 +63,70 @@ export function EntitiesView({
 
   return (
     <div className="space-y-4">
-      {/* Compact Header */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">{entityTypeLabelPlural}</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage your {entityTypeLabelPlural.toLowerCase()} and view their jobs
+          <h1 className="text-xl font-medium text-zinc-900">{entityTypeLabelPlural}</h1>
+          <p className="text-sm text-zinc-400 mt-0.5">
+            {entities.length} {entities.length === 1 ? entityTypeLabel.toLowerCase() : entityTypeLabelPlural.toLowerCase()}
           </p>
         </div>
-        <Button size="sm" onClick={() => onCreateEntity(type === 'CUSTOMER' ? 'customer' : 'vendor')}>
-          <Plus className="w-4 h-4 mr-1" />
+        <Button size="sm" onClick={() => onCreateEntity(type === 'CUSTOMER' ? 'customer' : 'vendor')} className="bg-zinc-900 hover:bg-zinc-800">
+          <Plus className="w-4 h-4 mr-1.5" />
           Add {entityTypeLabel}
         </Button>
       </div>
 
-      <Card className="overflow-hidden">
+      <div className="bg-white rounded-lg border border-zinc-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full">
-            <thead className="bg-muted/30 border-b border-border">
+            <thead className="border-b border-zinc-200">
               <tr>
-                <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Name</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Contact</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Email</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Phone</th>
-                <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground uppercase">Jobs</th>
-                <th className="px-4 py-2 w-20"></th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Name</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Contact</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Email</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Phone</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-zinc-500">Jobs</th>
+                <th className="px-4 py-3 w-20"></th>
               </tr>
             </thead>
             <tbody>
-              {entities.map((entity: any, index: number) => {
+              {entities.map((entity: any) => {
                 const jobCount = getJobCount(entity.id);
                 return (
                   <tr
                     key={entity.id}
-                    className={`group hover:bg-accent/50 cursor-pointer transition-colors ${index % 2 === 0 ? 'bg-card' : 'bg-muted/10'}`}
+                    className="group border-b border-zinc-100 hover:bg-zinc-50 cursor-pointer transition-colors"
                   >
                     <td onClick={() => handleRowClick(entity)} className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-foreground">{entity.name}</span>
+                        <span className="text-sm font-medium text-zinc-900">{entity.name}</span>
                         {entity.isPartner && (
-                          <span className="px-1.5 py-0.5 text-[10px] bg-primary text-primary-foreground rounded font-medium">Partner</span>
+                          <span className="px-1.5 py-0.5 text-[10px] bg-zinc-900 text-white rounded font-medium">Partner</span>
                         )}
                       </div>
                     </td>
-                    <td onClick={() => handleRowClick(entity)} className="px-4 py-3 text-sm text-muted-foreground">
+                    <td onClick={() => handleRowClick(entity)} className="px-4 py-3 text-sm text-zinc-600">
                       {entity.contactPerson || '—'}
                     </td>
-                    <td onClick={() => handleRowClick(entity)} className="px-4 py-3 text-sm text-muted-foreground">
+                    <td onClick={() => handleRowClick(entity)} className="px-4 py-3 text-sm text-zinc-600">
                       {entity.email || '—'}
                     </td>
-                    <td onClick={() => handleRowClick(entity)} className="px-4 py-3 text-sm text-muted-foreground">
+                    <td onClick={() => handleRowClick(entity)} className="px-4 py-3 text-sm text-zinc-600">
                       {entity.phone || '—'}
                     </td>
                     <td onClick={() => handleRowClick(entity)} className="px-4 py-3 text-center">
-                      <span className={`text-sm font-medium ${jobCount > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                      <span className={`text-sm tabular-nums ${jobCount > 0 ? 'font-medium text-zinc-900' : 'text-zinc-400'}`}>
                         {jobCount}
                       </span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button onClick={(e) => { e.stopPropagation(); onEditEntity(entity); }} variant="ghost" size="icon" className="h-7 w-7">
-                          <Edit className="w-3.5 h-3.5" />
+                        <Button onClick={(e) => { e.stopPropagation(); onEditEntity(entity); }} variant="ghost" size="icon" className="h-8 w-8 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100">
+                          <Edit className="w-4 h-4" />
                         </Button>
-                        <Button onClick={(e) => { e.stopPropagation(); onDeleteEntity(entity); }} variant="ghost" size="icon" className="h-7 w-7 text-destructive">
-                          <Trash2 className="w-3.5 h-3.5" />
+                        <Button onClick={(e) => { e.stopPropagation(); onDeleteEntity(entity); }} variant="ghost" size="icon" className="h-8 w-8 text-zinc-400 hover:text-red-600 hover:bg-red-50">
+                          <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>
                     </td>
@@ -139,21 +138,22 @@ export function EntitiesView({
 
           {entities.length === 0 && (
             <div className="p-12 text-center">
-              <div className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50">
+              <div className="w-12 h-12 mx-auto mb-4 text-zinc-300">
                 {type === 'CUSTOMER' ? (
                   <Users className="w-full h-full" />
                 ) : (
                   <Building2 className="w-full h-full" />
                 )}
               </div>
-              <h3 className="text-lg font-medium text-foreground mb-1">
+              <h3 className="text-lg font-medium text-zinc-900 mb-1">
                 No {entityTypeLabelPlural.toLowerCase()} yet
               </h3>
-              <p className="text-sm text-muted-foreground mb-4">
+              <p className="text-sm text-zinc-500 mb-4">
                 Get started by adding your first {entityTypeLabel.toLowerCase()}
               </p>
               <Button
                 onClick={() => onCreateEntity(type === 'CUSTOMER' ? 'customer' : 'vendor')}
+                className="bg-zinc-900 hover:bg-zinc-800"
               >
                 <Plus className="w-4 h-4 mr-2" />
                 Add Your First {entityTypeLabel}
@@ -161,7 +161,7 @@ export function EntitiesView({
             </div>
           )}
         </div>
-      </Card>
+      </div>
 
       {/* Entity Jobs Drawer */}
       {selectedEntity && (
