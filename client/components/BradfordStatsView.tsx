@@ -873,6 +873,7 @@ export function BradfordStatsView({
                           <div className="flex items-center justify-between text-sm">
                             <div className="flex items-center gap-4">
                               <span className="font-medium text-zinc-900 w-16">{job.jobNo}</span>
+                              <span className="text-zinc-500 w-20 truncate">{job.bradfordRef || '—'}</span>
                               <span className="text-zinc-600 w-24 truncate">{job.customerName}</span>
                               <span className="text-zinc-500 w-20">{job.sizeName}</span>
                               <span className="text-zinc-500 tabular-nums w-16 text-right">{formatNumber(job.quantity)}</span>
