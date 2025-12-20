@@ -196,6 +196,30 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
     };
   }, { sellPrice: 0, totalCost: 0, spread: 0, bradfordTotal: 0, impactTotal: 0 });
 
+  // Calculate cash position: money received from customers vs paid to Bradford and Vendors
+  const cashPosition = React.useMemo(() => {
+    return filteredJobs.reduce((acc, job) => {
+      const customerPaid = job.customerPaymentDate
+        ? (Number(job.customerPaymentAmount) || Number(job.sellPrice) || 0)
+        : 0;
+      const bradfordPaid = job.bradfordPaymentDate
+        ? (Number(job.bradfordPaymentAmount) || 0)
+        : 0;
+      const vendorPaid = job.vendorPaymentDate
+        ? (Number(job.vendorPaymentAmount) || 0)
+        : 0;
+
+      return {
+        received: acc.received + customerPaid,
+        paidBradford: acc.paidBradford + bradfordPaid,
+        paidVendors: acc.paidVendors + vendorPaid,
+        jobsReceived: acc.jobsReceived + (job.customerPaymentDate ? 1 : 0),
+        jobsPaidBradford: acc.jobsPaidBradford + (job.bradfordPaymentDate ? 1 : 0),
+        jobsPaidVendors: acc.jobsPaidVendors + (job.vendorPaymentDate ? 1 : 0),
+      };
+    }, { received: 0, paidBradford: 0, paidVendors: 0, jobsReceived: 0, jobsPaidBradford: 0, jobsPaidVendors: 0 });
+  }, [filteredJobs]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -213,6 +237,55 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
       <div className="mb-6">
         <h2 className="text-3xl font-bold text-gray-900">Financials</h2>
         <p className="text-gray-600 mt-1">All jobs with payment tracking</p>
+      </div>
+
+      {/* Cash Position Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {/* Received from Customers */}
+        <div className="bg-green-50 rounded-lg shadow p-4 border border-green-200">
+          <p className="text-xs font-medium text-green-600 uppercase tracking-wide">Received from Customers</p>
+          <p className="text-2xl font-bold text-green-700 mt-2">{formatCurrency(cashPosition.received)}</p>
+          <p className="text-xs text-green-600 mt-1">{cashPosition.jobsReceived} jobs paid</p>
+        </div>
+
+        {/* Paid to Bradford */}
+        <div className="bg-orange-50 rounded-lg shadow p-4 border border-orange-200">
+          <p className="text-xs font-medium text-orange-600 uppercase tracking-wide">Paid to Bradford</p>
+          <p className="text-2xl font-bold text-orange-700 mt-2">{formatCurrency(cashPosition.paidBradford)}</p>
+          <p className="text-xs text-orange-600 mt-1">{cashPosition.jobsPaidBradford} jobs paid</p>
+        </div>
+
+        {/* Paid to Vendors */}
+        <div className="bg-purple-50 rounded-lg shadow p-4 border border-purple-200">
+          <p className="text-xs font-medium text-purple-600 uppercase tracking-wide">Paid to Vendors</p>
+          <p className="text-2xl font-bold text-purple-700 mt-2">{formatCurrency(cashPosition.paidVendors)}</p>
+          <p className="text-xs text-purple-600 mt-1">{cashPosition.jobsPaidVendors} jobs paid</p>
+        </div>
+
+        {/* Net Cash Position */}
+        {(() => {
+          const netPosition = cashPosition.received - cashPosition.paidBradford - cashPosition.paidVendors;
+          const isPositive = netPosition >= 0;
+          return (
+            <div className={`rounded-lg shadow p-4 border ${
+              isPositive ? 'bg-blue-50 border-blue-200' : 'bg-red-50 border-red-200'
+            }`}>
+              <p className={`text-xs font-medium uppercase tracking-wide ${
+                isPositive ? 'text-blue-600' : 'text-red-600'
+              }`}>Net Cash Position</p>
+              <p className={`text-2xl font-bold mt-2 ${
+                isPositive ? 'text-blue-700' : 'text-red-700'
+              }`}>
+                {formatCurrency(netPosition)}
+              </p>
+              <p className={`text-xs mt-1 ${
+                isPositive ? 'text-blue-600' : 'text-red-600'
+              }`}>
+                {isPositive ? 'Available balance' : 'Outstanding balance'}
+              </p>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Filter Tabs + Statement Download */}
