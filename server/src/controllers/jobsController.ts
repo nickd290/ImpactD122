@@ -569,6 +569,17 @@ export const createJob = async (req: Request, res: Response) => {
 
     const jobId = crypto.randomUUID();
 
+    // Guard: Backend pricing validation - reject negative margin without override
+    if (totalCost > 0 && sellPrice < totalCost && req.body.allowNegativeMargin !== true) {
+      return res.status(400).json({
+        error: `Negative margin: sellPrice ($${sellPrice.toFixed(2)}) < totalCost ($${totalCost.toFixed(2)})`,
+        sellPrice: sellPrice,
+        totalCost: totalCost,
+        margin: sellPrice - totalCost,
+        hint: 'Set allowNegativeMargin=true to override'
+      });
+    }
+
     // Build specs JSON - check if it's a standard Bradford size
     const isStandardSize = isBradfordJob || (sizeName ? !!getSelfMailerPricing(sizeName) : false);
     const jobSpecs = {
@@ -852,6 +863,36 @@ export const updateJob = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Job not found' });
     }
 
+    // Guard: Field locking after invoice generated
+    const LOCKED_AFTER_INVOICE = ['sellPrice', 'quantity', 'specs'];
+    if (existingJob.invoiceGeneratedAt) {
+      const attemptedLockedFields = LOCKED_AFTER_INVOICE.filter(field => {
+        const reqValue = req.body[field] ?? req.body.inputSellPrice ?? req.body.inputQuantity;
+        if (field === 'sellPrice' && req.body.sellPrice !== undefined) {
+          return Number(req.body.sellPrice) !== Number(existingJob.sellPrice);
+        }
+        if (field === 'quantity' && req.body.quantity !== undefined) {
+          return Number(req.body.quantity) !== Number(existingJob.quantity);
+        }
+        if (field === 'specs' && req.body.specs !== undefined) {
+          return true; // Specs changes after invoice are blocked
+        }
+        if (field === 'specs' && req.body.lineItems !== undefined) {
+          return true; // LineItems changes after invoice are blocked
+        }
+        return false;
+      });
+
+      if (attemptedLockedFields.length > 0) {
+        return res.status(403).json({
+          error: 'Job is locked after invoice generation',
+          lockedFields: attemptedLockedFields,
+          invoiceGeneratedAt: existingJob.invoiceGeneratedAt,
+          hint: 'Create a credit memo or new job for changes'
+        });
+      }
+    }
+
     // Calculate quantity and totals from line items if provided
     let quantity = existingJob.quantity;
     let lineItemTotal = Number(existingJob.sellPrice) || 0;
@@ -923,6 +964,33 @@ export const updateJob = async (req: Request, res: Response) => {
     if (financials) {
       if (financials.impactCustomerTotal !== undefined && inputSellPrice === undefined) {
         updateData.sellPrice = financials.impactCustomerTotal;
+      }
+    }
+
+    // Guard: Backend pricing validation - reject negative margin without override
+    const finalSellPrice = updateData.sellPrice ?? existingJob.sellPrice;
+    if (finalSellPrice !== undefined && req.body.allowNegativeMargin !== true) {
+      // Calculate total cost from Impact-origin POs
+      const impactPOs = (existingJob.PurchaseOrder || []).filter(
+        (po: any) => po.originCompanyId === 'impact-direct'
+      );
+      const totalCost = impactPOs.reduce((sum: number, po: any) => sum + (Number(po.buyCost) || 0), 0);
+
+      if (Number(finalSellPrice) < 0) {
+        return res.status(400).json({
+          error: 'Sell price cannot be negative',
+          sellPrice: finalSellPrice
+        });
+      }
+
+      if (totalCost > 0 && Number(finalSellPrice) < totalCost) {
+        return res.status(400).json({
+          error: `Negative margin: sellPrice ($${Number(finalSellPrice).toFixed(2)}) < totalCost ($${totalCost.toFixed(2)})`,
+          sellPrice: finalSellPrice,
+          totalCost: totalCost,
+          margin: Number(finalSellPrice) - totalCost,
+          hint: 'Set allowNegativeMargin=true to override'
+        });
       }
     }
 
@@ -2141,6 +2209,18 @@ export const deletePO = async (req: Request, res: Response) => {
 
     const jobId = po.jobId;
 
+    // Guard: Prevent PO deletion after invoice generated
+    if (jobId) {
+      const job = await prisma.job.findUnique({ where: { id: jobId } });
+      if (job?.invoiceGeneratedAt) {
+        return res.status(403).json({
+          error: 'Cannot delete PO after invoice generated',
+          invoiceGeneratedAt: job.invoiceGeneratedAt,
+          hint: 'Job is locked for financial integrity'
+        });
+      }
+    }
+
     // Delete the PO
     await prisma.purchaseOrder.delete({
       where: { id: poId },
@@ -2308,6 +2388,25 @@ export const markImpactToBradfordPaid = async (req: Request, res: Response) => {
 
     if (!existingJob) {
       return res.status(404).json({ error: 'Job not found' });
+    }
+
+    // Guard 1: Payment sequence - customer must pay first
+    if (!existingJob.customerPaymentDate) {
+      return res.status(400).json({
+        error: 'Cannot pay Bradford before customer payment received',
+        hint: 'Use markCustomerPaid first',
+        jobNo: existingJob.jobNo
+      });
+    }
+
+    // Guard 2: Idempotency - prevent duplicate Bradford payments
+    if (existingJob.bradfordPaymentDate) {
+      return res.status(409).json({
+        error: 'Bradford payment already recorded',
+        existingDate: existingJob.bradfordPaymentDate,
+        existingAmount: existingJob.bradfordPaymentAmount,
+        hint: 'To resend JD invoice, use the sendJDInvoice endpoint instead'
+      });
     }
 
     const paymentDate = date ? new Date(date) : new Date();
