@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { prisma } from '../utils/prisma';
-import { RoutingType, PaperSource } from '@prisma/client';
-import { sendThreeZPOEmail } from '../services/emailService';
+import { RoutingType, PaperSource, CampaignFrequency, DropStatus } from '@prisma/client';
+import { sendThreeZPOEmail, sendEmailImportNotification } from '../services/emailService';
+import { parsePrintSpecs, parsePurchaseOrder, parseEmailToJobSpecs } from '../services/openaiService';
 
 /**
  * Webhook payload from Impact Customer Portal or Inventory Release App
@@ -445,4 +446,463 @@ export async function webhookHealth(req: Request, res: Response) {
     configured: hasSecret,
     timestamp: new Date().toISOString(),
   });
+}
+
+// ============================================
+// CAMPAIGN WEBHOOK
+// ============================================
+
+interface CampaignDropPayload {
+  mailDate: string;
+  uploadDeadline: string;
+  status: string;
+}
+
+interface PortalCampaignPayload {
+  externalCampaignId: string;
+  name: string;
+  companyId: string;
+  companyName: string;
+  sizeName: string;
+  quantity: number;
+  pricePerM: number;
+  specs?: {
+    productType?: string;
+    paperStock?: string;
+    printColors?: string;
+    [key: string]: any;
+  } | null;
+  customerPONumber?: string | null;
+  frequency: 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY';
+  mailDay: number;
+  startDate: string;
+  endDate?: string | null;
+  isActive: boolean;
+  createdAt: string;
+  drops: CampaignDropPayload[];
+}
+
+/**
+ * Map drop status from portal to ImpactD122
+ */
+function mapDropStatus(status: string): DropStatus {
+  const statusMap: Record<string, DropStatus> = {
+    'SCHEDULED': 'SCHEDULED',
+    'AWAITING_FILES': 'AWAITING_FILES',
+    'FILES_RECEIVED': 'FILES_RECEIVED',
+    'IN_PRODUCTION': 'IN_PRODUCTION',
+    'MAILED': 'MAILED',
+    'COMPLETED': 'COMPLETED',
+  };
+  return statusMap[status] || 'SCHEDULED';
+}
+
+/**
+ * POST /api/webhooks/campaigns
+ * Receive campaign data from Impact Customer Portal
+ */
+export async function receiveCampaignWebhook(req: Request, res: Response) {
+  try {
+    // Validate webhook secret
+    if (!validateWebhookSecret(req)) {
+      console.warn('Campaign webhook authentication failed - invalid or missing X-Webhook-Secret');
+      return res.status(401).json({
+        error: 'Unauthorized',
+        message: 'Invalid or missing webhook secret'
+      });
+    }
+
+    const payload: PortalCampaignPayload = req.body;
+
+    // Validate required fields
+    if (!payload.externalCampaignId || !payload.name || !payload.companyName) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Missing required fields: externalCampaignId, name, companyName',
+      });
+    }
+
+    console.log(`📥 Received campaign webhook for "${payload.name}" from portal`);
+
+    // Find or create the customer company
+    const customerId = await findOrCreateCustomer(payload.companyName, payload.companyId);
+
+    // Check if campaign already exists
+    const existingCampaign = await prisma.campaign.findUnique({
+      where: { externalCampaignId: payload.externalCampaignId },
+      include: { CampaignDrop: true },
+    });
+
+    let campaign;
+
+    const campaignData = {
+      customerId,
+      name: payload.name,
+      sizeName: payload.sizeName,
+      quantity: payload.quantity,
+      frequency: payload.frequency as CampaignFrequency,
+      mailDay: payload.mailDay,
+      startDate: new Date(payload.startDate),
+      endDate: payload.endDate ? new Date(payload.endDate) : null,
+      isActive: payload.isActive,
+    };
+
+    if (existingCampaign) {
+      // Update existing campaign
+      campaign = await prisma.campaign.update({
+        where: { id: existingCampaign.id },
+        data: campaignData,
+      });
+
+      // Delete existing drops and recreate
+      await prisma.campaignDrop.deleteMany({
+        where: { campaignId: campaign.id },
+      });
+
+      console.log(`✅ Updated existing campaign "${campaign.name}" (${campaign.id})`);
+    } else {
+      // Create new campaign
+      campaign = await prisma.campaign.create({
+        data: {
+          externalCampaignId: payload.externalCampaignId,
+          ...campaignData,
+        },
+      });
+      console.log(`✅ Created new campaign "${campaign.name}" (${campaign.id})`);
+    }
+
+    // Create drops and jobs if provided
+    const createdJobs: { jobNo: string; mailDate: Date; sellPrice: number; poNumber: string }[] = [];
+
+    if (payload.drops && payload.drops.length > 0) {
+      let dropIndex = 1;
+      for (const drop of payload.drops) {
+        const mailDate = new Date(drop.mailDate);
+        const uploadDeadline = new Date(drop.uploadDeadline);
+
+        // Create drop record
+        await prisma.campaignDrop.create({
+          data: {
+            campaignId: campaign.id,
+            mailDate,
+            uploadDeadline,
+            status: mapDropStatus(drop.status),
+          },
+        });
+
+        // Create a Job for each drop
+        const jobNo = await generateJobNumber();
+        const dropDateStr = mailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+        // Calculate sell price: quantity * pricePerM / 1000
+        const sellPrice = (payload.quantity * payload.pricePerM) / 1000;
+
+        // Sequential customer PO for each drop
+        const jobCustomerPO = payload.customerPONumber
+          ? `${payload.customerPONumber}-${dropIndex}`
+          : null;
+
+        const job = await prisma.job.create({
+          data: {
+            id: crypto.randomUUID(),
+            jobNo,
+            customerId,
+            title: `${payload.name} - ${dropDateStr}`,
+            description: `Campaign drop for ${payload.companyName}`,
+            sizeName: payload.sizeName,
+            quantity: payload.quantity,
+            sellPrice,
+            mailDate,
+            customerPONumber: jobCustomerPO,
+            status: 'ACTIVE',
+            specs: {
+              campaignId: campaign.id,
+              externalCampaignId: payload.externalCampaignId,
+              frequency: payload.frequency,
+              source: 'campaign-webhook',
+              productType: payload.specs?.productType,
+              paperStock: payload.specs?.paperStock,
+              printColors: payload.specs?.printColors,
+            },
+            externalSource: 'impact-customer-portal',
+            updatedAt: new Date(),
+          },
+        });
+
+        // Create PO from customer (the order/agreement)
+        // Find Impact company as the origin for the PO
+        const impactCompany = await prisma.company.findFirst({
+          where: {
+            name: { contains: 'Impact', mode: 'insensitive' },
+            type: { equals: 'broker', mode: 'insensitive' }
+          }
+        });
+
+        // Sequential PO numbering: if customerPONumber provided, use PO-1, PO-2, etc.
+        const poNumber = payload.customerPONumber
+          ? `${payload.customerPONumber}-${dropIndex}`
+          : `${jobNo}-PO`;
+
+        await prisma.purchaseOrder.create({
+          data: {
+            id: crypto.randomUUID(),
+            jobId: job.id,
+            originCompanyId: impactCompany?.id || customerId,
+            targetCompanyId: customerId,
+            poNumber,
+            description: `${payload.sizeName} - ${payload.quantity.toLocaleString()} pcs`,
+            buyCost: sellPrice, // What customer pays = our sell price
+            status: 'PENDING',
+            updatedAt: new Date(),
+          }
+        });
+
+        createdJobs.push({ jobNo: job.jobNo, mailDate, sellPrice, poNumber });
+        console.log(`  📦 Created job ${job.jobNo} (PO: ${poNumber}, $${sellPrice.toFixed(2)}) for drop on ${dropDateStr}`);
+        dropIndex++;
+      }
+      console.log(`  📅 Created ${payload.drops.length} drops with jobs`);
+    }
+
+    return res.status(existingCampaign ? 200 : 201).json({
+      success: true,
+      action: existingCampaign ? 'updated' : 'created',
+      campaignId: campaign.id,
+      name: campaign.name,
+      dropsCount: payload.drops?.length || 0,
+      jobs: createdJobs,
+    });
+
+  } catch (error: any) {
+    console.error('❌ Campaign webhook error:', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Failed to process campaign webhook',
+    });
+  }
+}
+
+// ============================================
+// EMAIL-TO-JOB WEBHOOK
+// ============================================
+
+/**
+ * Payload from n8n/Zapier when email is forwarded
+ */
+interface EmailToJobPayload {
+  from: string;           // Sender email
+  subject: string;        // Email subject
+  textBody: string;       // Plain text content
+  htmlBody?: string;      // HTML content (optional)
+  attachments?: Array<{
+    filename: string;
+    content: string;      // Base64 encoded
+    mimeType: string;
+  }>;
+  forwardedBy?: string;   // Who forwarded the email (for audit)
+}
+
+/**
+ * Validate email import webhook secret
+ */
+function validateEmailImportSecret(req: Request): boolean {
+  const secret = req.headers['x-webhook-secret'];
+  const expectedSecret = process.env.EMAIL_IMPORT_WEBHOOK_SECRET || process.env.PORTAL_WEBHOOK_SECRET;
+
+  if (!expectedSecret) {
+    console.error('EMAIL_IMPORT_WEBHOOK_SECRET not configured');
+    return false;
+  }
+
+  return secret === expectedSecret;
+}
+
+/**
+ * Try to match customer from email domain
+ */
+async function findCustomerByEmailDomain(email: string): Promise<{ id: string; name: string } | null> {
+  if (!email) return null;
+
+  // Extract domain from email
+  const domain = email.split('@')[1]?.toLowerCase();
+  if (!domain) return null;
+
+  // Skip common email providers
+  const commonDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com', 'icloud.com'];
+  if (commonDomains.includes(domain)) return null;
+
+  // Try to find a company with email containing this domain
+  const company = await prisma.company.findFirst({
+    where: {
+      AND: [
+        { type: { equals: 'customer', mode: 'insensitive' } },
+        {
+          OR: [
+            { email: { contains: domain, mode: 'insensitive' } },
+            { name: { contains: domain.split('.')[0], mode: 'insensitive' } },
+          ],
+        },
+      ],
+    },
+  });
+
+  return company ? { id: company.id, name: company.name } : null;
+}
+
+/**
+ * POST /api/webhooks/email-to-job
+ * Receive forwarded email and create job via AI parsing
+ */
+export async function receiveEmailToJobWebhook(req: Request, res: Response) {
+  try {
+    // Validate webhook secret
+    if (!validateEmailImportSecret(req)) {
+      console.warn('Email import webhook authentication failed - invalid or missing X-Webhook-Secret');
+      return res.status(401).json({
+        error: 'Unauthorized',
+        message: 'Invalid or missing webhook secret'
+      });
+    }
+
+    const payload: EmailToJobPayload = req.body;
+
+    // Validate required fields
+    if (!payload.textBody && !payload.htmlBody) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Missing required field: textBody or htmlBody',
+      });
+    }
+
+    console.log(`📧 Received email-to-job webhook from: ${payload.from}`);
+    console.log(`   Subject: ${payload.subject}`);
+    console.log(`   Attachments: ${payload.attachments?.length || 0}`);
+
+    // Check for PDF/image attachments that might be a PO
+    let parsedData: any = null;
+    const pdfAttachment = payload.attachments?.find(
+      att => att.mimeType === 'application/pdf' || att.mimeType.startsWith('image/')
+    );
+
+    if (pdfAttachment) {
+      // Use PO parser for document
+      console.log(`📄 Found attachment: ${pdfAttachment.filename} - using PO parser`);
+      parsedData = await parsePurchaseOrder(pdfAttachment.content, pdfAttachment.mimeType);
+    } else {
+      // Use email parser for text content
+      const textContent = payload.textBody || (payload.htmlBody?.replace(/<[^>]*>/g, ' ') || '');
+      console.log(`📝 No PDF attachment - parsing email body text`);
+      parsedData = await parseEmailToJobSpecs(payload.subject, textContent, payload.from);
+    }
+
+    if (!parsedData || Object.keys(parsedData).length === 0) {
+      return res.status(422).json({
+        error: 'Processing Error',
+        message: 'Could not parse job details from email',
+        rawSubject: payload.subject,
+      });
+    }
+
+    // Try to match customer from email sender
+    const customerMatch = await findCustomerByEmailDomain(payload.from);
+    let customerId: string;
+
+    if (customerMatch) {
+      customerId = customerMatch.id;
+      console.log(`✅ Matched customer: ${customerMatch.name}`);
+    } else if (parsedData.customerName) {
+      // Create or find customer from parsed data
+      customerId = await findOrCreateCustomer(parsedData.customerName);
+    } else {
+      // Create a placeholder company from email sender
+      const senderName = payload.from.split('@')[0] || 'Unknown';
+      customerId = await findOrCreateCustomer(`Email Import - ${senderName}`);
+    }
+
+    // Generate job number
+    const jobNo = await generateJobNumber();
+
+    // Build job title
+    const jobTitle = parsedData.title || payload.subject || `Email Import - ${new Date().toLocaleDateString()}`;
+
+    // Create the job
+    const job = await prisma.job.create({
+      data: {
+        id: crypto.randomUUID(),
+        jobNo,
+        customerId,
+        title: jobTitle,
+        description: parsedData.description || null,
+        customerPONumber: parsedData.customerPONumber || null,
+        quantity: parsedData.quantity || null,
+        sizeName: parsedData.specs?.finishedSize || null,
+        sellPrice: parsedData.customerPOTotal || null,
+        deliveryDate: parsedData.dueDate ? new Date(parsedData.dueDate) : null,
+        mailDate: parsedData.mailDate ? new Date(parsedData.mailDate) : null,
+        specs: {
+          ...parsedData.specs,
+          originalEmail: {
+            from: payload.from,
+            subject: payload.subject,
+            receivedAt: new Date().toISOString(),
+          },
+          requiresReview: true,
+        },
+        status: 'ACTIVE',
+        externalSource: 'email-import',
+        updatedAt: new Date(),
+      },
+    });
+
+    console.log(`✅ Created job ${job.jobNo} from email import`);
+
+    // Log activity
+    await prisma.jobActivity.create({
+      data: {
+        id: crypto.randomUUID(),
+        jobId: job.id,
+        action: 'EMAIL_IMPORT_CREATE',
+        field: 'job',
+        newValue: JSON.stringify({
+          from: payload.from,
+          subject: payload.subject,
+          forwardedBy: payload.forwardedBy,
+          hadAttachment: !!pdfAttachment,
+        }),
+        changedBy: payload.forwardedBy || `webhook:email-import`,
+        changedByRole: 'BROKER_ADMIN',
+      },
+    });
+
+    // Send notification to admin
+    const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL || 'brandon@impactdirectprinting.com';
+    try {
+      await sendEmailImportNotification(job, payload.from, payload.subject, adminEmail);
+      console.log(`📧 Notification sent to ${adminEmail}`);
+    } catch (notifyError) {
+      console.warn('⚠️ Failed to send notification email:', notifyError);
+      // Don't fail the webhook if notification fails
+    }
+
+    return res.status(201).json({
+      success: true,
+      jobId: job.id,
+      jobNo: job.jobNo,
+      parsedData: {
+        title: jobTitle,
+        customerMatch: customerMatch || null,
+        specs: parsedData.specs || {},
+        lineItems: parsedData.lineItems || [],
+        quantity: parsedData.quantity,
+      },
+      requiresReview: true,
+    });
+
+  } catch (error: any) {
+    console.error('❌ Email-to-job webhook error:', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Failed to process email webhook',
+    });
+  }
 }

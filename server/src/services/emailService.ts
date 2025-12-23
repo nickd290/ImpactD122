@@ -1409,3 +1409,142 @@ export async function sendCustomerProofEmail(
     return { success: false, error: error.message || 'Failed to send proof email' };
   }
 }
+
+// ============================================
+// EMAIL IMPORT NOTIFICATION
+// ============================================
+
+const ADMIN_NOTIFICATION_EMAIL = process.env.ADMIN_NOTIFICATION_EMAIL || 'brandon@impactdirectprinting.com';
+const JD_NOTIFICATION_CC = 'nick@jdgraphic.com';
+
+interface EmailImportNotificationData {
+  jobId: string;
+  jobNo: string;
+  title: string;
+  fromEmail: string;
+  subject: string;
+  quantity: number;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  customerName?: string;
+  specs?: Record<string, any>;
+  notes?: string;
+}
+
+function getEmailImportNotificationBody(data: EmailImportNotificationData): string {
+  const appUrl = process.env.APP_URL || 'http://localhost:5173';
+  const jobUrl = `${appUrl}/jobs/${data.jobId}`;
+
+  // Confidence badge color
+  const confidenceColors: Record<string, { bg: string; text: string; border: string }> = {
+    HIGH: { bg: '#dcfce7', text: '#166534', border: '#22c55e' },
+    MEDIUM: { bg: '#fef9c3', text: '#854d0e', border: '#eab308' },
+    LOW: { bg: '#fee2e2', text: '#991b1b', border: '#ef4444' },
+  };
+  const colors = confidenceColors[data.confidence] || confidenceColors.LOW;
+
+  // Build specs table if available
+  let specsTable = '';
+  if (data.specs) {
+    const specsRows = Object.entries(data.specs)
+      .filter(([_, value]) => value != null)
+      .map(([key, value]) => `
+        <tr>
+          <td style="padding: 6px 12px; color: #6b7280; text-transform: capitalize;">${key.replace(/([A-Z])/g, ' $1').trim()}</td>
+          <td style="padding: 6px 12px; font-weight: 500;">${value}</td>
+        </tr>
+      `).join('');
+
+    if (specsRows) {
+      specsTable = `
+        <div style="margin: 20px 0;">
+          <p style="color: #6b7280; font-size: 12px; font-weight: 600; text-transform: uppercase; margin: 0 0 8px 0;">Parsed Specifications</p>
+          <table style="width: 100%; border-collapse: collapse; background: #f9fafb; border-radius: 6px;">
+            ${specsRows}
+          </table>
+        </div>
+      `;
+    }
+  }
+
+  return `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+      <!-- Header -->
+      <div style="background: #1a1a1a; padding: 20px 24px; border-radius: 8px 8px 0 0;">
+        <h1 style="color: white; margin: 0; font-size: 18px;">📧 New Job from Email Import</h1>
+      </div>
+
+      <!-- Body -->
+      <div style="padding: 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+        <!-- Confidence Badge -->
+        <div style="display: inline-block; background: ${colors.bg}; color: ${colors.text}; border: 1px solid ${colors.border}; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-bottom: 16px;">
+          ${data.confidence} CONFIDENCE
+        </div>
+
+        <!-- Job Summary -->
+        <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+          <h2 style="margin: 0 0 8px 0; font-size: 18px; color: #111827;">Job #${data.jobNo}</h2>
+          <p style="margin: 0; font-size: 14px; color: #374151;">${data.title}</p>
+          ${data.quantity > 0 ? `<p style="margin: 4px 0 0 0; font-size: 14px; color: #6b7280;">Quantity: ${data.quantity.toLocaleString()}</p>` : ''}
+        </div>
+
+        <!-- Source Email Info -->
+        <div style="margin-bottom: 20px;">
+          <p style="color: #6b7280; font-size: 12px; font-weight: 600; text-transform: uppercase; margin: 0 0 8px 0;">Email Source</p>
+          <p style="margin: 0; font-size: 14px;"><strong>From:</strong> ${data.fromEmail}</p>
+          <p style="margin: 4px 0 0 0; font-size: 14px;"><strong>Subject:</strong> ${data.subject}</p>
+          ${data.customerName ? `<p style="margin: 4px 0 0 0; font-size: 14px;"><strong>Matched Customer:</strong> ${data.customerName}</p>` : '<p style="margin: 4px 0 0 0; font-size: 14px; color: #dc2626;"><strong>Customer:</strong> Not matched - needs assignment</p>'}
+        </div>
+
+        ${specsTable}
+
+        ${data.notes ? `
+        <div style="background: #fef9c3; border: 1px solid #fde047; border-radius: 6px; padding: 12px; margin-bottom: 20px;">
+          <p style="color: #854d0e; font-size: 12px; font-weight: 600; margin: 0 0 4px 0;">AI Notes</p>
+          <p style="color: #713f12; font-size: 14px; margin: 0;">${data.notes}</p>
+        </div>
+        ` : ''}
+
+        <!-- CTA Button -->
+        <div style="text-align: center; margin: 24px 0;">
+          <a href="${jobUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 32px; text-decoration: none; border-radius: 6px; font-weight: 600;">Review Job</a>
+        </div>
+
+        <p style="color: #6b7280; font-size: 13px; text-align: center;">
+          ${data.confidence === 'LOW' ? '⚠️ Low confidence extraction - please verify all details' :
+            data.confidence === 'MEDIUM' ? '⚠️ Some details may need verification' :
+            '✓ High confidence extraction'}
+        </p>
+      </div>
+    </div>
+  `;
+}
+
+export async function sendEmailImportNotification(
+  data: EmailImportNotificationData
+): Promise<EmailResult> {
+  try {
+    const subject = `[Email Import] New Job #${data.jobNo} - ${data.confidence} confidence`;
+    const body = getEmailImportNotificationBody(data);
+
+    const result = await sendEmail({
+      to: ADMIN_NOTIFICATION_EMAIL,
+      cc: JD_NOTIFICATION_CC,
+      subject,
+      body,
+    });
+
+    if (result.success) {
+      console.log('📧 Email import notification sent:', {
+        to: ADMIN_NOTIFICATION_EMAIL,
+        cc: JD_NOTIFICATION_CC,
+        jobNo: data.jobNo,
+        confidence: data.confidence,
+      });
+    }
+
+    return result;
+  } catch (error: any) {
+    console.error('Error sending email import notification:', error);
+    return { success: false, error: error.message || 'Failed to send notification' };
+  }
+}

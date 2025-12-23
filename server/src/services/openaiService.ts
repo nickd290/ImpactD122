@@ -88,6 +88,184 @@ export const parsePrintSpecs = async (text: string): Promise<any> => {
   }
 };
 
+export const parseEmailToJobSpecs = async (
+  subject: string,
+  textBody: string,
+  senderEmail?: string
+): Promise<{
+  title: string;
+  description: string;
+  quantity: number;
+  dueDate: string | null;
+  specs: {
+    productType: 'BOOK' | 'FLAT' | 'FOLDED';
+    paperType: string | null;
+    coverPaperType: string | null;
+    flatSize: string | null;
+    finishedSize: string | null;
+    colors: string | null;
+    coating: string | null;
+    finishing: string | null;
+    pageCount: string | null;
+    bindingStyle: string | null;
+    coverType: string | null;
+  };
+  customerPONumber: string | null;
+  shipToAddress: string | null;
+  notes: string | null;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+}> => {
+  const defaultResult = {
+    title: subject || 'Email Import',
+    description: '',
+    quantity: 0,
+    dueDate: null,
+    specs: {
+      productType: 'FLAT' as const,
+      paperType: null,
+      coverPaperType: null,
+      flatSize: null,
+      finishedSize: null,
+      colors: null,
+      coating: null,
+      finishing: null,
+      pageCount: null,
+      bindingStyle: null,
+      coverType: null,
+    },
+    customerPONumber: null,
+    shipToAddress: null,
+    notes: null,
+    confidence: 'LOW' as const,
+  };
+
+  if (!textBody?.trim() && !subject?.trim()) return defaultResult;
+
+  try {
+    const prompt = `You are analyzing a forwarded email for a commercial print brokerage (Impact Direct Printing).
+Extract print job specifications from this email and return structured JSON.
+
+**EMAIL SUBJECT:** "${subject || '(no subject)'}"
+
+**EMAIL BODY:**
+${textBody || '(empty)'}
+
+**SENDER:** ${senderEmail || 'unknown'}
+
+**EXTRACTION INSTRUCTIONS:**
+
+1. **Title**: Create a brief job title from the subject/content (e.g., "Q1 Newsletter 2500qty", "Annual Report Reprint")
+
+2. **Description**: Summarize what they're asking for in 1-2 sentences
+
+3. **Quantity**: Extract the print quantity. Look for:
+   - "5,000 copies", "2500 qty", "quantity: 10000"
+   - If multiple quantities mentioned, use the primary one
+   - Return 0 if not found
+
+4. **Due Date**: Look for deadlines, ship dates, need-by dates
+   - Format as "YYYY-MM-DD" if found
+   - Return null if not found
+
+5. **Product Type**: Determine if it's:
+   - "BOOK": Catalogs, booklets, magazines, anything with pages/binding
+   - "FOLDED": Brochures, tri-folds, mailers that fold
+   - "FLAT": Postcards, flyers, sell sheets, posters
+
+6. **Print Specs**: Extract any mentioned:
+   - paperType: "80# Gloss Text", "100# Uncoated", etc.
+   - coverPaperType: For books with separate covers
+   - flatSize: Unfolded dimensions "11x17"
+   - finishedSize: Final size "8.5x11", "6x9"
+   - colors: "4/4", "4/1", "4/0", "PMS 485"
+   - coating: "AQ", "UV", "Matte", "Gloss"
+   - finishing: "Score", "Die Cut", "Emboss"
+   - pageCount: "16 pages", "24pp + cover"
+   - bindingStyle: "Saddle Stitch", "Perfect Bound", "Wire-O"
+   - coverType: "PLUS" (separate cover) or "SELF" (self-cover)
+
+7. **PO Number**: If customer mentions a PO#, order number, reference number
+
+8. **Ship To**: Extract shipping address if mentioned
+
+9. **Notes**: Any other important info (rush, special handling, reprint of previous job, etc.)
+
+10. **Confidence**: Rate how confident you are in the extraction:
+    - "HIGH": Clear specs, quantities, dates mentioned
+    - "MEDIUM": Some info but missing key details
+    - "LOW": Vague request, needs follow-up
+
+Return JSON:
+{
+  "title": "string",
+  "description": "string",
+  "quantity": number,
+  "dueDate": "YYYY-MM-DD" or null,
+  "specs": {
+    "productType": "BOOK" | "FLAT" | "FOLDED",
+    "paperType": string or null,
+    "coverPaperType": string or null,
+    "flatSize": string or null,
+    "finishedSize": string or null,
+    "colors": string or null,
+    "coating": string or null,
+    "finishing": string or null,
+    "pageCount": string or null,
+    "bindingStyle": string or null,
+    "coverType": string or null
+  },
+  "customerPONumber": string or null,
+  "shipToAddress": string or null,
+  "notes": string or null,
+  "confidence": "HIGH" | "MEDIUM" | "LOW"
+}`;
+
+    const response = await getOpenAIClient().chat.completions.create({
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 2048,
+    });
+
+    const jsonText = response.choices[0]?.message?.content || '';
+
+    if (!jsonText) return defaultResult;
+
+    // Extract JSON from markdown code blocks if present
+    const jsonMatch = jsonText.match(/```json\s*([\s\S]*?)\s*```/) || jsonText.match(/```\s*([\s\S]*?)\s*```/);
+    const parsed = JSON.parse(jsonMatch ? jsonMatch[1] : jsonText);
+
+    console.log('📧 Email-to-Job Parser Result:', JSON.stringify(parsed, null, 2));
+
+    return {
+      title: parsed.title || subject || 'Email Import',
+      description: parsed.description || '',
+      quantity: parsed.quantity || 0,
+      dueDate: parsed.dueDate || null,
+      specs: {
+        productType: parsed.specs?.productType || 'FLAT',
+        paperType: parsed.specs?.paperType || null,
+        coverPaperType: parsed.specs?.coverPaperType || null,
+        flatSize: parsed.specs?.flatSize || null,
+        finishedSize: parsed.specs?.finishedSize || null,
+        colors: parsed.specs?.colors || null,
+        coating: parsed.specs?.coating || null,
+        finishing: parsed.specs?.finishing || null,
+        pageCount: parsed.specs?.pageCount || null,
+        bindingStyle: parsed.specs?.bindingStyle || null,
+        coverType: parsed.specs?.coverType || null,
+      },
+      customerPONumber: parsed.customerPONumber || null,
+      shipToAddress: parsed.shipToAddress || null,
+      notes: parsed.notes || null,
+      confidence: parsed.confidence || 'LOW',
+    };
+
+  } catch (error: any) {
+    console.error("❌ Email-to-Job parsing error:", error?.message || error);
+    return defaultResult;
+  }
+};
+
 export const parsePurchaseOrder = async (base64Data: string, mimeType: string): Promise<any> => {
   try {
     // Handle PDF files by converting to images first
