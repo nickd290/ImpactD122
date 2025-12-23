@@ -12,87 +12,33 @@ const GRID_HEAVY = '#444444';   // Heavy structural grid lines
 const GRID_MEDIUM = '#888888';  // Section dividers
 const GRID_LIGHT = '#CCCCCC';   // Internal grids, crosshairs
 
-// ===== BLUEPRINT HELPER FUNCTIONS =====
+// ===== CLEAN PDF HELPER FUNCTIONS =====
 
-// Draws crosshair registration marks in all 4 corners of the page
+// No-op - crosshairs removed for clean PDF output
 const drawCrosshairs = (doc: any) => {
-  const pageWidth = doc.internal.pageSize.width;
-  const pageHeight = doc.internal.pageSize.height;
-  const crosshairSize = 8;
-  const margin = 10;
-
-  doc.setDrawColor(GRID_LIGHT);
-  doc.setLineWidth(0.5);
-
-  // Top-left crosshair
-  doc.line(margin, margin + crosshairSize, margin, margin - 2);
-  doc.line(margin - 2, margin, margin + crosshairSize, margin);
-
-  // Top-right crosshair
-  doc.line(pageWidth - margin, margin + crosshairSize, pageWidth - margin, margin - 2);
-  doc.line(pageWidth - margin + 2, margin, pageWidth - margin - crosshairSize, margin);
-
-  // Bottom-left crosshair
-  doc.line(margin, pageHeight - margin - crosshairSize, margin, pageHeight - margin + 2);
-  doc.line(margin - 2, pageHeight - margin, margin + crosshairSize, pageHeight - margin);
-
-  // Bottom-right crosshair
-  doc.line(pageWidth - margin, pageHeight - margin - crosshairSize, pageWidth - margin, pageHeight - margin + 2);
-  doc.line(pageWidth - margin + 2, pageHeight - margin, pageWidth - margin - crosshairSize, pageHeight - margin);
+  // Removed for cleaner PDF output
 };
 
-// Draws outlined/stroked text effect for document titles (workaround for jsPDF's lack of native text stroke)
+// Simple bold text for document titles
 const drawOutlinedText = (doc: any, text: string, x: number, y: number, options: any = {}) => {
   const fontSize = options.fontSize || 22;
-  const strokeWidth = 0.3;
-
   doc.setFontSize(fontSize);
   doc.setFont('helvetica', 'bold');
-
-  // Draw stroke by offsetting text multiple times
-  doc.setTextColor(GRID_HEAVY);
-  doc.text(text, x - strokeWidth, y - strokeWidth, options);
-  doc.text(text, x + strokeWidth, y - strokeWidth, options);
-  doc.text(text, x - strokeWidth, y + strokeWidth, options);
-  doc.text(text, x + strokeWidth, y + strokeWidth, options);
-
-  // Draw fill
   doc.setTextColor(BRAND_BLACK);
   doc.text(text, x, y, options);
 };
 
-// Draws a grid box around a section
+// Simple box around a section (no corner marks)
 const drawSectionGrid = (doc: any, x: number, y: number, width: number, height: number) => {
   doc.setDrawColor(GRID_MEDIUM);
-  doc.setLineWidth(0.8);
+  doc.setLineWidth(0.5);
   doc.rect(x, y, width, height);
-
-  // Corner marks inside the box
-  const markSize = 3;
-  doc.setDrawColor(GRID_LIGHT);
-  doc.setLineWidth(0.4);
-
-  // Top-left corner
-  doc.line(x, y, x + markSize, y);
-  doc.line(x, y, x, y + markSize);
-
-  // Top-right corner
-  doc.line(x + width, y, x + width - markSize, y);
-  doc.line(x + width, y, x + width, y + markSize);
-
-  // Bottom-left corner
-  doc.line(x, y + height, x + markSize, y + height);
-  doc.line(x, y + height, x, y + height - markSize);
-
-  // Bottom-right corner
-  doc.line(x + width, y + height, x + width - markSize, y + height);
-  doc.line(x + width, y + height, x + width, y + height - markSize);
 };
 
-// Draws a heavy horizontal divider line
+// Simple horizontal divider line
 const drawHeavyDivider = (doc: any, x1: number, x2: number, y: number) => {
-  doc.setDrawColor(GRID_HEAVY);
-  doc.setLineWidth(1.2);
+  doc.setDrawColor(GRID_MEDIUM);
+  doc.setLineWidth(0.5);
   doc.line(x1, y, x2, y);
 };
 
@@ -355,7 +301,7 @@ export const generateQuotePDF = (jobData: any): Buffer => {
   doc.text('PRINT-NATIVE AGENCY', 105, currentY + 14, { align: 'center' });
 
   doc.setFontSize(9);
-  doc.text('Brandon@impactdirectprinting.com | (555) 123-4567', 105, currentY + 20, { align: 'center' });
+  doc.text('Brandon@impactdirectprinting.com | 844-467-2280', 105, currentY + 20, { align: 'center' });
 
   currentY += 28;
 
@@ -538,7 +484,7 @@ export const generateQuotePDF = (jobData: any): Buffer => {
   doc.setTextColor(100, 100, 100);
   doc.setFont('helvetica', 'italic');
   doc.text('This quote is valid for 30 days from the date above.', 105, pageHeight - 20, { align: 'center' });
-  doc.text('Questions? Contact Brandon at Brandon@impactdirectprinting.com', 105, pageHeight - 15, { align: 'center' });
+  doc.text('Questions? Contact Brandon at 844-467-2280 or Brandon@impactdirectprinting.com', 105, pageHeight - 15, { align: 'center' });
 
   doc.setDrawColor(BRAND_ORANGE);
   doc.setLineWidth(0.3);
@@ -570,7 +516,7 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
   doc.text('PRINT-NATIVE AGENCY', 105, currentY + 14, { align: 'center' });
 
   doc.setFontSize(9);
-  doc.text('Brandon@impactdirectprinting.com | (555) 123-4567', 105, currentY + 20, { align: 'center' });
+  doc.text('Brandon@impactdirectprinting.com | 844-467-2280', 105, currentY + 20, { align: 'center' });
 
   currentY += 28;
 
@@ -768,7 +714,7 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
   doc.setTextColor(100, 100, 100);
   doc.setFont('helvetica', 'italic');
   doc.text('Thank you for your business!', 105, pageHeight - 20, { align: 'center' });
-  doc.text('Questions? Contact Brandon at Brandon@impactdirectprinting.com', 105, pageHeight - 15, { align: 'center' });
+  doc.text('Questions? Contact Brandon at 844-467-2280 or Brandon@impactdirectprinting.com', 105, pageHeight - 15, { align: 'center' });
 
   doc.setDrawColor(BRAND_ORANGE);
   doc.setLineWidth(0.3);
@@ -800,7 +746,7 @@ export const generateVendorPOPDF = (jobData: any): Buffer => {
   doc.text('PRINT-NATIVE AGENCY', 105, currentY + 14, { align: 'center' });
 
   doc.setFontSize(9);
-  doc.text('Brandon@impactdirectprinting.com | (555) 123-4567', 105, currentY + 20, { align: 'center' });
+  doc.text('Brandon@impactdirectprinting.com | 844-467-2280', 105, currentY + 20, { align: 'center' });
 
   currentY += 28;
 
@@ -1168,7 +1114,7 @@ export const generateVendorPOPDF = (jobData: any): Buffer => {
     if (i === totalPages) {
       doc.setFont('helvetica', 'italic');
       doc.text('Please confirm receipt of this PO and provide production timeline.', 105, pageHeight - 20, { align: 'center' });
-      doc.text('Questions? Contact Brandon at Brandon@impactdirectprinting.com', 105, pageHeight - 15, { align: 'center' });
+      doc.text('Questions? Contact Brandon at 844-467-2280 or Brandon@impactdirectprinting.com', 105, pageHeight - 15, { align: 'center' });
 
       doc.setDrawColor(BRAND_ORANGE);
       doc.setLineWidth(0.3);
@@ -1202,7 +1148,7 @@ export const generatePOPDF = (poData: any): Buffer => {
   doc.text('PRINT-NATIVE AGENCY', 105, currentY + 14, { align: 'center' });
 
   doc.setFontSize(9);
-  doc.text('Brandon@impactdirectprinting.com | (555) 123-4567', 105, currentY + 20, { align: 'center' });
+  doc.text('Brandon@impactdirectprinting.com | 844-467-2280', 105, currentY + 20, { align: 'center' });
 
   currentY += 28;
 
@@ -1811,7 +1757,7 @@ export const generatePOPDF = (poData: any): Buffer => {
     if (i === totalPages2) {
       doc.setFont('helvetica', 'italic');
       doc.text('Please confirm receipt of this PO and provide production timeline.', 105, pageHeight - 20, { align: 'center' });
-      doc.text('Questions? Contact Brandon at Brandon@impactdirectprinting.com', 105, pageHeight - 15, { align: 'center' });
+      doc.text('Questions? Contact Brandon at 844-467-2280 or Brandon@impactdirectprinting.com', 105, pageHeight - 15, { align: 'center' });
 
       doc.setDrawColor(BRAND_ORANGE);
       doc.setLineWidth(0.3);

@@ -5,9 +5,10 @@ import { aiApi } from '../lib/api';
 interface POUploaderProps {
   onParsed: (data: any) => void;
   onCancel: () => void;
+  jobId?: string;
 }
 
-export function POUploader({ onParsed, onCancel }: POUploaderProps) {
+export function POUploader({ onParsed, onCancel, jobId }: POUploaderProps) {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -36,7 +37,7 @@ export function POUploader({ onParsed, onCancel }: POUploaderProps) {
     try {
       setLoading(true);
       setError('');
-      const result = await aiApi.parsePO(file);
+      const result = await aiApi.parsePO(file, jobId);
       onParsed(result);
     } catch (err: any) {
       setError(err.message || 'Failed to parse purchase order');

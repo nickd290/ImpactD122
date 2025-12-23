@@ -108,9 +108,12 @@ export const aiApi = {
     method: 'POST',
     body: JSON.stringify({ text }),
   }),
-  parsePO: async (file: File) => {
+  parsePO: async (file: File, jobId?: string) => {
     const formData = new FormData();
     formData.append('file', file);
+    if (jobId) {
+      formData.append('jobId', jobId);
+    }
 
     const response = await fetch(`${API_BASE_URL}/ai/parse-po`, {
       method: 'POST',
@@ -128,6 +131,14 @@ export const aiApi = {
       method: 'POST',
       body: JSON.stringify({ jobData, recipientName, type, senderIdentity }),
     }),
+};
+
+// Files API
+export const filesApi = {
+  getJobFiles: (jobId: string) => apiFetch(`/files/jobs/${jobId}/files`),
+  downloadFile: (fileId: string) => {
+    window.open(`${API_BASE_URL}/files/files/${fileId}/download`, '_blank');
+  },
 };
 
 // PDF API

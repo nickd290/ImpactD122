@@ -4,7 +4,9 @@ import {
   DollarSign, Plus, Trash2, Building2, Check, Save, Download, AlertTriangle, Send, ChevronDown, Link, ExternalLink, MessageSquare, Upload, Truck
 } from 'lucide-react';
 import { EditableField } from './EditableField';
-import { pdfApi, emailApi, communicationsApi, invoiceApi } from '../lib/api';
+import { InlineEditableCell } from './InlineEditableCell';
+import { LineItemRow } from './LineItemRow';
+import { pdfApi, emailApi, communicationsApi, invoiceApi, filesApi } from '../lib/api';
 import { SendEmailModal } from './SendEmailModal';
 import { CommunicationThread } from './CommunicationThread';
 import { useQuery } from '@tanstack/react-query';
@@ -336,6 +338,22 @@ export function JobDetailModal({
   const [bradfordPaymentDate, setBradfordPaymentDate] = useState<string>('');
   const [isSavingPayments, setIsSavingPayments] = useState(false);
 
+  // Line item editing state
+  const [editingLineItemIndex, setEditingLineItemIndex] = useState<number | null>(null);
+  const [isAddingLineItem, setIsAddingLineItem] = useState(false);
+  const [isSavingLineItem, setIsSavingLineItem] = useState(false);
+  const [showLineItemPresets, setShowLineItemPresets] = useState(false);
+  const [presetLineItem, setPresetLineItem] = useState<{ description: string; quantity: number; unitCost: number; unitPrice: number } | null>(null);
+
+  // Line item presets
+  const lineItemPresets = [
+    { label: 'Shipping & Handling', description: 'Shipping & Handling', quantity: 1, unitCost: 0, unitPrice: 0 },
+    { label: 'Rush Fee', description: 'Rush Fee', quantity: 1, unitCost: 0, unitPrice: 0 },
+    { label: 'Setup Fee', description: 'Setup/Prep Fee', quantity: 1, unitCost: 0, unitPrice: 0 },
+    { label: 'Freight', description: 'Freight', quantity: 1, unitCost: 0, unitPrice: 0 },
+    { label: 'Proof/Sample', description: 'Proof/Sample', quantity: 1, unitCost: 0, unitPrice: 0 },
+  ];
+
   // Sync payment state when job changes
   useEffect(() => {
     if (job) {
@@ -368,6 +386,14 @@ export function JobDetailModal({
     enabled: !!job?.id,
   });
   const pendingCommCount = (commData || []).filter((c: any) => c.status === 'PENDING_REVIEW').length;
+
+  // Fetch PO files for this job
+  const { data: jobFiles } = useQuery({
+    queryKey: ['jobFiles', job?.id],
+    queryFn: () => job?.id ? filesApi.getJobFiles(job.id) : Promise.resolve([]),
+    enabled: !!job?.id,
+  });
+  const poFiles = (jobFiles || []).filter((f: any) => f.kind === 'PO_PDF');
 
   if (!job) return null;
 
@@ -806,6 +832,91 @@ export function JobDetailModal({
     setEditedJob({});
   };
 
+  // Inline save for individual fields (no edit mode required)
+  const handleInlineSave = async (field: string, value: any) => {
+    try {
+      console.log(`[handleInlineSave] Saving ${field}:`, value);
+      const response = await fetch(`/api/jobs/${job.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value }),
+      });
+      console.log(`[handleInlineSave] Response status:`, response.status);
+      if (!response.ok) {
+        const error = await response.json();
+        console.error(`[handleInlineSave] Error response:`, error);
+        throw new Error(error.message || 'Failed to save');
+      }
+      const result = await response.json();
+      console.log(`[handleInlineSave] Success:`, result);
+      if (onRefresh) {
+        console.log(`[handleInlineSave] Calling onRefresh`);
+        onRefresh();
+      } else {
+        console.warn(`[handleInlineSave] No onRefresh callback!`);
+      }
+    } catch (error) {
+      console.error(`Failed to save ${field}:`, error);
+      throw error;
+    }
+  };
+
+  // Line item handlers
+  const handleLineItemSave = async (index: number, updatedItem: any) => {
+    setIsSavingLineItem(true);
+    try {
+      const newLineItems = [...(job.lineItems || [])];
+      newLineItems[index] = updatedItem;
+      await handleInlineSave('lineItems', newLineItems);
+      setEditingLineItemIndex(null);
+    } catch (error) {
+      console.error('Failed to save line item:', error);
+      alert(`Failed to save line item: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsSavingLineItem(false);
+    }
+  };
+
+  const handleLineItemAdd = async (newItem: any) => {
+    setIsSavingLineItem(true);
+    try {
+      const newLineItems = [...(job.lineItems || []), newItem];
+      await handleInlineSave('lineItems', newLineItems);
+      setIsAddingLineItem(false);
+      setPresetLineItem(null);
+    } catch (error) {
+      console.error('Failed to add line item:', error);
+      alert(`Failed to add line item: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsSavingLineItem(false);
+    }
+  };
+
+  const handlePresetSelect = (preset: typeof lineItemPresets[0] | null) => {
+    setShowLineItemPresets(false);
+    if (preset) {
+      setPresetLineItem({ description: preset.description, quantity: preset.quantity, unitCost: preset.unitCost, unitPrice: preset.unitPrice });
+    } else {
+      setPresetLineItem(null);
+    }
+    setIsAddingLineItem(true);
+  };
+
+  const handleLineItemDelete = async (index: number) => {
+    if (!confirm('Delete this line item?')) return;
+    setIsSavingLineItem(true);
+    try {
+      const newLineItems = (job.lineItems || []).filter((_, i) => i !== index);
+      console.log('Deleting line item, new array:', newLineItems);
+      await handleInlineSave('lineItems', newLineItems);
+    } catch (error) {
+      console.error('Failed to delete line item:', error);
+      alert(`Failed to delete line item: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsSavingLineItem(false);
+    }
+  };
+
   // Update a field in editedJob
   const updateEditedField = (field: string, value: any) => {
     setEditedJob(prev => ({ ...prev, [field]: value }));
@@ -893,18 +1004,24 @@ export function JobDetailModal({
             </span>
           )}
         </div>
-        {/* Sell Price */}
+        {/* Sell Price - Inline Editable */}
         <div className="bg-card border border-border rounded-lg p-3">
           <span className="text-[10px] text-muted-foreground uppercase block mb-1">Sell Price</span>
-          {isEditMode ? (
-            <input
-              type="number"
-              value={editedJob.sellPrice ?? job.sellPrice ?? ''}
-              onChange={(e) => updateEditedField('sellPrice', parseFloat(e.target.value) || 0)}
-              className="w-full px-2 py-1 text-sm border border-input rounded focus:ring-2 focus:ring-primary"
-            />
+          {job.invoiceGeneratedAt ? (
+            <p className="text-lg font-semibold text-foreground" title="Locked after invoice generated">
+              {formatCurrency(job.sellPrice || 0)}
+            </p>
           ) : (
-            <p className="text-lg font-semibold text-foreground">{formatCurrency(job.sellPrice || 0)}</p>
+            <InlineEditableCell
+              value={job.sellPrice}
+              onSave={async (value) => {
+                await handleInlineSave('sellPrice', parseFloat(value) || 0);
+              }}
+              type="number"
+              prefix="$"
+              formatDisplay={(val) => formatCurrency(Number(val) || 0)}
+              className="text-lg font-semibold"
+            />
           )}
         </div>
         {/* Quantity */}
@@ -997,6 +1114,22 @@ export function JobDetailModal({
               />
             ) : (
               <p className="font-medium text-foreground">{job.customerPONumber || '—'}</p>
+            )}
+            {/* PO Document */}
+            {poFiles.length > 0 && (
+              <div className="mt-1">
+                {poFiles.map((file: any) => (
+                  <button
+                    key={file.id}
+                    onClick={() => filesApi.downloadFile(file.id)}
+                    className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                    title={file.fileName}
+                  >
+                    <FileText className="w-3 h-3" />
+                    <span className="truncate max-w-[100px]">{file.fileName}</span>
+                  </button>
+                ))}
+              </div>
             )}
           </div>
           <div>
@@ -1493,42 +1626,97 @@ export function JobDetailModal({
         </div>
       </div>
 
-      {/* Line Items */}
-      {job.lineItems && job.lineItems.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Line Items</h3>
-          </div>
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
+      {/* Line Items - Editable CRUD */}
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Line Items</h3>
+          {!job.invoiceGeneratedAt && !isAddingLineItem && (
+            <div className="relative">
+              <button
+                onClick={() => setShowLineItemPresets(!showLineItemPresets)}
+                className="flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded"
+              >
+                <Plus className="w-3 h-3" />
+                Add Line Item
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {showLineItemPresets && (
+                <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                  {lineItemPresets.map((preset, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handlePresetSelect(preset)}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 first:rounded-t-lg"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                  <div className="border-t border-gray-100">
+                    <button
+                      onClick={() => handlePresetSelect(null)}
+                      className="w-full text-left px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-b-lg"
+                    >
+                      Custom...
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase">Description</th>
+              <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs uppercase w-20">Qty</th>
+              <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs uppercase w-24">Unit Cost</th>
+              <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs uppercase w-24">Unit Price</th>
+              <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs uppercase w-24">Total</th>
+              {!job.invoiceGeneratedAt && (
+                <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs uppercase w-20">Actions</th>
+              )}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {(job.lineItems || []).map((item, index) => (
+              <LineItemRow
+                key={index}
+                item={item}
+                isEditing={editingLineItemIndex === index}
+                isSaving={isSavingLineItem && editingLineItemIndex === index}
+                onEdit={() => setEditingLineItemIndex(editingLineItemIndex === index ? null : index)}
+                onSave={async (updated) => await handleLineItemSave(index, updated)}
+                onDelete={() => handleLineItemDelete(index)}
+                disabled={!!job.invoiceGeneratedAt}
+              />
+            ))}
+            {isAddingLineItem && (
+              <LineItemRow
+                isNew
+                item={presetLineItem || undefined}
+                isSaving={isSavingLineItem}
+                onSave={handleLineItemAdd}
+                onCancel={() => { setIsAddingLineItem(false); setPresetLineItem(null); }}
+              />
+            )}
+            {(!job.lineItems || job.lineItems.length === 0) && !isAddingLineItem && (
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase">Description</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs uppercase">Qty</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs uppercase">Unit Cost</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs uppercase">Unit Price</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs uppercase">Total</th>
+                <td colSpan={job.invoiceGeneratedAt ? 5 : 6} className="px-4 py-8 text-center text-gray-400 text-sm">
+                  No line items yet. {!job.invoiceGeneratedAt && 'Click "Add Line Item" to add one.'}
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {job.lineItems.map((item, index) => (
-                <tr key={index} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-gray-900">{item.description || '-'}</td>
-                  <td className="px-4 py-3 text-right text-gray-600">{(item.quantity ?? 0).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(item.unitCost ?? 0)}</td>
-                  <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(item.unitPrice ?? 0)}</td>
-                  <td className="px-4 py-3 text-right font-medium text-gray-900">{formatCurrency((item.unitPrice ?? 0) * (item.quantity ?? 0))}</td>
-                </tr>
-              ))}
-            </tbody>
+            )}
+          </tbody>
+          {(job.lineItems && job.lineItems.length > 0) && (
             <tfoot>
               <tr className="bg-gray-50 border-t-2 border-gray-200">
-                <td colSpan={4} className="px-4 py-3 text-right font-semibold text-gray-700 uppercase text-xs">Total</td>
+                <td colSpan={job.invoiceGeneratedAt ? 4 : 5} className="px-4 py-3 text-right font-semibold text-gray-700 uppercase text-xs">Total</td>
                 <td className="px-4 py-3 text-right font-bold text-gray-900">{formatCurrency(lineItemsTotal)}</td>
               </tr>
             </tfoot>
-          </table>
-        </div>
-      )}
+          )}
+        </table>
+      </div>
 
       {/* Data Accuracy Warnings */}
       {(isProfitStale || sellPricePoMismatch || paymentMismatch) && (

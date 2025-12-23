@@ -35,6 +35,7 @@ model Company {
   address                                              String?
   createdAt                                            DateTime            @default(now())
   updatedAt                                            DateTime
+  Campaign                                             Campaign[]
   Employee                                             Employee[]
   Invoice_Invoice_fromCompanyIdToCompany               Invoice[]           @relation("Invoice_fromCompanyIdToCompany")
   Invoice_Invoice_toCompanyIdToCompany                 Invoice[]           @relation("Invoice_toCompanyIdToCompany")
@@ -931,4 +932,60 @@ enum VendorQuoteStatus {
   PENDING
   RECEIVED
   DECLINED
+}
+
+// ========================================
+// CAMPAIGN (from Customer Portal)
+// ========================================
+
+model Campaign {
+  id                  String              @id @default(cuid())
+  externalCampaignId  String              @unique    // ID from customer portal
+  customerId          String                          // Link to Company
+  name                String
+  sizeName            String
+  quantity            Int
+  frequency           CampaignFrequency
+  mailDay             Int                             // 0-6 (Sunday-Saturday)
+  startDate           DateTime
+  endDate             DateTime?
+  isActive            Boolean             @default(true)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  Company             Company             @relation(fields: [customerId], references: [id])
+  CampaignDrop        CampaignDrop[]
+
+  @@index([customerId])
+  @@index([isActive])
+}
+
+model CampaignDrop {
+  id              String          @id @default(cuid())
+  campaignId      String
+  mailDate        DateTime
+  uploadDeadline  DateTime
+  status          DropStatus      @default(SCHEDULED)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  Campaign        Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([mailDate])
+}
+
+enum CampaignFrequency {
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+}
+
+enum DropStatus {
+  SCHEDULED
+  AWAITING_FILES
+  FILES_RECEIVED
+  IN_PRODUCTION
+  MAILED
+  COMPLETED
 }

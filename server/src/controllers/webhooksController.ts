@@ -875,10 +875,20 @@ export async function receiveEmailToJobWebhook(req: Request, res: Response) {
     });
 
     // Send notification to admin
-    const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL || 'brandon@impactdirectprinting.com';
     try {
-      await sendEmailImportNotification(job, payload.from, payload.subject, adminEmail);
-      console.log(`📧 Notification sent to ${adminEmail}`);
+      await sendEmailImportNotification({
+        jobId: job.id,
+        jobNo: job.jobNo,
+        title: jobTitle,
+        fromEmail: payload.from,
+        subject: payload.subject,
+        quantity: parsedData.quantity || 0,
+        confidence: parsedData.confidence || 'LOW',
+        customerName: customerMatch?.name,
+        specs: parsedData.specs,
+        notes: parsedData.notes,
+      });
+      console.log(`📧 Notification sent to admin`);
     } catch (notifyError) {
       console.warn('⚠️ Failed to send notification email:', notifyError);
       // Don't fail the webhook if notification fails
