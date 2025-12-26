@@ -794,6 +794,47 @@ async function findCustomerByEmailDomain(email: string): Promise<{ id: string; n
 }
 
 /**
+ * Build job notes from parsed data and original payload
+ * Includes AI-extracted notes, special instructions, and raw email body for LOW confidence
+ */
+function buildJobNotes(parsedData: any, payload: any): string | null {
+  const noteParts: string[] = [];
+
+  // Add parsed notes (from AI extraction)
+  if (parsedData.notes) {
+    noteParts.push(parsedData.notes);
+  }
+
+  // Add special instructions that didn't fit structured fields
+  if (parsedData.specialInstructions) {
+    noteParts.push(`Special Instructions: ${parsedData.specialInstructions}`);
+  }
+
+  // Add additional notes from PO parsing
+  if (parsedData.additionalNotes) {
+    noteParts.push(parsedData.additionalNotes);
+  }
+
+  // Add artwork/packing/labeling instructions
+  if (parsedData.artworkInstructions) {
+    noteParts.push(`Artwork: ${parsedData.artworkInstructions}`);
+  }
+  if (parsedData.packingInstructions) {
+    noteParts.push(`Packing: ${parsedData.packingInstructions}`);
+  }
+  if (parsedData.labelingInstructions) {
+    noteParts.push(`Labeling: ${parsedData.labelingInstructions}`);
+  }
+
+  // Add raw email body if confidence is LOW (couldn't parse much)
+  if (parsedData.confidence === 'LOW' && payload.textBody) {
+    noteParts.push(`--- Original Email ---\n${payload.textBody.substring(0, 2000)}`);
+  }
+
+  return noteParts.length > 0 ? noteParts.join('\n\n') : null;
+}
+
+/**
  * POST /api/webhooks/email-to-job
  * Receive forwarded email and create job via AI parsing
  */
@@ -901,6 +942,7 @@ export async function receiveEmailToJobWebhook(req: Request, res: Response) {
         sellPrice: parsedData.customerPOTotal || null,
         deliveryDate: parsedData.dueDate ? new Date(parsedData.dueDate) : null,
         mailDate: parsedData.mailDate ? new Date(parsedData.mailDate) : null,
+        notes: buildJobNotes(parsedData, payload),
         specs: {
           ...parsedData.specs,
           originalEmail: {
