@@ -249,11 +249,26 @@ export const generatePurchaseOrderPDF = async (req: Request, res: Response) => {
     // Get job specs
     const jobSpecs = po.Job?.specs as any || {};
 
+    // Calculate total cost based on PO type
+    let totalBuyCost = po.buyCost ? Number(po.buyCost) : 0;
+
+    // For Bradford→JD POs, calculate from component costs or CPM
+    if (po.originCompanyId === 'bradford' && po.targetCompanyId === 'jd-graphic') {
+      const mfgCost = po.mfgCost ? Number(po.mfgCost) : 0;
+      const paperCost = po.paperCost ? Number(po.paperCost) : 0;
+      if (mfgCost > 0 || paperCost > 0) {
+        totalBuyCost = mfgCost + paperCost;
+      } else if (po.printCPM && po.Job?.quantity) {
+        // Calculate from CPM if component costs not set
+        totalBuyCost = Number(po.printCPM) * (po.Job.quantity / 1000);
+      }
+    }
+
     // Transform PO data for PDF with comprehensive job details
     const poData = {
       poNumber: po.poNumber || po.id.slice(0, 8),
       description: po.description || 'Purchase Order',
-      buyCost: po.buyCost ? Number(po.buyCost) : 0,
+      buyCost: totalBuyCost,
       vendorRef: po.vendorRef || '',
       issuedAt: po.issuedAt || new Date(),
       status: po.status,
@@ -322,17 +337,31 @@ export const generatePurchaseOrderPDF = async (req: Request, res: Response) => {
       },
 
       // Vendor info (target of the PO)
+      // Priority: 1) External Vendor, 2) Internal Company, 3) Hardcoded fallback for known IDs
       vendor: po.Vendor ? {
         name: po.Vendor.name,
         email: po.Vendor.email || '',
         phone: po.Vendor.phone || '',
         address: [po.Vendor.streetAddress, po.Vendor.city, po.Vendor.state, po.Vendor.zip].filter(Boolean).join(', '),
       } : po.Company_PurchaseOrder_targetCompanyIdToCompany ? {
-        name: po.Company_PurchaseOrder_targetCompanyIdToCompany.name,
-        email: po.Company_PurchaseOrder_targetCompanyIdToCompany.email || '',
+        name: po.Company_PurchaseOrder_targetCompanyIdToCompany.name ||
+              (po.targetCompanyId === 'jd-graphic' ? 'JD Graphic' :
+               po.targetCompanyId === 'bradford' ? 'Bradford' : 'N/A'),
+        email: po.Company_PurchaseOrder_targetCompanyIdToCompany.email ||
+               (po.targetCompanyId === 'jd-graphic' ? 'production@jdgraphic.com' : ''),
         phone: po.Company_PurchaseOrder_targetCompanyIdToCompany.phone || '',
         address: po.Company_PurchaseOrder_targetCompanyIdToCompany.address || '',
-      } : { name: 'N/A', email: '', phone: '', address: '' },
+      } : (po.targetCompanyId === 'jd-graphic' ? {
+        name: 'JD Graphic',
+        email: 'production@jdgraphic.com',
+        phone: '',
+        address: '',
+      } : po.targetCompanyId === 'bradford' ? {
+        name: 'Bradford',
+        email: '',
+        phone: '',
+        address: '',
+      } : { name: 'N/A', email: '', phone: '', address: '' }),
 
       // Cost breakdown (if available)
       paperCost: po.paperCost ? Number(po.paperCost) : undefined,
@@ -348,10 +377,26 @@ export const generatePurchaseOrderPDF = async (req: Request, res: Response) => {
       lineItems: jobSpecs.lineItems || [{
         description: po.Job?.title || 'Print Services',
         quantity: po.Job?.quantity || 0,
-        unitCost: po.buyCost ? Number(po.buyCost) / (po.Job?.quantity || 1) : 0,
-        unitPrice: po.buyCost ? Number(po.buyCost) / (po.Job?.quantity || 1) : 0,
+        unitCost: totalBuyCost > 0 ? totalBuyCost / (po.Job?.quantity || 1) : 0,
+        unitPrice: totalBuyCost > 0 ? totalBuyCost / (po.Job?.quantity || 1) : 0,
       }],
     };
+
+    // Debug logging for PO cost calculation
+    console.log('📄 PO PDF Generation:', {
+      poId: po.id,
+      poNumber: po.poNumber,
+      originCompanyId: po.originCompanyId,
+      targetCompanyId: po.targetCompanyId,
+      targetVendorId: po.targetVendorId,
+      vendorName: poData.vendor?.name,
+      rawBuyCost: po.buyCost ? Number(po.buyCost) : null,
+      mfgCost: po.mfgCost ? Number(po.mfgCost) : null,
+      paperCost: po.paperCost ? Number(po.paperCost) : null,
+      printCPM: po.printCPM ? Number(po.printCPM) : null,
+      calculatedTotalBuyCost: totalBuyCost,
+      quantity: po.Job?.quantity,
+    });
 
     // Debug logging for Phase 15 fields
     console.log('📄 PDF Generation - Phase 15 Data:', {
