@@ -961,6 +961,41 @@ export async function receiveEmailToJobWebhook(req: Request, res: Response) {
 
     console.log(`✅ Created job ${job.jobNo} from email import`);
 
+    // Save the PO PDF attachment to the file system and database
+    if (pdfAttachment) {
+      try {
+        // Decode base64 to buffer
+        const pdfBuffer = Buffer.from(pdfAttachment.content, 'base64');
+
+        // Save to disk
+        const { uploadPDF } = await import('../services/storageService');
+        const objectKey = await uploadPDF(pdfBuffer, pdfAttachment.filename || `PO-${jobNo}.pdf`);
+
+        // Calculate checksum
+        const checksum = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
+
+        // Create File record
+        await prisma.file.create({
+          data: {
+            id: crypto.randomUUID(),
+            jobId: job.id,
+            kind: 'PO_PDF',
+            objectKey,
+            fileName: pdfAttachment.filename || `PO-${jobNo}.pdf`,
+            mimeType: pdfAttachment.mimeType,
+            size: pdfBuffer.length,
+            checksum,
+            uploadedBy: 'email-import',
+          },
+        });
+
+        console.log(`📎 Saved PO PDF: ${pdfAttachment.filename}`);
+      } catch (fileError) {
+        console.error('Failed to save PO PDF:', fileError);
+        // Don't fail the job creation, just log the error
+      }
+    }
+
     // Log activity
     await prisma.jobActivity.create({
       data: {
