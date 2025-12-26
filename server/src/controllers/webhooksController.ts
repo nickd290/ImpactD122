@@ -3,7 +3,8 @@ import crypto from 'crypto';
 import { prisma } from '../utils/prisma';
 import { RoutingType, PaperSource, CampaignFrequency, DropStatus } from '@prisma/client';
 import { sendThreeZPOEmail, sendEmailImportNotification } from '../services/emailService';
-import { parsePrintSpecs, parsePurchaseOrder, parseEmailToJobSpecs } from '../services/openaiService';
+import { parsePrintSpecs, parseEmailToJobSpecs } from '../services/openaiService';
+import { parsePurchaseOrder } from '../services/geminiService';
 
 /**
  * Webhook payload from Impact Customer Portal or Inventory Release App
