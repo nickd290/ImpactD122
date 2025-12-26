@@ -718,6 +718,50 @@ function validateEmailImportSecret(req: Request): boolean {
 }
 
 /**
+ * Format a company name from email domain
+ * e.g., "freedompressllc" -> "Freedom Press LLC"
+ */
+function formatCompanyNameFromDomain(domainBase: string): string {
+  if (!domainBase) return '';
+
+  // Common suffixes to preserve formatting
+  const suffixes: { [key: string]: string } = {
+    'llc': ' LLC',
+    'inc': ' Inc',
+    'co': ' Co',
+    'corp': ' Corp',
+    'ltd': ' Ltd',
+  };
+
+  let name = domainBase.toLowerCase();
+  let suffix = '';
+
+  // Check for and extract suffixes
+  for (const [key, formatted] of Object.entries(suffixes)) {
+    if (name.endsWith(key)) {
+      suffix = formatted;
+      name = name.slice(0, -key.length);
+      break;
+    }
+  }
+
+  // Insert spaces before capital letters or between lowercase-uppercase transitions
+  // Also handle all-lowercase by looking for common word patterns
+  name = name
+    .replace(/([a-z])([A-Z])/g, '$1 $2') // camelCase
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2'); // ABCDef -> ABC Def
+
+  // Capitalize each word
+  name = name
+    .split(/[\s_-]+/)
+    .filter(w => w.length > 0)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+
+  return (name + suffix).trim();
+}
+
+/**
  * Try to match customer from email domain
  */
 async function findCustomerByEmailDomain(email: string): Promise<{ id: string; name: string } | null> {
@@ -814,9 +858,27 @@ export async function receiveEmailToJobWebhook(req: Request, res: Response) {
       // Create or find customer from parsed data
       customerId = await findOrCreateCustomer(parsedData.customerName);
     } else {
-      // Create a placeholder company from email sender
-      const senderName = payload.from.split('@')[0] || 'Unknown';
-      customerId = await findOrCreateCustomer(`Email Import - ${senderName}`);
+      // Try to derive company name from email domain
+      const emailMatch = payload.from.match(/<([^>]+)>/) || [null, payload.from];
+      const emailAddress = emailMatch[1] || payload.from;
+      const domain = emailAddress.split('@')[1]?.toLowerCase();
+      const domainBase = domain?.split('.')[0];
+
+      // Skip common email providers - use sender name instead
+      const commonDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com', 'icloud.com'];
+      let companyName: string;
+
+      if (domain && !commonDomains.includes(domain)) {
+        // Derive company name from domain (e.g., freedompressllc.com -> Freedom Press LLC)
+        companyName = formatCompanyNameFromDomain(domainBase || '');
+        console.log(`📧 Derived company name from domain: ${companyName}`);
+      } else {
+        // Fall back to sender name for common email providers
+        const senderName = payload.from.split('<')[0]?.trim().replace(/"/g, '') || 'Unknown';
+        companyName = `Email Import - ${senderName}`;
+      }
+
+      customerId = await findOrCreateCustomer(companyName);
     }
 
     // Generate job number
