@@ -1,5 +1,5 @@
 import React from 'react';
-import { BarChart3, Briefcase, Users, Building2, TrendingUp, DollarSign, Command, Calculator, MessageSquare, FileQuestion, Search } from 'lucide-react';
+import { BarChart3, Briefcase, Users, Building2, DollarSign, MessageSquare, FileQuestion, Search } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
@@ -162,24 +162,9 @@ export function Sidebar({
           <NavItem
             icon={<DollarSign />}
             label="Financials"
-            active={currentView === 'FINANCIALS'}
+            active={currentView === 'FINANCIALS' || currentView === 'PARTNER_STATS' || currentView === 'ACCOUNTING'}
             onClick={() => onViewChange('FINANCIALS')}
             shortcut="F"
-          />
-          <NavItem
-            icon={<TrendingUp />}
-            label="Bradford Partner"
-            active={currentView === 'PARTNER_STATS'}
-            onClick={() => onViewChange('PARTNER_STATS')}
-            badge={partnerJobsCount}
-            shortcut="B"
-          />
-          <NavItem
-            icon={<Calculator />}
-            label="Accounting"
-            active={currentView === 'ACCOUNTING'}
-            onClick={() => onViewChange('ACCOUNTING')}
-            shortcut="A"
           />
         </div>
       </nav>

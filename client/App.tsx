@@ -13,10 +13,7 @@ import { JobsView } from './components/JobsView';
 import { Sidebar } from './components/Sidebar';
 import { SearchModal } from './components/SearchModal';
 import { EntitiesView } from './components/EntitiesView';
-import { BradfordStatsView } from './components/BradfordStatsView';
-import { FinancialsView } from './components/FinancialsView';
-import { PaperInventoryView } from './components/PaperInventoryView';
-import { AccountingDashboardView } from './components/AccountingDashboardView';
+import { UnifiedFinancialsView } from './components/financials/UnifiedFinancialsView';
 import { CommunicationsView } from './components/CommunicationsView';
 import { VendorRFQView } from './components/VendorRFQView';
 import { JobFormModal } from './components/JobFormModal';
@@ -600,10 +597,8 @@ function App() {
             />
           )}
 
-          {currentView === 'FINANCIALS' && <FinancialsView onRefresh={loadData} />}
-
-          {currentView === 'PARTNER_STATS' && (
-            <BradfordStatsView
+          {(currentView === 'FINANCIALS' || currentView === 'PARTNER_STATS' || currentView === 'PAPER_INVENTORY' || currentView === 'ACCOUNTING') && (
+            <UnifiedFinancialsView
               jobs={jobs.filter(j => j.vendor?.isPartner)}
               allJobs={jobs}
               customers={customers}
@@ -616,10 +611,6 @@ function App() {
               }}
             />
           )}
-
-          {currentView === 'PAPER_INVENTORY' && <PaperInventoryView />}
-
-          {currentView === 'ACCOUNTING' && <AccountingDashboardView />}
 
           {currentView === 'COMMUNICATIONS' && (
             <CommunicationsView

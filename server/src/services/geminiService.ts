@@ -60,104 +60,150 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
   try {
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
-    const prompt = `Analyze this Purchase Order (PO) for Impact Direct Printing. Extract ALL available information.
+    const prompt = `You are analyzing a Purchase Order (PO) for Impact Direct Printing, a commercial print broker.
 
-    **EXTRACTION RULES - BE THOROUGH:**
+    IMPORTANT: POs come from MANY different customers with DIFFERENT formats. Be flexible and thorough.
+    Look for information ANYWHERE on the document - headers, footers, tables, sidebars, notes sections.
+
+    **EXTRACTION RULES:**
 
     1. **Customer/Company Info**:
-       - customerName: Company name sending the PO
+       - customerName: Company name sending the PO (look for "Bill To", "From", letterhead, logo)
        - contactPerson: Contact name if shown
        - contactEmail: Email address
        - contactPhone: Phone number
        - customerAddress: Billing address if shown
 
     2. **PO Details**:
-       - poNumber: The PO number (look for "PO#", "Purchase Order #", "Order #")
-       - title: Job name/title/description
+       - poNumber: The PO number (look for "PO#", "PO:", "Purchase Order #", "Order #", "Reference #")
+       - title: Job name/title/description (the main product being ordered)
        - projectName: Project or campaign name if different from title
 
-    3. **Dates (CRITICAL for print jobs)**:
-       - dueDate: Delivery date, ship date, due date, or "need by" date
-       - mailDate: If this is direct mail, look for "mail date", "drop date", "pool date", or "mailing date"
-         - IMPORTANT: "Pool date" IS the mail date - extract it as mailDate
+    3. **Dates**:
+       - dueDate: Delivery date, ship date, due date, "need by", "required by" date
+       - mailDate: For direct mail - "mail date", "drop date", "pool date", "mailing date"
        - inHomesDate: "In-homes date" or "in-home date" for direct mail
-       - Format dates as "YYYY-MM-DD"
+       - Format all dates as "YYYY-MM-DD"
 
     4. **Shipping/Delivery**:
        - shipToName: Ship-to company or person name
-       - shipToAddress: Full shipping address
+       - shipToAddress: Full shipping address (may have multiple - capture primary)
        - shipVia: Shipping method if specified
-       - specialInstructions: ANY notes, instructions, or special requirements mentioned ANYWHERE on the PO
+       - specialInstructions: ANY notes, instructions, special requirements ANYWHERE on the PO
 
-    5. **Quantity (CRITICAL - LOOK CAREFULLY)**:
-       - ALWAYS extract the exact quantity from the PO
-       - Look for "Qty:", "Quantity:", "QTY", numeric values near descriptions
-       - Common quantities: 1000, 2500, 5000, 10000, 25000, 50000, 100000
-       - NEVER default to 1 - if unclear, look harder
-       - If multiple quantities exist (like 5,000 + 2,500), capture them separately
+    5. **PRICING - CRITICAL (This is the customer's price = our revenue)**:
 
-    6. **Pricing (CRITICAL - READ CAREFULLY)**:
-       - The price on the PO is the **Customer's Price** (our Revenue)
-       - IMPORTANT: Print pricing is often quoted "per thousand" or "/M"
-         - "$35.00/M" means $35.00 per 1,000 pieces
-         - "$35/M" for 30,000 qty = $35 × 30 = $1,050 total (NOT $35 × 30,000)
-         - "CPM" also means Cost Per Thousand (M = Roman numeral for 1000)
-       - When you see "/M", "per M", "per thousand", or "CPM":
-         - pricePerThousand: The rate per 1,000 (e.g., 35.00)
-         - lineTotal: pricePerThousand × (quantity / 1000)
-         - unitPrice: pricePerThousand / 1000 (price per single piece)
-       - If a flat total is given (no /M), use that as lineTotal
-       - NEVER multiply per-thousand rates by the full quantity
+       a) **Look for PO Grand Total**:
+          - poTotal: The GRAND TOTAL / TOTAL AMOUNT on the PO (e.g., $2,400.00)
+          - Look for "Total:", "Grand Total:", "Amount Due:", "PO Total:", bottom-right totals
+
+       b) **Per-Unit Pricing**:
+          - unitPrice: Price per single piece (e.g., "$8.00 each", "$8.00/ea")
+          - If you see "$8.00 each" or "$8.00/ea" → unitPrice = 8.00
+
+       c) **Per-Thousand Pricing (/M)**:
+          - pricePerThousand: Rate per 1,000 pieces
+          - "$35.00/M" means $35.00 per 1,000 pieces
+          - For 30,000 qty at $35/M: lineTotal = 35 × 30 = $1,050 (NOT $35 × 30,000)
+
+       d) **Line Totals**:
+          - lineTotal: Extended price for each line item
+          - = unitPrice × quantity, OR = pricePerThousand × (quantity / 1000)
+
+    6. **QUANTITY - CRITICAL**:
+       - Extract the EXACT product quantity (not shipping splits)
+       - Look for "Qty:", "Quantity:", "QTY", numbers near product descriptions
+       - Common print quantities: 250, 500, 1000, 2500, 5000, 10000, 25000, 50000
+       - If quantity shows as "300" for printing - that's the print quantity
+       - Shipping splits (200 here, 100 there) add up to print quantity
 
     7. **Product Type**:
-       - "BOOK": catalog, magazine, booklet, program, annual report
+       - "BOOK": catalog, magazine, booklet, program, annual report, perfect bound, saddle stitch
        - "FOLDED": brochure, folder, mailer with folds
-       - "FLAT": flyer, postcard, sell sheet, poster, card
+       - "FLAT": flyer, postcard, sell sheet, poster, card, single sheet
 
-    8. **Print Specifications - Extract ALL available**:
-       - flatSize: Unfolded/flat size (e.g., "11 x 17", "17 x 22")
-       - finishedSize: Final trimmed size - LOOK FOR "Page Size:" or "Size:" on the PO
-         - Common sizes: "6 x 9", "6 x 11", "8.5 x 11", "5.5 x 8.5"
-         - Oversized postcards: "6 x 11", "7 1/4 x 16 3/8", "8 1/2 x 17 1/2", "9 3/4 x 22 1/8"
-         - Format as "W x H" with spaces around the x (e.g., "6 x 11" not "6x11")
-       - paperType: Text/body paper stock (e.g., "80# Gloss Text", "100# Uncoated")
-       - paperWeight: Paper weight if separate from type (e.g., "100#", "80 lb")
-       - coverPaperType: Cover stock for books (e.g., "100# Gloss Cover")
-       - colors: Print colors (e.g., "4/4", "4/1", "4/0", "CMYK", "PMS 485")
-       - coating: Coating type (e.g., "AQ", "UV", "Matte", "Gloss", "Satin", "Soft Touch")
-       - finishing: Finishing operations (e.g., "Score", "Die Cut", "Emboss", "Foil")
-       - folds: Fold type (e.g., "Tri-fold", "Z-fold", "Gate fold", "Roll fold")
-       - perforations: Any perfs (e.g., "Perf at 3.5 inches")
-       - dieCut: Die cut details if applicable
-       - pageCount: Number of pages for books (e.g., "16 + cover", "32pp")
-       - bindingStyle: Binding type (e.g., "Saddle Stitch", "Perfect Bound", "Wire-O", "Spiral")
-       - coverType: "PLUS" (separate cover) or "SELF" (self-cover)
-       - bleed: Bleed information if specified
-       - proofType: Proof requirements (e.g., "PDF proof", "Hard copy proof", "No proof needed")
+    8. **Print Specifications - Extract ALL you can find**:
+       - flatSize: Unfolded/flat size
+       - finishedSize: Final trimmed size (e.g., "8.5 x 11", "6 x 9")
+       - paperType: Body/text paper (e.g., "70# Gloss Text", "80# Matte")
+       - paperWeight: Paper weight if separate
+       - coverPaperType: Cover stock for books (e.g., "80# Matte Cover")
+       - colors: Print colors (e.g., "4/4" = full color both sides, "4/1", "4/0")
+       - coating: AQ, UV, Matte, Gloss, Satin, Soft Touch
+       - finishing: Score, Die Cut, Emboss, Foil, Drill
+       - folds: Tri-fold, Z-fold, Gate fold, etc.
+       - pageCount: For books - "132 pages", "16pp", "24 + cover"
+       - bindingStyle: Saddle Stitch, Perfect Bound, Wire-O, Spiral, Case Bound
+       - coverType: "PLUS" (separate cover stock) or "SELF" (self-cover)
 
-    9. **Line Items**:
-       - Extract EACH line item with: description, quantity (REQUIRED!), pricePerThousand (if /M pricing), lineTotal
-       - If pricing is "/M" or "per thousand": include pricePerThousand and calculate lineTotal = pricePerThousand × (quantity / 1000)
-       - If there are multiple size/quantity combinations, capture each separately
+    9. **LINE ITEMS - CRITICAL**:
+       Each item needs a "type" to distinguish products from services:
+
+       - type: "PRODUCT" (printed materials), "SHIPPING" (freight/delivery), "SERVICE" (other charges)
+       - description: What it is
+       - quantity: How many (REQUIRED for PRODUCT items)
+       - unitPrice: Price per single unit (e.g., 8.00 for "$8.00 each")
+       - pricePerThousand: If /M pricing
+       - lineTotal: Extended total for this line
+
+       Examples:
+       - "300 Catalogs @ $8.00 each = $2,400" → type: "PRODUCT", qty: 300, unitPrice: 8.00, lineTotal: 2400
+       - "Freight to NY" → type: "SHIPPING"
+       - "Rush fee" → type: "SERVICE"
 
     10. **Additional Fields**:
-        - artworkInstructions: Instructions about artwork, files, etc.
-        - packingInstructions: How to pack/box the job
+        - artworkInstructions: Instructions about artwork, files
+        - packingInstructions: How to pack/box
         - labelingInstructions: Labeling requirements
+        - notes: Anything else important that doesn't fit above
 
-    Return comprehensive JSON with ALL extracted fields:
+    **RETURN THIS JSON STRUCTURE:**
     {
-      customerName, contactPerson, contactEmail, contactPhone, customerAddress,
-      poNumber, title, projectName,
-      dueDate, mailDate, inHomesDate,
-      shipToName, shipToAddress, shipVia, specialInstructions,
-      specs: {
-        productType, flatSize, finishedSize, paperType, paperWeight, coverPaperType,
-        colors, coating, finishing, folds, perforations, dieCut,
-        pageCount, bindingStyle, coverType, bleed, proofType
+      "customerName": "string",
+      "contactPerson": "string or null",
+      "contactEmail": "string or null",
+      "contactPhone": "string or null",
+      "customerAddress": "string or null",
+      "poNumber": "string",
+      "title": "string - main product description",
+      "projectName": "string or null",
+      "poTotal": number (GRAND TOTAL on the PO - this is critical!),
+      "dueDate": "YYYY-MM-DD or null",
+      "mailDate": "YYYY-MM-DD or null",
+      "inHomesDate": "YYYY-MM-DD or null",
+      "shipToName": "string or null",
+      "shipToAddress": "string or null",
+      "shipVia": "string or null",
+      "specialInstructions": "string or null",
+      "specs": {
+        "productType": "BOOK|FLAT|FOLDED",
+        "flatSize": "string or null",
+        "finishedSize": "string or null",
+        "paperType": "string or null",
+        "paperWeight": "string or null",
+        "coverPaperType": "string or null",
+        "colors": "string or null",
+        "coating": "string or null",
+        "finishing": "string or null",
+        "folds": "string or null",
+        "pageCount": "string or null",
+        "bindingStyle": "string or null",
+        "coverType": "PLUS|SELF|null"
       },
-      items: [{ description, quantity, pricePerThousand, lineTotal }],
-      artworkInstructions, packingInstructions, labelingInstructions
+      "items": [
+        {
+          "type": "PRODUCT|SHIPPING|SERVICE",
+          "description": "string",
+          "quantity": number,
+          "unitPrice": number (price per single unit),
+          "pricePerThousand": number or null,
+          "lineTotal": number
+        }
+      ],
+      "artworkInstructions": "string or null",
+      "packingInstructions": "string or null",
+      "labelingInstructions": "string or null",
+      "notes": "string or null"
     }`;
 
     const result = await model.generateContent([
@@ -182,14 +228,19 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
     // Log the full parsed data for debugging
     console.log('📋 PO Parser - Full AI Response:', JSON.stringify(parsed, null, 2));
 
-    // Calculate total quantity from all line items
-    const totalQuantity = parsed.items?.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0) || 0;
+    // Calculate total quantity from PRODUCT items only (exclude shipping/service)
+    const totalQuantity = parsed.items
+      ?.filter((item: any) => item.type === 'PRODUCT' || !item.type)
+      .reduce((sum: number, item: any) => sum + (item.quantity || 0), 0) || 0;
 
     return {
       // Basic job info
       title: parsed.title || parsed.projectName || "PO Import",
       customerPONumber: parsed.poNumber,
       customerName: parsed.customerName,
+
+      // PO Total (sell price) - the grand total from the customer's PO
+      poTotal: parsed.poTotal || null,
 
       // Contact info
       contactPerson: parsed.contactPerson || null,
@@ -280,6 +331,7 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
         }
 
         return {
+          type: i.type || 'PRODUCT', // PRODUCT, SHIPPING, or SERVICE
           description: i.description || "PO Item",
           quantity: qty,
           pricePerThousand: pricePerThousand,

@@ -940,7 +940,7 @@ export async function receiveEmailToJobWebhook(req: Request, res: Response) {
         customerPONumber: parsedData.customerPONumber || null,
         quantity: parsedData.quantity || null,
         sizeName: parsedData.specs?.finishedSize || null,
-        sellPrice: parsedData.customerPOTotal || null,
+        sellPrice: parsedData.poTotal || null,
         deliveryDate: parsedData.dueDate ? new Date(parsedData.dueDate) : null,
         mailDate: parsedData.mailDate ? new Date(parsedData.mailDate) : null,
         notes: buildJobNotes(parsedData, payload),
