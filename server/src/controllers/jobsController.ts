@@ -12,6 +12,7 @@ import {
 import { normalizeSize, getSelfMailerPricing } from '../utils/bradfordPricing';
 import { sendArtworkFollowUpEmail, sendJDInvoiceToBradfordEmail } from '../services/emailService';
 import { initiateBothThreads } from '../services/communicationService';
+import { syncJobVendorToPOs, createBradfordJDPO } from '../services/poService';
 
 /**
  * Check if a job meets criteria for Impact→Bradford PO creation
@@ -1030,6 +1031,14 @@ export const updateJob = async (req: Request, res: Response) => {
 
     // Execute all activity logs in parallel
     await Promise.all(activityPromises);
+
+    // Auto-sync vendor to Impact→Vendor POs when job vendor changes
+    if (vendorId !== undefined && vendorId !== existingJob.vendorId) {
+      const syncResult = await syncJobVendorToPOs(id, vendorId);
+      if (syncResult.count > 0) {
+        console.log(`Auto-synced vendor to ${syncResult.count} PO(s) for job ${id}`);
+      }
+    }
 
     let job = await prisma.job.update({
       where: { id },

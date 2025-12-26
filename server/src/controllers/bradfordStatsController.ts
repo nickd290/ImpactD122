@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
-import crypto from 'crypto';
 import { prisma } from '../utils/prisma';
 import { BRADFORD_SIZE_PRICING, SIZE_TO_PAPER_TYPE, getPaperTypeKey } from '../utils/bradfordPricing';
+import { createBradfordJDPO } from '../services/poService';
 
 // Calculate job cost from POs - only Impact-origin POs count as our cost
 function calculateJobCost(job: any): number {
@@ -441,20 +441,7 @@ export const captureBradfordPOFromEmail = async (req: Request, res: Response) =>
         data: { poNumber: bradfordPO },
       });
     } else {
-      await prisma.purchaseOrder.create({
-        data: {
-          id: crypto.randomUUID(),
-          jobId: job.id,
-          originCompanyId: 'bradford',
-          targetCompanyId: 'jd-graphic',
-          poNumber: bradfordPO,
-          buyCost: 0,
-          paperCost: 0,
-          paperMarkup: 0,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      });
+      await createBradfordJDPO(job.id, { poNumber: bradfordPO });
     }
 
     console.log('✅ Bradford PO captured via API:', {
@@ -504,20 +491,7 @@ export const updateBradfordPO = async (req: Request, res: Response) => {
       return res.json({ success: true, poNumber: updatedPO.poNumber });
     } else {
       // Create new Bradford → JD PO if it doesn't exist
-      const newPO = await prisma.purchaseOrder.create({
-        data: {
-          id: crypto.randomUUID(),
-          jobId,
-          originCompanyId: 'bradford',
-          targetCompanyId: 'jd-graphic',
-          poNumber: poNumber || '',
-          buyCost: 0,
-          paperCost: 0,
-          paperMarkup: 0,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      });
+      const newPO = await createBradfordJDPO(jobId, { poNumber: poNumber || '' });
       return res.json({ success: true, poNumber: newPO.poNumber });
     }
   } catch (error) {
