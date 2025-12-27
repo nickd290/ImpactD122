@@ -211,6 +211,8 @@ export function transformJob(job: any) {
     vendor: po.Vendor ? {
       id: po.Vendor.id,
       name: po.Vendor.name,
+      email: po.Vendor.email || '',
+      contacts: po.Vendor.contacts || [],
     } : null,
   }));
 
@@ -298,6 +300,7 @@ export function transformJob(job: any) {
       email: job.Vendor.email || '',
       phone: job.Vendor.phone || '',
       isPartner: isBradfordVendor(job.Vendor),
+      contacts: job.Vendor.contacts || [],
     } : {
       id: '',
       name: 'No Vendor Assigned',
@@ -305,6 +308,7 @@ export function transformJob(job: any) {
       email: '',
       phone: '',
       isPartner: false,
+      contacts: [],
     },
     // Specs is already JSON
     specs: job.specs,
