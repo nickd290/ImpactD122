@@ -155,11 +155,19 @@ export const emailPO = async (req: Request, res: Response) => {
         Job: {
           include: {
             Company: true,
-            Vendor: true,
+            Vendor: {
+              include: {
+                contacts: true,
+              },
+            },
             JobPortal: true,
           },
         },
-        Vendor: true,
+        Vendor: {
+          include: {
+            contacts: true,
+          },
+        },
         Company_PurchaseOrder_targetCompanyIdToCompany: true,
       },
     });

@@ -424,10 +424,18 @@ export async function logPaymentChange(
  */
 export const JOB_INCLUDE = {
   Company: true,
-  Vendor: true,
+  Vendor: {
+    include: {
+      contacts: true,
+    },
+  },
   PurchaseOrder: {
     include: {
-      Vendor: true,
+      Vendor: {
+        include: {
+          contacts: true,
+        },
+      },
     },
   },
   ProfitSplit: true,
