@@ -337,12 +337,18 @@ export const generatePurchaseOrderPDF = async (req: Request, res: Response) => {
       },
 
       // Vendor info (target of the PO)
-      // Priority: 1) External Vendor, 2) Internal Company, 3) Hardcoded fallback for known IDs
+      // Priority: 1) PO's External Vendor, 2) Job's Vendor, 3) Internal Company, 4) Hardcoded fallback
       vendor: po.Vendor ? {
         name: po.Vendor.name,
         email: po.Vendor.email || '',
         phone: po.Vendor.phone || '',
         address: [po.Vendor.streetAddress, po.Vendor.city, po.Vendor.state, po.Vendor.zip].filter(Boolean).join(', '),
+      } : po.Job?.Vendor ? {
+        // Fallback to Job's assigned vendor if PO doesn't have targetVendorId set
+        name: po.Job.Vendor.name,
+        email: po.Job.Vendor.email || '',
+        phone: po.Job.Vendor.phone || '',
+        address: [po.Job.Vendor.streetAddress, po.Job.Vendor.city, po.Job.Vendor.state, po.Job.Vendor.zip].filter(Boolean).join(', '),
       } : po.Company_PurchaseOrder_targetCompanyIdToCompany ? {
         name: po.Company_PurchaseOrder_targetCompanyIdToCompany.name ||
               (po.targetCompanyId === 'jd-graphic' ? 'JD Graphic' :
@@ -382,14 +388,20 @@ export const generatePurchaseOrderPDF = async (req: Request, res: Response) => {
       }],
     };
 
-    // Debug logging for PO cost calculation
+    // Debug logging for PO PDF generation and vendor resolution
     console.log('📄 PO PDF Generation:', {
       poId: po.id,
       poNumber: po.poNumber,
+      jobNumber: po.Job?.jobNo,
       originCompanyId: po.originCompanyId,
       targetCompanyId: po.targetCompanyId,
       targetVendorId: po.targetVendorId,
-      vendorName: poData.vendor?.name,
+      // Vendor resolution chain
+      poVendorName: po.Vendor?.name || null,
+      jobVendorName: po.Job?.Vendor?.name || null,
+      internalCompanyName: po.Company_PurchaseOrder_targetCompanyIdToCompany?.name || null,
+      resolvedVendorName: poData.vendor?.name,
+      // Cost details
       rawBuyCost: po.buyCost ? Number(po.buyCost) : null,
       mfgCost: po.mfgCost ? Number(po.mfgCost) : null,
       paperCost: po.paperCost ? Number(po.paperCost) : null,
