@@ -205,6 +205,8 @@ model Job {
   artworkSectionComplete    Boolean          @default(false)
   dataFilesSectionComplete  Boolean          @default(false)
   bradfordWaivesPaperMargin Boolean          @default(false)
+  // @deprecated Use paperSource field instead. This field will be removed in a future migration.
+  // Kept for backward compatibility during transition.
   jdSuppliesPaper           Boolean          @default(false)
   paperInventoryId          String?          // Optional link to PaperInventory when Bradford supplies paper
   routingType               RoutingType      @default(BRADFORD_JD)
@@ -586,9 +588,11 @@ model PurchaseOrder {
 
   @@index([jobId])
   @@index([originCompanyId])
-  @@index([poNumber])
   @@index([targetCompanyId])
   @@index([targetVendorId])
+  // CRITICAL: poNumber must be unique when not null
+  // This prevents duplicate PO numbers which cause confusion in financial tracking
+  @@unique([poNumber])
 }
 
 model Quote {
