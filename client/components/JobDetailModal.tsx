@@ -1474,54 +1474,52 @@ export function JobDetailModal({
 
   // Visual Vendor Cards Section - Groups POs by vendor with clear status/cost display
   const VendorCardsSection = () => {
-    // Group POs by vendor
-    const posByVendor = useMemo(() => {
-      const grouped: Record<string, {
-        vendorId: string;
-        vendorName: string;
-        isPartner: boolean;
-        pos: typeof job.purchaseOrders;
-        totalCost: number;
-        paperCost: number;
-        paperMarkup: number;
-        mfgCost: number;
-        hasSentPO: boolean;
-      }> = {};
+    // Group POs by vendor (no useMemo - this is a render helper function)
+    const grouped: Record<string, {
+      vendorId: string;
+      vendorName: string;
+      isPartner: boolean;
+      pos: typeof job.purchaseOrders;
+      totalCost: number;
+      paperCost: number;
+      paperMarkup: number;
+      mfgCost: number;
+      hasSentPO: boolean;
+    }> = {};
 
-      (job.purchaseOrders || []).forEach((po) => {
-        // Only show Impact-origin POs (our costs)
-        if (po.originCompanyId !== 'impact-direct') return;
+    (job.purchaseOrders || []).forEach((po) => {
+      // Only show Impact-origin POs (our costs)
+      if (po.originCompanyId !== 'impact-direct') return;
 
-        const vendorId = po.vendorId || po.vendor?.id || po.targetCompanyId || 'unknown';
-        const vendorName = po.vendor?.name ||
-          (po.targetCompanyId === 'bradford' ? 'Bradford Printing' :
-           po.targetCompanyId === 'jd-graphic' ? 'JD Graphic' : 'Unknown Vendor');
-        const isPartner = po.vendor?.isPartner || vendorName.toLowerCase().includes('bradford');
+      const vendorId = po.vendorId || po.vendor?.id || po.targetCompanyId || 'unknown';
+      const vendorName = po.vendor?.name ||
+        (po.targetCompanyId === 'bradford' ? 'Bradford Printing' :
+         po.targetCompanyId === 'jd-graphic' ? 'JD Graphic' : 'Unknown Vendor');
+      const isPartner = po.vendor?.isPartner || vendorName.toLowerCase().includes('bradford');
 
-        if (!grouped[vendorId]) {
-          grouped[vendorId] = {
-            vendorId,
-            vendorName,
-            isPartner,
-            pos: [],
-            totalCost: 0,
-            paperCost: 0,
-            paperMarkup: 0,
-            mfgCost: 0,
-            hasSentPO: false,
-          };
-        }
+      if (!grouped[vendorId]) {
+        grouped[vendorId] = {
+          vendorId,
+          vendorName,
+          isPartner,
+          pos: [],
+          totalCost: 0,
+          paperCost: 0,
+          paperMarkup: 0,
+          mfgCost: 0,
+          hasSentPO: false,
+        };
+      }
 
-        grouped[vendorId].pos!.push(po);
-        grouped[vendorId].totalCost += po.buyCost || 0;
-        grouped[vendorId].paperCost += po.paperCost || 0;
-        grouped[vendorId].paperMarkup += po.paperMarkup || (po.paperCost ? po.paperCost * 0.18 : 0);
-        grouped[vendorId].mfgCost += po.mfgCost || 0;
-        if (po.emailedAt) grouped[vendorId].hasSentPO = true;
-      });
+      grouped[vendorId].pos!.push(po);
+      grouped[vendorId].totalCost += po.buyCost || 0;
+      grouped[vendorId].paperCost += po.paperCost || 0;
+      grouped[vendorId].paperMarkup += po.paperMarkup || (po.paperCost ? po.paperCost * 0.18 : 0);
+      grouped[vendorId].mfgCost += po.mfgCost || 0;
+      if (po.emailedAt) grouped[vendorId].hasSentPO = true;
+    });
 
-      return Object.values(grouped);
-    }, [job.purchaseOrders]);
+    const posByVendor = Object.values(grouped);
 
     // Calculate totals
     const totalVendorCost = posByVendor.reduce((sum, v) => sum + v.totalCost, 0);
