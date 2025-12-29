@@ -28,7 +28,7 @@ import {
 import { normalizeSize, getSelfMailerPricing } from '../../utils/bradfordPricing';
 import { initiateBothThreads } from '../../services/communicationService';
 import { syncJobVendorToPOs, createBradfordJDPO } from '../../services/poService';
-import { sendVendorPOWithPortalEmail } from '../../services/emailService';
+import { sendVendorPOWithPortalEmail, sendJDPONotification } from '../../services/emailService';
 import { COMPANY_IDS } from '../../constants';
 import {
   canCreateImpactPO,
@@ -325,6 +325,7 @@ export const createJob = async (req: Request, res: Response) => {
           printCost,
           sizeName,
           quantity,
+          title,
         });
       } else {
         console.log(`Skipping IMPACT_JD PO creation for job ${jobNo}: No cost or sell price`);
@@ -342,6 +343,7 @@ export const createJob = async (req: Request, res: Response) => {
           sizeName,
           quantity,
           bradfordPricing,
+          title,
         });
       } else {
         console.log(`Skipping BRADFORD_JD PO creation for job ${jobNo}: ${poValidation.reason}`);
@@ -928,9 +930,10 @@ async function createBradfordPOs(
     sizeName?: string | null;
     quantity: number;
     bradfordPricing?: any;
+    title?: string | null;
   }
 ) {
-  const { totalCost, paperCost, paperMarkup, printCost, sizeName, quantity, bradfordPricing } = data;
+  const { totalCost, paperCost, paperMarkup, printCost, sizeName, quantity, bradfordPricing, title } = data;
   const timestamp = Date.now();
 
   // Calculate CPM rates
@@ -989,6 +992,18 @@ async function createBradfordPOs(
     printCPMRate,
     paperSellCPMRate,
   });
+
+  // Send notification to Brandon about JD PO (fire and forget)
+  sendJDPONotification({
+    jobId,
+    jobNo,
+    poNumber: `PO-${jobNo}-BJ-${timestamp}`,
+    routingType: 'BRADFORD_JD',
+    totalCost: printCost,
+    quantity,
+    sizeName: sizeName || undefined,
+    title: title || undefined,
+  }).catch(err => console.error('Failed to send JD PO notification:', err));
 }
 
 /**
@@ -1006,9 +1021,10 @@ async function createImpactJDPOs(
     printCost: number;
     sizeName?: string | null;
     quantity: number;
+    title?: string | null;
   }
 ) {
-  const { totalCost, referralFee, printCost, sizeName, quantity } = data;
+  const { totalCost, referralFee, printCost, sizeName, quantity, title } = data;
   const timestamp = Date.now();
 
   // Calculate CPM rate
@@ -1051,6 +1067,18 @@ async function createImpactJDPOs(
     bradfordReferralFee: referralFee,
     printCPMRate,
   });
+
+  // Send notification to Brandon about JD PO (fire and forget)
+  sendJDPONotification({
+    jobId,
+    jobNo,
+    poNumber: `PO-${jobNo}-IJ-${timestamp}`,
+    routingType: 'IMPACT_JD',
+    totalCost,
+    quantity,
+    sizeName: sizeName || undefined,
+    title: title || undefined,
+  }).catch(err => console.error('Failed to send JD PO notification:', err));
 }
 
 /**

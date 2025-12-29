@@ -1569,3 +1569,102 @@ export async function sendEmailImportNotification(
     return { success: false, error: error.message || 'Failed to send notification' };
   }
 }
+
+// ============================================
+// JD PO NOTIFICATION (to Brandon)
+// ============================================
+
+interface JDPONotificationData {
+  jobId: string;
+  jobNo: string;
+  poNumber: string;
+  routingType: 'BRADFORD_JD' | 'IMPACT_JD';
+  totalCost: number;
+  quantity?: number;
+  sizeName?: string;
+  title?: string;
+}
+
+function getJDPONotificationBody(data: JDPONotificationData): string {
+  const appUrl = process.env.APP_URL || 'http://localhost:5173';
+  const jobUrl = `${appUrl}/jobs/${data.jobId}`;
+
+  const isImpactDirect = data.routingType === 'IMPACT_JD';
+  const routingLabel = isImpactDirect ? 'Impact Direct → JD' : 'Bradford → JD';
+  const routingColor = isImpactDirect ? '#2563eb' : '#059669';
+
+  return `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+      <!-- Header -->
+      <div style="background: ${routingColor}; padding: 20px 24px; border-radius: 8px 8px 0 0;">
+        <h1 style="color: white; margin: 0; font-size: 18px;">📋 New JD PO Created</h1>
+        <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0 0; font-size: 14px;">${routingLabel}</p>
+      </div>
+
+      <!-- Body -->
+      <div style="padding: 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+        <!-- PO Info -->
+        <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+          <h2 style="margin: 0 0 4px 0; font-size: 20px; color: #111827;">PO #${data.poNumber}</h2>
+          <p style="margin: 0; font-size: 14px; color: #6b7280;">Job #${data.jobNo}</p>
+        </div>
+
+        <!-- Details -->
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+          ${data.title ? `<tr>
+            <td style="padding: 8px 0; color: #6b7280;">Title:</td>
+            <td style="padding: 8px 0; font-weight: 500;">${data.title}</td>
+          </tr>` : ''}
+          ${data.sizeName ? `<tr>
+            <td style="padding: 8px 0; color: #6b7280;">Size:</td>
+            <td style="padding: 8px 0; font-weight: 500;">${data.sizeName}</td>
+          </tr>` : ''}
+          ${data.quantity ? `<tr>
+            <td style="padding: 8px 0; color: #6b7280;">Quantity:</td>
+            <td style="padding: 8px 0; font-weight: 500;">${data.quantity.toLocaleString()}</td>
+          </tr>` : ''}
+          <tr>
+            <td style="padding: 8px 0; color: #6b7280;">PO Amount:</td>
+            <td style="padding: 8px 0; font-weight: 600; font-size: 16px;">$${data.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0; color: #6b7280;">Routing:</td>
+            <td style="padding: 8px 0;"><span style="background: ${routingColor}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px;">${data.routingType}</span></td>
+          </tr>
+        </table>
+
+        <!-- CTA Button -->
+        <div style="text-align: center; margin: 24px 0;">
+          <a href="${jobUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 32px; text-decoration: none; border-radius: 6px; font-weight: 600;">View Job</a>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+export async function sendJDPONotification(data: JDPONotificationData): Promise<EmailResult> {
+  try {
+    const routingPrefix = data.routingType === 'IMPACT_JD' ? '[IMPACT→JD]' : '[BRADFORD→JD]';
+    const subject = `${routingPrefix} PO #${data.poNumber} - Job #${data.jobNo}`;
+    const body = getJDPONotificationBody(data);
+
+    const result = await sendEmail({
+      to: ADMIN_NOTIFICATION_EMAIL,
+      subject,
+      body,
+    });
+
+    if (result.success) {
+      console.log(`📧 JD PO notification sent to Brandon:`, {
+        poNumber: data.poNumber,
+        jobNo: data.jobNo,
+        routingType: data.routingType,
+      });
+    }
+
+    return result;
+  } catch (error: any) {
+    console.error('Error sending JD PO notification:', error);
+    return { success: false, error: error.message || 'Failed to send notification' };
+  }
+}
