@@ -398,7 +398,7 @@ export const deletePO = async (req: Request, res: Response) => {
 async function recalculateProfitSplit(jobId: string, allPOs: any[]): Promise<void> {
   const job = await prisma.job.findUnique({
     where: { id: jobId },
-    select: { sellPrice: true },
+    select: { sellPrice: true, routingType: true },
   });
 
   if (!job) return;
@@ -412,10 +412,12 @@ async function recalculateProfitSplit(jobId: string, allPOs: any[]): Promise<voi
   const sellPrice = Number(job.sellPrice) || 0;
 
   // Calculate profit split
+  const routingType = job.routingType || 'BRADFORD_JD';
   const split = calculateProfitSplit({
     sellPrice,
     totalCost,
     paperMarkup: totalPaperMarkup,
+    routingType,
   });
 
   // Upsert ProfitSplit record

@@ -28,6 +28,7 @@ import {
 import { normalizeSize, getSelfMailerPricing } from '../../utils/bradfordPricing';
 import { initiateBothThreads } from '../../services/communicationService';
 import { syncJobVendorToPOs, createBradfordJDPO } from '../../services/poService';
+import { sendVendorPOWithPortalEmail } from '../../services/emailService';
 import { COMPANY_IDS } from '../../constants';
 import {
   canCreateImpactPO,
@@ -337,6 +338,7 @@ export const createJob = async (req: Request, res: Response) => {
         sellPrice,
         totalCost,
         paperMarkup,
+        routingType,
       });
 
       await prisma.profitSplit.create({
@@ -1032,6 +1034,65 @@ async function createVendorPO(
     vendorTotalCost,
     poNumber: vendorPO.poNumber,
   });
+
+  // Auto-send PO email to vendor with portal (fire and forget)
+  if (vendor.email) {
+    (async () => {
+      try {
+        const job = await prisma.job.findUnique({
+          where: { id: jobId },
+          include: { JobSpecs: true },
+        });
+
+        // Create or get portal for this job
+        const existingPortal = await prisma.jobPortal.findUnique({
+          where: { jobId },
+        });
+
+        const shareToken = existingPortal?.shareToken || crypto.randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000); // 14 days
+
+        const portal = existingPortal || await prisma.jobPortal.create({
+          data: {
+            jobId,
+            shareToken,
+            expiresAt,
+          },
+        });
+
+        const baseUrl = process.env.APP_URL || process.env.PUBLIC_URL || 'https://app.impactdirectprinting.com';
+        const portalUrl = `${baseUrl}/api/portal/${portal.shareToken}`;
+
+        // Send PO email with portal link
+        const result = await sendVendorPOWithPortalEmail(
+          vendorPO,
+          { ...job, jobNo, title },
+          vendor.email,
+          vendor.name,
+          portalUrl,
+          { specialInstructions: job?.JobSpecs?.specialInstructions || undefined }
+        );
+
+        if (result.success) {
+          // Update PO with email tracking
+          await prisma.purchaseOrder.update({
+            where: { id: vendorPO.id },
+            data: {
+              emailedAt: result.emailedAt,
+              emailedTo: vendor.email,
+            },
+          });
+          console.log(`📧 Auto-sent Vendor PO to ${vendor.email} for job ${jobNo}`);
+        } else {
+          console.error(`❌ Failed to auto-send Vendor PO for job ${jobNo}:`, result.error);
+        }
+      } catch (err: any) {
+        console.error(`❌ Error auto-sending Vendor PO for job ${jobNo}:`, err.message);
+      }
+    })();
+  } else {
+    console.log(`⚠️ Vendor ${vendor.name} has no email - PO not auto-sent`);
+  }
 }
 
 /**
@@ -1074,6 +1135,7 @@ async function recalculateProfitSplit(id: string, job: any) {
   const finalSellPrice = Number(job.sellPrice) || 0;
   const finalSizeName = job.sizeName;
   const finalPaperSource = (job.paperSource || 'BRADFORD') as PaperSource;
+  const routingType = job.routingType || 'BRADFORD_JD';
   const finalQuantity = job.quantity || 0;
 
   let totalCost = 0;
@@ -1101,6 +1163,7 @@ async function recalculateProfitSplit(id: string, job: any) {
     sellPrice: finalSellPrice,
     totalCost,
     paperMarkup,
+    routingType,
   });
 
   await prisma.profitSplit.upsert({

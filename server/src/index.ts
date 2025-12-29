@@ -21,6 +21,19 @@ import filesRouter from './routes/files';
 // Use path relative to this file to find .env in the server directory
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
+// Validate required environment variables
+const requiredEnvVars = ['OPENAI_API_KEY'];
+const missingEnvVars = requiredEnvVars.filter(v => !process.env[v]);
+
+if (missingEnvVars.length > 0) {
+  console.error('❌ FATAL: Missing required environment variables:');
+  missingEnvVars.forEach(v => console.error(`   - ${v}`));
+  console.error('\n📋 Add these to Railway Variables or your .env file');
+  process.exit(1);
+}
+
+console.log('✅ Environment variables validated');
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 

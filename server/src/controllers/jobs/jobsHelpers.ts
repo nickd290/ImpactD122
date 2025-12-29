@@ -123,6 +123,7 @@ export function calculateProfit(job: any) {
     sellPrice,
     totalCost,
     paperMarkup: totalPaperMarkup,
+    routingType: job.routingType,
   });
 
   return {

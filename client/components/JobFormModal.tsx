@@ -3,6 +3,14 @@ import { X, Loader2 } from 'lucide-react';
 import { TabbedJobForm } from './job-form/TabbedJobForm';
 import { JobFormData, Specs, LineItem } from './job-form/types';
 
+interface ParsedCustomer {
+  name: string;
+  contactName?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+}
+
 interface JobFormModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -10,6 +18,7 @@ interface JobFormModalProps {
   customers: any[];
   vendors: any[];
   initialData?: any;
+  onCustomerCreated?: (newCustomer: any) => void;
 }
 
 export function JobFormModal({
@@ -19,7 +28,10 @@ export function JobFormModal({
   customers,
   vendors,
   initialData,
+  onCustomerCreated,
 }: JobFormModalProps) {
+  // Extract parsedCustomer from initialData if present
+  const parsedCustomer: ParsedCustomer | null = initialData?.parsedCustomer || null;
   // Form data managed by TabbedJobForm - we track it here for submission
   const [formState, setFormState] = useState<{
     formData: JobFormData;
@@ -226,6 +238,8 @@ export function JobFormModal({
               uploadError={uploadError}
               onFileSelect={handleFileSelect}
               onDeleteFile={handleDeleteFile}
+              parsedCustomer={parsedCustomer}
+              onCustomerCreated={onCustomerCreated}
             />
 
             {/* Actions */}

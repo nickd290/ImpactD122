@@ -1,5 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { Plus, Loader2, Check } from 'lucide-react';
 import { JobFormData, Customer, Vendor } from '../types';
+
+interface ParsedCustomer {
+  name: string;
+  contactName?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+}
 
 interface BasicsTabProps {
   formData: JobFormData;
@@ -11,6 +20,8 @@ interface BasicsTabProps {
   overrideSellPrice: boolean;
   setOverrideSellPrice: (value: boolean) => void;
   sellPriceError: string;
+  parsedCustomer?: ParsedCustomer | null;
+  onCustomerCreated?: (newCustomer: Customer) => void;
 }
 
 export function BasicsTab({
@@ -23,7 +34,55 @@ export function BasicsTab({
   overrideSellPrice,
   setOverrideSellPrice,
   sellPriceError,
+  parsedCustomer,
+  onCustomerCreated,
 }: BasicsTabProps) {
+  const [showCreateCustomer, setShowCreateCustomer] = useState(false);
+  const [isCreatingCustomer, setIsCreatingCustomer] = useState(false);
+  const [newCustomerName, setNewCustomerName] = useState(parsedCustomer?.name || '');
+  const [newCustomerEmail, setNewCustomerEmail] = useState(parsedCustomer?.email || '');
+  const [createSuccess, setCreateSuccess] = useState(false);
+
+  // Auto-show create form if we have a parsed customer that doesn't match
+  const shouldShowCreatePrompt = parsedCustomer && !formData.customerId;
+
+  const handleCreateCustomer = async () => {
+    if (!newCustomerName.trim()) return;
+
+    setIsCreatingCustomer(true);
+    try {
+      const response = await fetch('/api/entities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newCustomerName.trim(),
+          email: newCustomerEmail.trim() || undefined,
+          type: 'CUSTOMER',
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to create customer');
+
+      const newCustomer = await response.json();
+
+      // Update form with new customer ID
+      setFormData({ ...formData, customerId: newCustomer.id });
+
+      // Notify parent to refresh customers list
+      onCustomerCreated?.(newCustomer);
+
+      setCreateSuccess(true);
+      setTimeout(() => {
+        setShowCreateCustomer(false);
+        setCreateSuccess(false);
+      }, 1500);
+    } catch (error) {
+      console.error('Failed to create customer:', error);
+      alert('Failed to create customer. Please try again.');
+    } finally {
+      setIsCreatingCustomer(false);
+    }
+  };
   return (
     <div className="grid grid-cols-2 gap-4">
       {/* Job Title */}
@@ -59,9 +118,87 @@ export function BasicsTab({
 
       {/* Customer */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Customer *
-        </label>
+        <div className="flex items-center justify-between mb-1">
+          <label className="block text-sm font-medium text-gray-700">
+            Customer *
+          </label>
+          {!showCreateCustomer && (
+            <button
+              type="button"
+              onClick={() => setShowCreateCustomer(true)}
+              className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
+            >
+              <Plus className="w-3 h-3" />
+              New
+            </button>
+          )}
+        </div>
+
+        {/* Prompt for parsed customer that doesn't exist */}
+        {shouldShowCreatePrompt && !showCreateCustomer && (
+          <div className="mb-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-sm">
+            <p className="text-amber-800">
+              <strong>"{parsedCustomer?.name}"</strong> not found in your customers.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setNewCustomerName(parsedCustomer?.name || '');
+                setNewCustomerEmail(parsedCustomer?.email || '');
+                setShowCreateCustomer(true);
+              }}
+              className="mt-1 text-blue-600 hover:text-blue-700 font-medium"
+            >
+              + Create this customer
+            </button>
+          </div>
+        )}
+
+        {/* Inline Create Customer Form */}
+        {showCreateCustomer && (
+          <div className="mb-2 p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
+            <p className="text-sm font-medium text-blue-800">Create New Customer</p>
+            <input
+              type="text"
+              value={newCustomerName}
+              onChange={(e) => setNewCustomerName(e.target.value)}
+              placeholder="Customer name *"
+              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+            <input
+              type="email"
+              value={newCustomerEmail}
+              onChange={(e) => setNewCustomerEmail(e.target.value)}
+              placeholder="Email (optional)"
+              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleCreateCustomer}
+                disabled={!newCustomerName.trim() || isCreatingCustomer}
+                className="flex-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1"
+              >
+                {isCreatingCustomer ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : createSuccess ? (
+                  <><Check className="w-3 h-3" /> Created!</>
+                ) : (
+                  'Create & Select'
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCreateCustomer(false)}
+                className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         <select
           value={formData.customerId}
           onChange={(e) => setFormData({ ...formData, customerId: e.target.value })}
@@ -95,6 +232,42 @@ export function BasicsTab({
             </option>
           ))}
         </select>
+      </div>
+
+      {/* Routing Type */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Routing
+        </label>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setFormData({ ...formData, routingType: 'BRADFORD_JD' })}
+            className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
+              formData.routingType === 'BRADFORD_JD'
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            Bradford/JD
+          </button>
+          <button
+            type="button"
+            onClick={() => setFormData({ ...formData, routingType: 'THIRD_PARTY_VENDOR' })}
+            className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
+              formData.routingType === 'THIRD_PARTY_VENDOR'
+                ? 'bg-purple-600 text-white border-purple-600'
+                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            Third-Party
+          </button>
+        </div>
+        <p className="mt-1 text-xs text-gray-500">
+          {formData.routingType === 'BRADFORD_JD'
+            ? '50/50 split with Bradford'
+            : '35% Bradford / 65% Impact split'}
+        </p>
       </div>
 
       {/* Customer PO Number */}

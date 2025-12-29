@@ -225,10 +225,29 @@ function App() {
       ? vendors.find(v => v.isPartner === true || v.name?.toLowerCase().includes('bradford'))
       : null;
 
+    // Try to auto-match customer by name (case-insensitive partial match)
+    const parsedCustomerName = parsedData.customerName || '';
+    const matchedCustomer = parsedCustomerName
+      ? customers.find(c =>
+          c.name?.toLowerCase().includes(parsedCustomerName.toLowerCase()) ||
+          parsedCustomerName.toLowerCase().includes(c.name?.toLowerCase())
+        )
+      : null;
+
     return {
       title: parsedData.title || 'New Print Job',
-      customerId: '', // User must select
+      customerId: matchedCustomer?.id || '', // Auto-select if matched
       vendorId: bradfordVendor?.id || '',
+      // Auto-set routing based on size match
+      routingType: isBradfordSize ? 'BRADFORD_JD' : 'THIRD_PARTY_VENDOR',
+      // Pass parsed customer info for inline creation if no match
+      parsedCustomer: !matchedCustomer && parsedCustomerName ? {
+        name: parsedCustomerName,
+        contactName: parsedData.contactPerson || '',
+        email: parsedData.contactEmail || '',
+        phone: parsedData.contactPhone || '',
+        address: parsedData.customerAddress || '',
+      } : null,
       customerPONumber: parsedData.customerPONumber || '',
       dueDate: parsedData.dueDate || '',
       status: 'ACTIVE',
@@ -697,6 +716,10 @@ function App() {
         customers={customers}
         vendors={vendors}
         initialData={editingJob || jobFormInitialData}
+        onCustomerCreated={(newCustomer) => {
+          // Add newly created customer to the list
+          setCustomers((prev: any[]) => [...prev, newCustomer]);
+        }}
       />
 
       {/* CRUD Modals */}

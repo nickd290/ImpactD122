@@ -6,6 +6,14 @@ import { SpecsTab } from './tabs/SpecsTab';
 import { PricingTab } from './tabs/PricingTab';
 import { FilesTab } from './tabs/FilesTab';
 
+interface ParsedCustomer {
+  name: string;
+  contactName?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+}
+
 interface TabbedJobFormProps {
   customers: Customer[];
   vendors: Vendor[];
@@ -24,6 +32,8 @@ interface TabbedJobFormProps {
   uploadError: string;
   onFileSelect: (files: FileList) => void;
   onDeleteFile: (fileId: string) => void;
+  parsedCustomer?: ParsedCustomer | null;
+  onCustomerCreated?: (newCustomer: Customer) => void;
 }
 
 const tabs: { id: JobFormTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -44,6 +54,7 @@ const getInitialFormData = (data: any): JobFormData => ({
   dueDate: data?.dueDate || '',
   jdSuppliesPaper: data?.jdSuppliesPaper || false,
   paperInventoryId: data?.paperInventoryId || '',
+  routingType: data?.routingType || 'BRADFORD_JD',
 });
 
 const getInitialSpecs = (data: any): Specs => ({
@@ -104,6 +115,8 @@ export function TabbedJobForm({
   uploadError,
   onFileSelect,
   onDeleteFile,
+  parsedCustomer,
+  onCustomerCreated,
 }: TabbedJobFormProps) {
   const [activeTab, setActiveTab] = useState<JobFormTab>('basics');
   const [formData, setFormData] = useState<JobFormData>(() => getInitialFormData(initialData));
@@ -197,6 +210,8 @@ export function TabbedJobForm({
             overrideSellPrice={overrideSellPrice}
             setOverrideSellPrice={setOverrideSellPrice}
             sellPriceError={sellPriceError}
+            parsedCustomer={parsedCustomer}
+            onCustomerCreated={onCustomerCreated}
           />
         )}
 
