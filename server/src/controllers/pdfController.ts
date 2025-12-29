@@ -37,14 +37,14 @@ function transformJobForPDF(job: any) {
       address: job.Company.address || '',
       contactPerson: '',
     } : { name: 'N/A', email: '', phone: '', address: '', contactPerson: '' },
-    // Transform Vendor
+    // Transform Vendor - use job vendor or fallback to generic
     vendor: job.Vendor ? {
       name: job.Vendor.name,
       email: job.Vendor.email || '',
       phone: job.Vendor.phone || '',
       address: [job.Vendor.streetAddress, job.Vendor.city, job.Vendor.state, job.Vendor.zip].filter(Boolean).join(', '),
       contactPerson: '',
-    } : { name: 'N/A', email: '', phone: '', address: '', contactPerson: '' },
+    } : { name: 'External Vendor', email: '', phone: '', address: '', contactPerson: '' },
     // Specs from JSON field
     specs: job.specs || {},
     // Use stored lineItems from specs, or create from job-level data
@@ -337,37 +337,55 @@ export const generatePurchaseOrderPDF = async (req: Request, res: Response) => {
       },
 
       // Vendor info (target of the PO)
-      // Priority: 1) PO's External Vendor, 2) Job's Vendor, 3) Internal Company, 4) Hardcoded fallback
-      vendor: po.Vendor ? {
-        name: po.Vendor.name,
-        email: po.Vendor.email || '',
-        phone: po.Vendor.phone || '',
-        address: [po.Vendor.streetAddress, po.Vendor.city, po.Vendor.state, po.Vendor.zip].filter(Boolean).join(', '),
-      } : po.Job?.Vendor ? {
-        // Fallback to Job's assigned vendor if PO doesn't have targetVendorId set
-        name: po.Job.Vendor.name,
-        email: po.Job.Vendor.email || '',
-        phone: po.Job.Vendor.phone || '',
-        address: [po.Job.Vendor.streetAddress, po.Job.Vendor.city, po.Job.Vendor.state, po.Job.Vendor.zip].filter(Boolean).join(', '),
-      } : po.Company_PurchaseOrder_targetCompanyIdToCompany ? {
-        name: po.Company_PurchaseOrder_targetCompanyIdToCompany.name ||
-              (po.targetCompanyId === 'jd-graphic' ? 'JD Graphic' :
-               po.targetCompanyId === 'bradford' ? 'Bradford' : 'N/A'),
-        email: po.Company_PurchaseOrder_targetCompanyIdToCompany.email ||
-               (po.targetCompanyId === 'jd-graphic' ? 'production@jdgraphic.com' : ''),
-        phone: po.Company_PurchaseOrder_targetCompanyIdToCompany.phone || '',
-        address: po.Company_PurchaseOrder_targetCompanyIdToCompany.address || '',
-      } : (po.targetCompanyId === 'jd-graphic' ? {
-        name: 'JD Graphic',
-        email: 'production@jdgraphic.com',
-        phone: '',
-        address: '',
-      } : po.targetCompanyId === 'bradford' ? {
-        name: 'Bradford',
-        email: '',
-        phone: '',
-        address: '',
-      } : { name: 'N/A', email: '', phone: '', address: '' }),
+      // Priority: 1) PO's External Vendor, 2) Job's Vendor, 3) Internal Company, 4) Parse from description, 5) Default
+      vendor: (() => {
+        // Priority 1: PO's external vendor (from targetVendorId)
+        if (po.Vendor) {
+          return {
+            name: po.Vendor.name,
+            email: po.Vendor.email || '',
+            phone: po.Vendor.phone || '',
+            address: [po.Vendor.streetAddress, po.Vendor.city, po.Vendor.state, po.Vendor.zip].filter(Boolean).join(', '),
+          };
+        }
+        // Priority 2: Job's assigned vendor
+        if (po.Job?.Vendor) {
+          return {
+            name: po.Job.Vendor.name,
+            email: po.Job.Vendor.email || '',
+            phone: po.Job.Vendor.phone || '',
+            address: [po.Job.Vendor.streetAddress, po.Job.Vendor.city, po.Job.Vendor.state, po.Job.Vendor.zip].filter(Boolean).join(', '),
+          };
+        }
+        // Priority 3: Internal company (Bradford/JD)
+        if (po.Company_PurchaseOrder_targetCompanyIdToCompany) {
+          return {
+            name: po.Company_PurchaseOrder_targetCompanyIdToCompany.name ||
+                  (po.targetCompanyId === 'jd-graphic' ? 'JD Graphic' :
+                   po.targetCompanyId === 'bradford' ? 'Bradford' : 'Vendor'),
+            email: po.Company_PurchaseOrder_targetCompanyIdToCompany.email ||
+                   (po.targetCompanyId === 'jd-graphic' ? 'production@jdgraphic.com' : ''),
+            phone: po.Company_PurchaseOrder_targetCompanyIdToCompany.phone || '',
+            address: po.Company_PurchaseOrder_targetCompanyIdToCompany.address || '',
+          };
+        }
+        // Priority 4: Hardcoded internal companies
+        if (po.targetCompanyId === 'jd-graphic') {
+          return { name: 'JD Graphic', email: 'production@jdgraphic.com', phone: '', address: '' };
+        }
+        if (po.targetCompanyId === 'bradford') {
+          return { name: 'Bradford', email: '', phone: '', address: '' };
+        }
+        // Priority 5: Try to extract vendor name from PO description
+        // Format: "Impact to {VENDOR NAME} - ..." or just use description as vendor indicator
+        const desc = po.description || '';
+        const vendorMatch = desc.match(/^Impact to (.+?) -/);
+        if (vendorMatch) {
+          return { name: vendorMatch[1], email: '', phone: '', address: '' };
+        }
+        // Priority 6: Default - use description or generic
+        return { name: desc || 'External Vendor', email: '', phone: '', address: '' };
+      })(),
 
       // Cost breakdown (if available)
       paperCost: po.paperCost ? Number(po.paperCost) : undefined,

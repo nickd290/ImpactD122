@@ -196,7 +196,7 @@ interface JobDetailModalProps {
   onRefresh?: () => void;
 }
 
-type TabType = 'overview' | 'pricing' | 'purchase-orders' | 'communications' | 'notes';
+type TabType = 'details' | 'vendors-costs' | 'communications';
 
 export function JobDetailModal({
   job,
@@ -209,7 +209,7 @@ export function JobDetailModal({
   onDownloadQuote,
   onRefresh,
 }: JobDetailModalProps) {
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [activeTab, setActiveTab] = useState<TabType>('details');
   const [isAddingPO, setIsAddingPO] = useState(false);
   const [selectedLineItems, setSelectedLineItems] = useState<Set<number>>(new Set());
   const [poType, setPOType] = useState<'impact-vendor' | 'bradford-jd'>('impact-vendor');
@@ -2469,11 +2469,9 @@ export function JobDetailModal({
   );
 
   const tabs: { id: TabType; label: string; badge?: number }[] = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'pricing', label: 'Pricing' },
-    { id: 'purchase-orders', label: 'Purchase Orders' },
+    { id: 'details', label: 'Details' },
+    { id: 'vendors-costs', label: 'Vendors & Costs' },
     { id: 'communications', label: 'Communications', badge: pendingCommCount },
-    { id: 'notes', label: 'Notes' },
   ];
 
   return (
@@ -2754,9 +2752,30 @@ export function JobDetailModal({
 
           {/* Tab Content */}
           <div className="p-6 overflow-y-auto flex-1">
-            {activeTab === 'overview' && OverviewTab()}
-            {activeTab === 'pricing' && PricingTab()}
-            {activeTab === 'purchase-orders' && PurchaseOrdersTab()}
+            {activeTab === 'details' && (
+              <>
+                {OverviewTab()}
+                {/* Notes Section */}
+                <div className="mt-6 pt-6 border-t border-gray-200">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Notes</h3>
+                  {job?.notes ? (
+                    <div className="bg-white p-4 rounded-lg border border-gray-200">
+                      <p className="text-sm text-gray-600 whitespace-pre-wrap">{job.notes}</p>
+                    </div>
+                  ) : (
+                    <p className="text-gray-400 italic text-sm">No notes for this job</p>
+                  )}
+                </div>
+              </>
+            )}
+            {activeTab === 'vendors-costs' && (
+              <div className="space-y-6">
+                {PricingTab()}
+                <div className="pt-6 border-t border-gray-200">
+                  {PurchaseOrdersTab()}
+                </div>
+              </div>
+            )}
             {activeTab === 'communications' && job && (
               <CommunicationThread
                 jobId={job.id}
@@ -2767,7 +2786,6 @@ export function JobDetailModal({
                 vendorEmail={job.vendor?.email}
               />
             )}
-            {activeTab === 'notes' && NotesTab()}
           </div>
         </div>
       </div>
