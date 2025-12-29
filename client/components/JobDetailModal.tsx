@@ -1639,19 +1639,20 @@ export function JobDetailModal({
                   {vendor.pos!.length > 0 && vendor.pos![0].id && (
                     <>
                       <button
-                        onClick={() => handleDownloadPO(vendor.pos![0].id)}
+                        onClick={(e) => { e.stopPropagation(); pdfApi.generatePO(vendor.pos![0].id); }}
                         className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded font-medium"
                       >
                         <Download className="w-3 h-3" /> Download PO
                       </button>
-                      {!vendor.hasSentPO && vendor.pos![0].id && (
+                      {!vendor.hasSentPO && (
                         <button
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             const po = vendor.pos![0];
                             setSelectedPOForEmail({
                               id: po.id,
                               poNumber: po.poNumber,
-                              vendorEmail: vendor.pos![0].vendor?.email || job.vendor?.email || '',
+                              vendorEmail: po.vendor?.email || job.vendor?.email || '',
                               vendorName: vendor.vendorName,
                             });
                           }}
