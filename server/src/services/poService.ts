@@ -95,6 +95,65 @@ export async function createImpactVendorPO(
 }
 
 /**
+ * Create an Impact Direct → JD Graphic PO (direct routing)
+ * Used for IMPACT_JD routing - bypasses Bradford in supply chain
+ * JD invoices Impact directly for this PO
+ */
+export async function createImpactJDPO(
+  jobId: string,
+  options?: {
+    poNumber?: string | null;
+    printCPM?: number | null;
+    mfgCost?: number | null;
+    buyCost?: number | null;
+    paperCost?: number | null;
+    description?: string | null;
+  }
+) {
+  return prisma.purchaseOrder.create({
+    data: {
+      id: crypto.randomUUID(),
+      poNumber: options?.poNumber ?? generatePONumber('IJ'), // Impact→JD prefix
+      jobId,
+      originCompanyId: 'impact-direct',
+      targetCompanyId: 'jd-graphic',
+      status: 'PENDING',
+      printCPM: options?.printCPM ?? null,
+      mfgCost: options?.mfgCost ?? null,
+      buyCost: options?.buyCost ?? 0,
+      paperCost: options?.paperCost ?? 0,
+      description: options?.description ?? null,
+      updatedAt: new Date()
+    }
+  });
+}
+
+/**
+ * Create a Bradford referral/consulting fee reference PO
+ * Used for IMPACT_JD routing - tracks Bradford's 35% referral fee
+ * This is NOT a supply chain PO, just a reference for the consulting fee
+ */
+export async function createBradfordReferralPO(
+  jobId: string,
+  referralFee?: number | null,
+  description?: string | null
+) {
+  return prisma.purchaseOrder.create({
+    data: {
+      id: crypto.randomUUID(),
+      poNumber: generatePONumber('BR'), // Bradford Referral prefix
+      jobId,
+      originCompanyId: 'impact-direct',
+      targetCompanyId: 'bradford',
+      status: 'PENDING',
+      buyCost: referralFee ?? null,
+      description: description ?? 'Bradford referral/consulting fee',
+      updatedAt: new Date()
+    }
+  });
+}
+
+/**
  * Sync vendor across all Impact→Vendor POs for a job
  * Called when Job.vendorId changes
  */

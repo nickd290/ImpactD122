@@ -84,9 +84,11 @@ export const BUSINESS_RULES = {
  * Purchase Order type strings
  */
 export const PO_TYPES = {
-  BRADFORD_JD: 'bradford-jd',       // Bradford → JD Graphic (internal)
-  IMPACT_BRADFORD: 'impact-bradford', // Impact → Bradford
-  IMPACT_VENDOR: 'impact-vendor',    // Impact → Third-party vendor
+  BRADFORD_JD: 'bradford-jd',              // Bradford → JD Graphic (internal, for BRADFORD_JD routing)
+  IMPACT_BRADFORD: 'impact-bradford',       // Impact → Bradford (for BRADFORD_JD routing)
+  IMPACT_JD: 'impact-jd',                   // Impact → JD Graphic (direct, for IMPACT_JD routing)
+  IMPACT_VENDOR: 'impact-vendor',           // Impact → Third-party vendor
+  BRADFORD_REFERRAL: 'bradford-referral',   // Bradford referral/consulting fee (for IMPACT_JD routing)
 } as const;
 
 export type POType = typeof PO_TYPES[keyof typeof PO_TYPES];
@@ -96,8 +98,9 @@ export type POType = typeof PO_TYPES[keyof typeof PO_TYPES];
 // ============================================================================
 
 export const ROUTING_TYPES = {
-  BRADFORD_JD: 'BRADFORD_JD',
-  THIRD_PARTY_VENDOR: 'THIRD_PARTY_VENDOR',
+  BRADFORD_JD: 'BRADFORD_JD',           // Bradford Commercial: Impact → Bradford → JD (50/50 + paper markup)
+  IMPACT_JD: 'IMPACT_JD',               // Impact Direct to JD: Impact → JD (65/35, Bradford gets referral fee)
+  THIRD_PARTY_VENDOR: 'THIRD_PARTY_VENDOR', // Third-party vendor: Impact → Vendor (65/35)
 } as const;
 
 export type RoutingType = typeof ROUTING_TYPES[keyof typeof ROUTING_TYPES];
@@ -160,6 +163,45 @@ export function isBradfordToJDPO(po: { originCompanyId?: string | null; targetCo
 export function isImpactToBradfordPO(po: { originCompanyId?: string | null; targetCompanyId?: string | null }): boolean {
   return po.originCompanyId === COMPANY_IDS.IMPACT_DIRECT &&
          po.targetCompanyId === COMPANY_IDS.BRADFORD;
+}
+
+/**
+ * Check if a PO is Impact→JD (direct routing, bypassing Bradford)
+ */
+export function isImpactToJDPO(po: { originCompanyId?: string | null; targetCompanyId?: string | null }): boolean {
+  return po.originCompanyId === COMPANY_IDS.IMPACT_DIRECT &&
+         po.targetCompanyId === COMPANY_IDS.JD_GRAPHIC;
+}
+
+/**
+ * Check if routing type uses 65/35 split (IMPACT_JD or THIRD_PARTY_VENDOR)
+ */
+export function isDirectRoutingType(routingType: string | null | undefined): boolean {
+  return routingType === ROUTING_TYPES.IMPACT_JD ||
+         routingType === ROUTING_TYPES.THIRD_PARTY_VENDOR;
+}
+
+/**
+ * Get the company name that JD should write up the job for based on routing type
+ */
+export function getJobOriginCompanyForJD(routingType: string | null | undefined): {
+  companyId: string;
+  companyName: string;
+  onBehalfOf: string;
+} {
+  if (routingType === ROUTING_TYPES.IMPACT_JD) {
+    return {
+      companyId: COMPANY_IDS.IMPACT_DIRECT,
+      companyName: COMPANY_NAMES[COMPANY_IDS.IMPACT_DIRECT],
+      onBehalfOf: 'On behalf of Impact Direct',
+    };
+  }
+  // Default to Bradford for BRADFORD_JD routing
+  return {
+    companyId: COMPANY_IDS.BRADFORD,
+    companyName: COMPANY_NAMES[COMPANY_IDS.BRADFORD],
+    onBehalfOf: 'On behalf of Bradford Direct',
+  };
 }
 
 /**

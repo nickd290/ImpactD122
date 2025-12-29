@@ -1,23 +1,33 @@
 /**
  * Impact Direct Print Brokerage - Pricing Service
  *
- * 3-Tier Pricing Model:
- * ====================
+ * ROUTING TYPES:
+ * ==============
+ * 1. BRADFORD_JD (Bradford Commercial):
+ *    - Flow: Impact → Bradford → JD
+ *    - Bradford supplies paper (special sizes)
+ *    - Split: 50/50 + 18% paper markup to Bradford
+ *
+ * 2. IMPACT_JD (Impact Direct to JD):
+ *    - Flow: Impact → JD (direct)
+ *    - Standard sizes, not Bradford's paper
+ *    - Split: 65% Impact / 35% Bradford (referral fee)
+ *    - JD invoices Impact directly
+ *
+ * 3. THIRD_PARTY_VENDOR:
+ *    - Flow: Impact → Vendor (non-JD)
+ *    - Split: 65% Impact / 35% Bradford (referral fee)
+ *
+ * 3-Tier Pricing Model (BRADFORD_JD only):
+ * ========================================
  * Tier 1: JD charges Bradford (Print CPM + Paper CPM at raw cost)
  * Tier 2: Bradford charges Impact (Print pass-through + Paper with 18% markup)
  * Tier 3: Impact charges Customer (negotiated price)
  *
- * Profit Split Rules (ALWAYS APPLY):
- * ==================================
- * - Spread = Customer Price - Total Cost (includes paper markup)
- * - Split: 50% of spread to Impact, 50% of spread to Bradford
- * - Bradford ALSO keeps 18% paper markup when they supply paper
- * - So: Bradford = 50% spread + paper markup; Impact = 50% spread only
- *
  * Job Types:
  * ==========
  * - Standard Sizes: Auto-calculate from SELF_MAILER_PRICING table
- * - Custom Jobs: Manual cost entry, but 50/50 split still applies
+ * - Custom Jobs: Manual cost entry
  */
 
 import { SELF_MAILER_PRICING, normalizeSize, getSelfMailerPricing } from '../utils/bradfordPricing';
@@ -75,7 +85,7 @@ export interface ProfitSplitInput {
   sellPrice: number;          // What customer pays (total)
   totalCost: number;          // What Impact pays (from POs, excluding paper markup)
   paperMarkup: number;        // Bradford's 18% paper markup
-  routingType?: 'BRADFORD_JD' | 'THIRD_PARTY_VENDOR';  // Determines split: 50/50 vs 35/65
+  routingType?: 'BRADFORD_JD' | 'IMPACT_JD' | 'THIRD_PARTY_VENDOR';  // Determines split: 50/50 vs 35/65
 }
 
 export interface ProfitSplitResult {
@@ -235,18 +245,19 @@ export function calculateProfitSplit(input: ProfitSplitInput): ProfitSplitResult
   const spreadAmount = grossMargin;
 
   // Determine split based on routing type:
-  // - BRADFORD_JD (default): 50/50 split, Bradford gets paper markup
+  // - BRADFORD_JD (default): 50/50 split, Bradford gets paper markup (Bradford Commercial)
+  // - IMPACT_JD: 35/65 split (Bradford/Impact), no paper markup (Impact Direct to JD)
   // - THIRD_PARTY_VENDOR: 35/65 split (Bradford/Impact), no paper markup
-  const isThirdParty = routingType === 'THIRD_PARTY_VENDOR';
+  const isDirectRouting = routingType === 'IMPACT_JD' || routingType === 'THIRD_PARTY_VENDOR';
 
-  // Third-party vendors: Bradford 35%, Impact 65%
-  // Bradford jobs: 50/50 split
-  const bradfordSpreadShare = spreadAmount * (isThirdParty ? 0.35 : 0.5);
-  const impactSpreadShare = spreadAmount * (isThirdParty ? 0.65 : 0.5);
+  // Direct routing (IMPACT_JD, THIRD_PARTY_VENDOR): Bradford 35%, Impact 65%
+  // Bradford Commercial (BRADFORD_JD): 50/50 split
+  const bradfordSpreadShare = spreadAmount * (isDirectRouting ? 0.35 : 0.5);
+  const impactSpreadShare = spreadAmount * (isDirectRouting ? 0.65 : 0.5);
 
-  // For third-party jobs, vendor supplies paper so no paper markup to Bradford
-  // For Bradford jobs, Bradford gets paper markup + 50% of spread
-  const effectivePaperMarkup = isThirdParty ? 0 : paperMarkup;
+  // For direct routing jobs, no paper markup to Bradford (they don't supply paper)
+  // For Bradford Commercial jobs, Bradford gets paper markup + 50% of spread
+  const effectivePaperMarkup = isDirectRouting ? 0 : paperMarkup;
   const bradfordTotal = bradfordSpreadShare + effectivePaperMarkup;
   const impactTotal = impactSpreadShare;
 

@@ -750,6 +750,22 @@ export const generateVendorPOPDF = (jobData: any): Buffer => {
 
   currentY += 28;
 
+  // ===== ON BEHALF OF BANNER (for JD routing clarity) =====
+  const routingType = jobData.routingType || 'BRADFORD_JD';
+  const isImpactDirect = routingType === 'IMPACT_JD';
+  const onBehalfOf = isImpactDirect ? 'IMPACT DIRECT' : 'BRADFORD DIRECT';
+  const bannerColor: [number, number, number] = isImpactDirect ? [37, 99, 235] : [5, 150, 105]; // Blue for Impact, Green for Bradford
+
+  doc.setFillColor(...bannerColor);
+  doc.rect(20, currentY - 2, 170, 8, 'F');
+  doc.setFontSize(10);
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`ON BEHALF OF: ${onBehalfOf}`, 105, currentY + 3, { align: 'center' });
+  doc.setTextColor(0, 0, 0); // Reset text color
+
+  currentY += 12;
+
   // ===== OUTLINED DOCUMENT TITLE =====
   drawOutlinedText(doc, 'PURCHASE ORDER', 105, currentY, { align: 'center', fontSize: 20 });
 

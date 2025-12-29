@@ -836,8 +836,9 @@ enum Role {
 }
 
 enum RoutingType {
-  BRADFORD_JD
-  THIRD_PARTY_VENDOR
+  BRADFORD_JD         // Bradford Commercial: Impact → Bradford → JD (50/50 split + paper markup)
+  IMPACT_JD           // Impact Direct to JD: Impact → JD (65/35 split, Bradford gets referral fee)
+  THIRD_PARTY_VENDOR  // Third-party vendor: Impact → Vendor (65/35 split)
 }
 
 enum PaperSource {

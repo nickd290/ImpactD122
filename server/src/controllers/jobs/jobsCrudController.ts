@@ -308,27 +308,48 @@ export const createJob = async (req: Request, res: Response) => {
       include: JOB_INCLUDE,
     });
 
-    // Auto-create POs for BRADFORD_JD routing
+    // Auto-create POs based on routing type
     const routingType = rest.routingType || 'BRADFORD_JD';
     const poValidation = canCreateImpactPO({ quantity, sizeName, sellPrice });
-    const shouldCreatePOs = (routingType === 'BRADFORD_JD' && poValidation.valid) || isBradfordJob;
 
-    if (shouldCreatePOs && (totalCost > 0 || isBradfordJob)) {
-      await createBradfordPOs(jobId, jobNo, {
-        totalCost,
-        paperCost,
-        paperMarkup,
-        printCost,
-        sizeName,
-        quantity,
-        bradfordPricing,
-      });
+    if (routingType === 'IMPACT_JD') {
+      // IMPACT_JD: Impact → JD direct + Bradford referral fee
+      if (totalCost > 0 || sellPrice > 0) {
+        // Calculate Bradford's referral fee (35% of gross margin)
+        const grossMargin = sellPrice - totalCost;
+        const referralFee = grossMargin > 0 ? grossMargin * 0.35 : 0;
+
+        await createImpactJDPOs(jobId, jobNo, {
+          totalCost,
+          referralFee,
+          printCost,
+          sizeName,
+          quantity,
+        });
+      } else {
+        console.log(`Skipping IMPACT_JD PO creation for job ${jobNo}: No cost or sell price`);
+      }
     } else if (routingType === 'BRADFORD_JD') {
-      console.log(`Skipping PO creation for job ${jobNo}: ${poValidation.reason}`);
+      // BRADFORD_JD: Impact → Bradford → JD (Bradford Commercial)
+      const shouldCreatePOs = (poValidation.valid) || isBradfordJob;
+
+      if (shouldCreatePOs && (totalCost > 0 || isBradfordJob)) {
+        await createBradfordPOs(jobId, jobNo, {
+          totalCost,
+          paperCost,
+          paperMarkup,
+          printCost,
+          sizeName,
+          quantity,
+          bradfordPricing,
+        });
+      } else {
+        console.log(`Skipping BRADFORD_JD PO creation for job ${jobNo}: ${poValidation.reason}`);
+      }
     }
 
-    // Auto-create vendor PO for non-Bradford vendors
-    if (vendorId && !isBradfordJob) {
+    // Auto-create vendor PO for non-Bradford vendors (THIRD_PARTY_VENDOR routing)
+    if (vendorId && !isBradfordJob && routingType === 'THIRD_PARTY_VENDOR') {
       await createVendorPO(jobId, jobNo, vendorId, title, quantity, lineItems);
     }
 
@@ -967,6 +988,68 @@ async function createBradfordPOs(
     printCost,
     printCPMRate,
     paperSellCPMRate,
+  });
+}
+
+/**
+ * Create Impact→JD POs for IMPACT_JD routing (direct to JD, bypassing Bradford)
+ * Creates:
+ *  1. Impact → JD Graphic PO (manufacturing cost - JD invoices Impact)
+ *  2. Bradford referral PO (35% consulting fee)
+ */
+async function createImpactJDPOs(
+  jobId: string,
+  jobNo: string,
+  data: {
+    totalCost: number;      // What Impact pays JD
+    referralFee: number;    // Bradford's 35% referral fee
+    printCost: number;
+    sizeName?: string | null;
+    quantity: number;
+  }
+) {
+  const { totalCost, referralFee, printCost, sizeName, quantity } = data;
+  const timestamp = Date.now();
+
+  // Calculate CPM rate
+  const printCPMRate = quantity > 0 && printCost > 0 ? printCost / (quantity / 1000) : 0;
+
+  // PO 1: Impact Direct → JD Graphic (direct manufacturing)
+  await prisma.purchaseOrder.create({
+    data: {
+      id: crypto.randomUUID(),
+      jobId,
+      originCompanyId: COMPANY_IDS.IMPACT_DIRECT,
+      targetCompanyId: COMPANY_IDS.JD_GRAPHIC,
+      poNumber: `PO-${jobNo}-IJ-${timestamp}`,
+      description: `Impact to JD (Direct) - ${sizeName || 'Custom'} x ${quantity}`,
+      buyCost: totalCost,
+      mfgCost: printCost,
+      printCPM: printCPMRate,
+      status: 'PENDING',
+      updatedAt: new Date(),
+    },
+  });
+
+  // PO 2: Bradford referral/consulting fee
+  await prisma.purchaseOrder.create({
+    data: {
+      id: crypto.randomUUID(),
+      jobId,
+      originCompanyId: COMPANY_IDS.IMPACT_DIRECT,
+      targetCompanyId: COMPANY_IDS.BRADFORD,
+      poNumber: `PO-${jobNo}-BR-${timestamp}`,
+      description: `Bradford referral fee - ${sizeName || 'Custom'} x ${quantity}`,
+      buyCost: referralFee,
+      status: 'PENDING',
+      updatedAt: new Date(),
+    },
+  });
+
+  console.log(`📋 Auto-created Impact→JD POs for job ${jobNo}:`, {
+    impactToJDCost: totalCost,
+    bradfordReferralFee: referralFee,
+    printCPMRate,
   });
 }
 

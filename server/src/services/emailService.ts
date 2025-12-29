@@ -1189,6 +1189,7 @@ function getVendorPOWithPortalEmailBody(
   portalUrl: string,
   options?: {
     specialInstructions?: string;
+    routingType?: string;  // BRADFORD_JD, IMPACT_JD, or THIRD_PARTY_VENDOR
   }
 ): string {
   const poNumber = po.poNumber || po.id;
@@ -1203,6 +1204,12 @@ function getVendorPOWithPortalEmailBody(
       })
     : 'TBD';
 
+  // Determine "on behalf of" attribution based on routing type
+  const routingType = options?.routingType || job.routingType || 'BRADFORD_JD';
+  const isImpactDirect = routingType === 'IMPACT_JD';
+  const onBehalfOf = isImpactDirect ? 'Impact Direct' : 'Bradford Direct';
+  const onBehalfOfBadgeColor = isImpactDirect ? '#2563eb' : '#059669'; // Blue for Impact, Green for Bradford
+
   const instructionsSection = options?.specialInstructions ? `
     <div style="background: #fef9c3; border: 1px solid #fde047; border-radius: 8px; padding: 15px; margin: 20px 0;">
       <h4 style="margin: 0 0 10px 0; color: #854d0e;">Special Instructions:</h4>
@@ -1210,9 +1217,17 @@ function getVendorPOWithPortalEmailBody(
     </div>
   ` : '';
 
+  // Company attribution banner (shows who JD should write up the job for)
+  const companyAttributionBanner = `
+    <div style="background: ${onBehalfOfBadgeColor}; color: white; padding: 10px 15px; border-radius: 6px; margin-bottom: 20px; text-align: center;">
+      <strong>ON BEHALF OF: ${onBehalfOf.toUpperCase()}</strong>
+    </div>
+  `;
+
   return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
       <div style="padding: 25px; border: 1px solid #e5e7eb; border-radius: 8px;">
+        ${companyAttributionBanner}
         <h2 style="margin: 0 0 5px 0; color: #1f2937;">Purchase Order #${poNumber}</h2>
         <p style="margin: 0 0 20px 0; color: #6b7280;">Job #${jobNo}</p>
 
@@ -1271,12 +1286,18 @@ export async function sendVendorPOWithPortalEmail(
   portalUrl: string,
   options?: {
     specialInstructions?: string;
+    routingType?: string;  // BRADFORD_JD, IMPACT_JD, or THIRD_PARTY_VENDOR - determines "on behalf of"
   }
 ): Promise<EmailResult> {
   try {
     const jobNo = job.jobNo || job.id;
     const poNumber = po.poNumber || po.id;
-    const subject = `Purchase Order #${poNumber} - ${job.title || 'Job #' + jobNo}`;
+
+    // Include routing type in subject for JD clarity
+    const routingType = options?.routingType || job.routingType || 'BRADFORD_JD';
+    const onBehalfOf = routingType === 'IMPACT_JD' ? '[IMPACT]' : '[BRADFORD]';
+
+    const subject = `${onBehalfOf} Purchase Order #${poNumber} - ${job.title || 'Job #' + jobNo}`;
     const body = getVendorPOWithPortalEmailBody(po, vendorName, job, portalUrl, options);
     const replyTo = getJobEmailAddress(jobNo);
 
