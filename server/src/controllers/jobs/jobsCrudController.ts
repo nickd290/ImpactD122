@@ -1036,12 +1036,12 @@ async function createVendorPO(
   });
 
   // Auto-send PO email to vendor with portal (fire and forget)
-  if (vendor.email) {
+  const vendorEmail = vendor.email;
+  if (vendorEmail) {
     (async () => {
       try {
         const job = await prisma.job.findUnique({
           where: { id: jobId },
-          include: { JobSpecs: true },
         });
 
         // Create or get portal for this job
@@ -1064,13 +1064,14 @@ async function createVendorPO(
         const portalUrl = `${baseUrl}/api/portal/${portal.shareToken}`;
 
         // Send PO email with portal link
+        const specs = job?.specs as Record<string, any> | null;
         const result = await sendVendorPOWithPortalEmail(
           vendorPO,
           { ...job, jobNo, title },
-          vendor.email,
+          vendorEmail,
           vendor.name,
           portalUrl,
-          { specialInstructions: job?.JobSpecs?.specialInstructions || undefined }
+          { specialInstructions: specs?.specialInstructions || undefined }
         );
 
         if (result.success) {
@@ -1079,7 +1080,7 @@ async function createVendorPO(
             where: { id: vendorPO.id },
             data: {
               emailedAt: result.emailedAt,
-              emailedTo: vendor.email,
+              emailedTo: vendorEmail,
             },
           });
           console.log(`📧 Auto-sent Vendor PO to ${vendor.email} for job ${jobNo}`);

@@ -757,7 +757,8 @@ export const createJob = async (req: Request, res: Response) => {
         });
 
         // Auto-send PO email to vendor with portal (fire and forget)
-        if (vendor.email) {
+        const vendorEmail = vendor.email;
+        if (vendorEmail) {
           (async () => {
             try {
               // Create or get portal for this job
@@ -783,7 +784,7 @@ export const createJob = async (req: Request, res: Response) => {
               const result = await sendVendorPOWithPortalEmail(
                 vendorPO,
                 { ...job, jobNo, title },
-                vendor.email,
+                vendorEmail,
                 vendor.name,
                 portalUrl,
                 { specialInstructions: jobSpecs?.specialInstructions || undefined }
@@ -795,10 +796,10 @@ export const createJob = async (req: Request, res: Response) => {
                   where: { id: vendorPO.id },
                   data: {
                     emailedAt: result.emailedAt,
-                    emailedTo: vendor.email,
+                    emailedTo: vendorEmail,
                   },
                 });
-                console.log(`📧 Auto-sent Vendor PO to ${vendor.email} for job ${jobNo}`);
+                console.log(`📧 Auto-sent Vendor PO to ${vendorEmail} for job ${jobNo}`);
               } else {
                 console.error(`❌ Failed to auto-send Vendor PO for job ${jobNo}:`, result.error);
               }
