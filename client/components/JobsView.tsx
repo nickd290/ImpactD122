@@ -525,6 +525,7 @@ export function JobsView({
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Job</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Customer</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Vendor</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Status</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">PO #</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Due</th>
@@ -554,11 +555,37 @@ export function JobsView({
                     {/* Job */}
                     <td onClick={() => handleRowClick(job)} className="px-4 py-3 cursor-pointer">
                       <div className="text-sm font-medium text-zinc-900 hover:text-zinc-600">{job.number} - {job.title}</div>
-                      {job.vendor?.name && <div className="text-xs text-zinc-400">{job.vendor.name}</div>}
                     </td>
                     {/* Customer */}
                     <td className="px-4 py-3">
                       <span className="text-sm text-zinc-600">{job.customer?.name || '—'}</span>
+                    </td>
+                    {/* Vendor */}
+                    <td className="px-4 py-3">
+                      {job.vendor?.name ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-zinc-700">{job.vendor.name}</span>
+                          {job.vendor.isPartner && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700">
+                              Partner
+                            </span>
+                          )}
+                          {/* PO Status Indicator */}
+                          {(() => {
+                            const pos = (job as any).purchaseOrders || [];
+                            const hasSentPO = pos.some((po: any) => po.emailedAt);
+                            const hasPO = pos.length > 0;
+                            if (hasSentPO) {
+                              return <span className="w-2 h-2 rounded-full bg-green-500" title="PO Sent" />;
+                            } else if (hasPO) {
+                              return <span className="w-2 h-2 rounded-full bg-yellow-400" title="PO Pending" />;
+                            }
+                            return <span className="w-2 h-2 rounded-full bg-gray-300" title="No PO" />;
+                          })()}
+                        </div>
+                      ) : (
+                        <span className="text-sm text-zinc-400">—</span>
+                      )}
                     </td>
                     {/* Status */}
                     <td className="px-4 py-3">

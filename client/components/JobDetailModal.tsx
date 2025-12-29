@@ -1472,6 +1472,207 @@ export function JobDetailModal({
   );
   };
 
+  // Visual Vendor Cards Section - Groups POs by vendor with clear status/cost display
+  const VendorCardsSection = () => {
+    // Group POs by vendor
+    const posByVendor = useMemo(() => {
+      const grouped: Record<string, {
+        vendorId: string;
+        vendorName: string;
+        isPartner: boolean;
+        pos: typeof job.purchaseOrders;
+        totalCost: number;
+        paperCost: number;
+        paperMarkup: number;
+        mfgCost: number;
+        hasSentPO: boolean;
+      }> = {};
+
+      (job.purchaseOrders || []).forEach((po) => {
+        // Only show Impact-origin POs (our costs)
+        if (po.originCompanyId !== 'impact-direct') return;
+
+        const vendorId = po.vendorId || po.vendor?.id || po.targetCompanyId || 'unknown';
+        const vendorName = po.vendor?.name ||
+          (po.targetCompanyId === 'bradford' ? 'Bradford Printing' :
+           po.targetCompanyId === 'jd-graphic' ? 'JD Graphic' : 'Unknown Vendor');
+        const isPartner = po.vendor?.isPartner || vendorName.toLowerCase().includes('bradford');
+
+        if (!grouped[vendorId]) {
+          grouped[vendorId] = {
+            vendorId,
+            vendorName,
+            isPartner,
+            pos: [],
+            totalCost: 0,
+            paperCost: 0,
+            paperMarkup: 0,
+            mfgCost: 0,
+            hasSentPO: false,
+          };
+        }
+
+        grouped[vendorId].pos!.push(po);
+        grouped[vendorId].totalCost += po.buyCost || 0;
+        grouped[vendorId].paperCost += po.paperCost || 0;
+        grouped[vendorId].paperMarkup += po.paperMarkup || (po.paperCost ? po.paperCost * 0.18 : 0);
+        grouped[vendorId].mfgCost += po.mfgCost || 0;
+        if (po.emailedAt) grouped[vendorId].hasSentPO = true;
+      });
+
+      return Object.values(grouped);
+    }, [job.purchaseOrders]);
+
+    // Calculate totals
+    const totalVendorCost = posByVendor.reduce((sum, v) => sum + v.totalCost, 0);
+    const sellPrice = job.sellPrice || 0;
+    const profit = sellPrice - totalVendorCost;
+    const profitPercent = sellPrice > 0 ? (profit / sellPrice) * 100 : 0;
+
+    const formatCurrency = (val: number) => `$${val.toFixed(2)}`;
+    const formatDate = (dateStr: string) => {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    };
+
+    if (posByVendor.length === 0) {
+      return (
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
+          <Package className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+          <p className="text-sm text-gray-500">No vendor purchase orders yet</p>
+          <p className="text-xs text-gray-400 mt-1">Create a PO below to track vendor costs</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        {/* Cost Summary Bar */}
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div>
+              <p className="text-xs text-gray-500 uppercase mb-1">Sell Price</p>
+              <p className="text-xl font-bold text-gray-900">{formatCurrency(sellPrice)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase mb-1">Total Cost</p>
+              <p className="text-xl font-bold text-gray-700">{formatCurrency(totalVendorCost)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase mb-1">Profit</p>
+              <p className={`text-xl font-bold ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {formatCurrency(profit)} <span className="text-sm font-normal">({profitPercent.toFixed(1)}%)</span>
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Vendor Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {posByVendor.map((vendor) => (
+            <div key={vendor.vendorId} className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+              {/* Vendor Header */}
+              <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-5 h-5 text-gray-500" />
+                  <span className="font-semibold text-gray-900">{vendor.vendorName}</span>
+                  {vendor.isPartner ? (
+                    <span className="px-2 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 rounded">Partner</span>
+                  ) : (
+                    <span className="px-2 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-600 rounded">Third-Party</span>
+                  )}
+                </div>
+                {/* PO Status */}
+                {vendor.hasSentPO ? (
+                  <span className="flex items-center gap-1 text-xs text-green-600">
+                    <Check className="w-3 h-3" /> PO Sent
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-xs text-amber-600">
+                    <AlertTriangle className="w-3 h-3" /> Pending
+                  </span>
+                )}
+              </div>
+
+              {/* Cost Breakdown */}
+              <div className="p-4 space-y-3">
+                {/* Individual POs */}
+                {vendor.pos!.map((po) => (
+                  <div key={po.id} className="flex items-center justify-between text-sm border-b border-gray-100 pb-2 last:border-0 last:pb-0">
+                    <div className="flex-1">
+                      <span className="font-mono text-xs text-gray-500">{po.poNumber || '—'}</span>
+                      <p className="text-gray-700 truncate" title={po.description}>{po.description || 'No description'}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold text-gray-900">{formatCurrency(po.buyCost || 0)}</p>
+                      {po.emailedAt && (
+                        <p className="text-[10px] text-green-600">Sent {formatDate(po.emailedAt)}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Cost Details */}
+                {(vendor.paperCost > 0 || vendor.mfgCost > 0) && (
+                  <div className="pt-2 border-t border-gray-100 grid grid-cols-3 gap-2 text-xs">
+                    <div className="text-center">
+                      <p className="text-gray-400 uppercase">Paper</p>
+                      <p className="font-medium text-amber-700">{formatCurrency(vendor.paperCost)}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-gray-400 uppercase">Markup 18%</p>
+                      <p className="font-medium text-blue-700">{formatCurrency(vendor.paperMarkup)}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-gray-400 uppercase">Mfg</p>
+                      <p className="font-medium text-purple-700">{formatCurrency(vendor.mfgCost)}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Vendor Total */}
+                <div className="pt-2 border-t border-gray-200 flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-600">Vendor Total</span>
+                  <span className="text-lg font-bold text-gray-900">{formatCurrency(vendor.totalCost)}</span>
+                </div>
+
+                {/* Quick Actions */}
+                <div className="pt-2 flex gap-2">
+                  {vendor.pos!.length > 0 && vendor.pos![0].id && (
+                    <>
+                      <button
+                        onClick={() => handleDownloadPO(vendor.pos![0].id)}
+                        className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded font-medium"
+                      >
+                        <Download className="w-3 h-3" /> Download PO
+                      </button>
+                      {!vendor.hasSentPO && vendor.pos![0].id && (
+                        <button
+                          onClick={() => {
+                            const po = vendor.pos![0];
+                            setSelectedPOForEmail({
+                              id: po.id,
+                              poNumber: po.poNumber,
+                              vendorEmail: vendor.pos![0].vendor?.email || job.vendor?.email || '',
+                              vendorName: vendor.vendorName,
+                            });
+                          }}
+                          className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 rounded font-medium"
+                        >
+                          <Send className="w-3 h-3" /> Send Email
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   const PricingTab = () => {
     // Extract PO data for cost breakdown
     // Check both targetCompanyId and targetVendorId since manual POs use vendor links
@@ -2770,8 +2971,24 @@ export function JobDetailModal({
             )}
             {activeTab === 'vendors-costs' && (
               <div className="space-y-6">
-                {PricingTab()}
-                <div className="pt-6 border-t border-gray-200">
+                {/* Visual Vendor Cards - At a glance vendor/cost overview */}
+                {VendorCardsSection()}
+
+                {/* Detailed Cost Breakdown */}
+                <div className="pt-4 border-t border-gray-200">
+                  <details className="group">
+                    <summary className="flex items-center justify-between cursor-pointer text-sm font-medium text-gray-600 hover:text-gray-900 py-2">
+                      <span>Detailed Cost Breakdown</span>
+                      <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
+                    </summary>
+                    <div className="pt-4">
+                      {PricingTab()}
+                    </div>
+                  </details>
+                </div>
+
+                {/* Purchase Orders Management */}
+                <div className="pt-4 border-t border-gray-200">
                   {PurchaseOrdersTab()}
                 </div>
               </div>
