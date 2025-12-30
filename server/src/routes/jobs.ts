@@ -41,7 +41,6 @@ router.post('/import', importBatchJobs);
 router.post('/batch-delete', batchDeleteJobs);
 router.post('/bulk-update-paper-source', bulkUpdatePaperSource);
 router.put('/:id', updateJob);
-router.patch('/:id', updateJob);  // Support both PUT and PATCH for job updates
 router.delete('/:id', deleteJob);
 router.patch('/:id/status', updateJobStatus);
 router.patch('/:id/lock', toggleJobLock);
@@ -69,8 +68,8 @@ router.patch('/:id/jd-paid', markJDPaid);
 // PO management routes
 router.get('/:jobId/pos', getJobPOs);
 router.post('/:jobId/pos', createJobPO);
-router.put('/pos/:poId', updatePO);
-router.delete('/pos/:poId', deletePO);
+router.put('/:jobId/pos/:poId', updatePO);
+router.delete('/:jobId/pos/:poId', deletePO);
 
 // Invoice status
 router.patch('/invoices/:invoiceId/status', updateInvoiceStatus);

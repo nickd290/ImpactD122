@@ -592,6 +592,20 @@ export function JobDetailModal({
     }
   };
 
+  // Check if a vendor has any email addresses (main email or contacts)
+  const hasVendorEmail = (vendor?: { email?: string; contacts?: Array<{ email?: string }> }) => {
+    if (!vendor) return false;
+    if (vendor.email) return true;
+    return vendor.contacts?.some(c => c.email) || false;
+  };
+
+  // Get email availability for a PO (checks PO vendor, then job vendor)
+  const getPOEmailStatus = (po: any) => {
+    const vendorWithEmail = po.vendor?.email || po.vendor?.contacts?.some((c: any) => c.email);
+    const jobVendorWithEmail = job.vendor?.email || job.vendor?.contacts?.some((c: any) => c.email);
+    return vendorWithEmail || jobVendorWithEmail;
+  };
+
   // PO Management with smart creation
   const handleAddPO = async () => {
     // For Impact → Vendor POs, must have a vendor on the job
@@ -656,7 +670,7 @@ export function JobDetailModal({
     if (!confirm('Delete this purchase order?')) return;
 
     try {
-      const response = await fetch(`/api/jobs/pos/${poId}`, { method: 'DELETE' });
+      const response = await fetch(`/api/jobs/${job.id}/pos/${poId}`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Failed to delete PO');
       if (onRefresh) onRefresh();
     } catch (error) {
@@ -745,7 +759,7 @@ export function JobDetailModal({
         calculatedBuyCost = editPOData.buyCost ? parseFloat(editPOData.buyCost) : undefined;
       }
 
-      const response = await fetch(`/api/jobs/pos/${poId}`, {
+      const response = await fetch(`/api/jobs/${job.id}/pos/${poId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1740,22 +1754,35 @@ export function JobDetailModal({
                         <Download className="w-3 h-3" /> Download PO
                       </button>
                       {!vendor.hasSentPO && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const po = vendor.pos![0];
-                            setSelectedPOForEmail({
-                              id: po.id,
-                              jobId: job.id,
-                              poNumber: po.poNumber,
-                              vendorEmail: po.vendor?.email || job.vendor?.email || '',
-                              vendorName: vendor.vendorName,
-                            });
-                          }}
-                          className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 rounded font-medium"
-                        >
-                          <Send className="w-3 h-3" /> Send Email
-                        </button>
+                        (() => {
+                          const po = vendor.pos![0];
+                          const hasEmail = getPOEmailStatus(po);
+                          return hasEmail ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedPOForEmail({
+                                  id: po.id,
+                                  jobId: job.id,
+                                  poNumber: po.poNumber,
+                                  vendorEmail: po.vendor?.email || job.vendor?.email || '',
+                                  vendorName: vendor.vendorName,
+                                  vendorContacts: po.vendor?.contacts || job.vendor?.contacts || [],
+                                });
+                              }}
+                              className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 rounded font-medium"
+                            >
+                              <Send className="w-3 h-3" /> Send Email
+                            </button>
+                          ) : (
+                            <span
+                              title="Vendor has no email address"
+                              className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs text-gray-400 bg-gray-100 rounded font-medium cursor-not-allowed"
+                            >
+                              <Send className="w-3 h-3" /> No Email
+                            </span>
+                          );
+                        })()
                       )}
                     </>
                   )}
@@ -2957,36 +2984,52 @@ export function JobDetailModal({
 
                         {/* PO to Vendor(s) */}
                         {job.purchaseOrders && job.purchaseOrders.length > 0 ? (
-                          job.purchaseOrders.map((po: any) => (
-                            <button
-                              key={po.id}
-                              onClick={() => {
-                                setEmailType('po');
-                                setSelectedPOForEmail({
-                                  id: po.id,
-                                  jobId: job.id,
-                                  poNumber: po.poNumber,
-                                  vendorName: po.vendor?.name || po.targetCompany?.name || job.vendor?.name || 'Vendor',
-                                  vendorEmail: po.vendor?.email || po.targetCompany?.email || job.vendor?.email,
-                                  vendorContacts: po.vendor?.contacts || job.vendor?.contacts || [],
-                                });
-                                setShowEmailDropdown(false);
-                              }}
-                              className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
-                            >
-                              <FileText className="w-4 h-4 text-gray-500" />
-                              <div className="flex-1">
-                                <div className="font-medium text-gray-900">PO to {po.targetCompany?.name?.slice(0, 15) || 'Vendor'}</div>
-                                <div className="text-xs text-gray-500">PO #{po.poNumber}</div>
+                          job.purchaseOrders.map((po: any) => {
+                            const hasEmail = getPOEmailStatus(po);
+                            const vendorDisplayName = po.vendor?.name || po.targetCompany?.name || job.vendor?.name || 'Vendor';
+                            return hasEmail ? (
+                              <button
+                                key={po.id}
+                                onClick={() => {
+                                  setEmailType('po');
+                                  setSelectedPOForEmail({
+                                    id: po.id,
+                                    jobId: job.id,
+                                    poNumber: po.poNumber,
+                                    vendorName: vendorDisplayName,
+                                    vendorEmail: po.vendor?.email || po.targetCompany?.email || job.vendor?.email,
+                                    vendorContacts: po.vendor?.contacts || job.vendor?.contacts || [],
+                                  });
+                                  setShowEmailDropdown(false);
+                                }}
+                                className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                              >
+                                <FileText className="w-4 h-4 text-gray-500" />
+                                <div className="flex-1">
+                                  <div className="font-medium text-gray-900">PO to {vendorDisplayName.slice(0, 15)}</div>
+                                  <div className="text-xs text-gray-500">PO #{po.poNumber}</div>
+                                </div>
+                                {po.emailedAt && (
+                                  <span className="text-xs text-green-600 flex items-center gap-1">
+                                    <Check className="w-3 h-3" />
+                                    Sent
+                                  </span>
+                                )}
+                              </button>
+                            ) : (
+                              <div
+                                key={po.id}
+                                className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm bg-gray-50 border-b border-gray-100 last:border-b-0 cursor-not-allowed"
+                                title="Vendor has no email address"
+                              >
+                                <FileText className="w-4 h-4 text-gray-300" />
+                                <div className="flex-1">
+                                  <div className="font-medium text-gray-400">PO to {vendorDisplayName.slice(0, 15)}</div>
+                                  <div className="text-xs text-red-400">No email address</div>
+                                </div>
                               </div>
-                              {po.emailedAt && (
-                                <span className="text-xs text-green-600 flex items-center gap-1">
-                                  <Check className="w-3 h-3" />
-                                  Sent
-                                </span>
-                              )}
-                            </button>
-                          ))
+                            );
+                          })
                         ) : (
                           <div className="px-4 py-3 text-sm text-gray-500">
                             No POs to send
