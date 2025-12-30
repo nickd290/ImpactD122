@@ -158,6 +158,42 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [collapsedStages, setCollapsedStages] = useState<Set<string>>(new Set());
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+
+  // Extract unique customers from all jobs
+  const customers = useMemo(() => {
+    const customerMap = new Map<string, { id: string; name: string; jobCount: number }>();
+    stages.forEach(stage => {
+      stage.jobs.forEach(job => {
+        const existing = customerMap.get(job.customerId);
+        if (existing) {
+          existing.jobCount++;
+        } else {
+          customerMap.set(job.customerId, {
+            id: job.customerId,
+            name: job.customerName,
+            jobCount: 1,
+          });
+        }
+      });
+    });
+    return Array.from(customerMap.values()).sort((a, b) => b.jobCount - a.jobCount);
+  }, [stages]);
+
+  // Filter stages by selected customer
+  const filteredStages = useMemo(() => {
+    if (!selectedCustomerId) return stages;
+    return stages.map(stage => ({
+      ...stage,
+      jobs: stage.jobs.filter(job => job.customerId === selectedCustomerId),
+      count: stage.jobs.filter(job => job.customerId === selectedCustomerId).length,
+    })).filter(stage => stage.count > 0);
+  }, [stages, selectedCustomerId]);
+
+  // Count filtered jobs
+  const filteredJobCount = useMemo(() => {
+    return filteredStages.reduce((sum, stage) => sum + stage.count, 0);
+  }, [filteredStages]);
 
   // Fetch workflow data
   const fetchWorkflowData = async () => {
@@ -275,7 +311,9 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
       <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b">
         <div className="flex items-center gap-4">
           <h2 className="text-lg font-semibold text-gray-900">Jobs Control Station</h2>
-          <Badge variant="outline">{totalActive} Active Jobs</Badge>
+          <Badge variant="outline">
+            {selectedCustomerId ? `${filteredJobCount} of ${totalActive}` : totalActive} Active Jobs
+          </Badge>
         </div>
         <Button
           variant="ghost"
@@ -290,9 +328,42 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
         </Button>
       </div>
 
+      {/* Customer Tabs */}
+      {customers.length > 1 && (
+        <div className="px-4 py-2 bg-white border-b overflow-x-auto">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedCustomerId(null)}
+              className={cn(
+                'px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
+                !selectedCustomerId
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              )}
+            >
+              All ({totalActive})
+            </button>
+            {customers.map((customer) => (
+              <button
+                key={customer.id}
+                onClick={() => setSelectedCustomerId(customer.id)}
+                className={cn(
+                  'px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
+                  selectedCustomerId === customer.id
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                )}
+              >
+                {customer.name} ({customer.jobCount})
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Workflow Stages */}
       <div className="divide-y divide-gray-200">
-        {stages.map((stage) => {
+        {filteredStages.map((stage) => {
           const isCollapsed = collapsedStages.has(stage.status);
 
           return (
@@ -354,11 +425,11 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
                               </span>
                             </td>
                             <td className="px-3 py-2">
-                              <div className="font-medium text-gray-900 truncate max-w-[150px]">
+                              <div className="font-medium text-gray-900">
                                 {job.customerName}
                               </div>
                               {job.title && (
-                                <div className="text-xs text-gray-500 truncate max-w-[150px]">
+                                <div className="text-xs text-gray-500">
                                   {job.title}
                                 </div>
                               )}
@@ -409,10 +480,18 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
       </div>
 
       {/* Empty State for No Stages */}
-      {stages.length === 0 && (
+      {filteredStages.length === 0 && (
         <div className="flex flex-col items-center justify-center py-12 text-gray-500">
           <Package className="w-12 h-12 mb-4 opacity-50" />
-          <p>No active jobs to display</p>
+          <p>{selectedCustomerId ? 'No jobs for this customer' : 'No active jobs to display'}</p>
+          {selectedCustomerId && (
+            <button
+              onClick={() => setSelectedCustomerId(null)}
+              className="mt-2 text-blue-600 hover:text-blue-700 text-sm"
+            >
+              Show all customers
+            </button>
+          )}
         </div>
       )}
     </div>

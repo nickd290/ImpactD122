@@ -842,7 +842,7 @@ export function JobDetailModal({
     try {
       console.log('[handleSaveJob] Saving editedJob:', editedJob);
       const response = await fetch(`/api/jobs/${job.id}`, {
-        method: 'PATCH',
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editedJob),
       });
