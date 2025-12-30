@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ChevronDown, ChevronRight, CheckCircle2, Clock, AlertCircle, Circle, FileText, Database, Package, Truck, RefreshCw, MessageSquare, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, CheckCircle2, Clock, AlertCircle, Circle, FileText, Database, Package, Truck, RefreshCw, MessageSquare, X, Check, ClipboardList } from 'lucide-react';
 import { Button, Badge } from './ui';
 import { cn } from '../lib/utils';
 import { jobsApi, communicationsApi } from '../lib/api';
@@ -48,6 +48,10 @@ interface WorkflowJob {
   poNumber: string | null;
   poSentAt: string | null;
   qc: QCIndicators;
+  // Active task (production meeting action items)
+  activeTask: string | null;
+  activeTaskCreatedAt: string | null;
+  activeTaskCreatedBy: string | null;
 }
 
 interface WorkflowStage {
@@ -160,11 +164,12 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
   const [collapsedStages, setCollapsedStages] = useState<Set<string>>(new Set());
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
 
-  // Quick note state
-  const [quickNoteJobId, setQuickNoteJobId] = useState<string | null>(null);
-  const [quickNoteJobNo, setQuickNoteJobNo] = useState<string>('');
-  const [noteText, setNoteText] = useState('');
-  const [savingNote, setSavingNote] = useState(false);
+  // Task modal state
+  const [taskModalJobId, setTaskModalJobId] = useState<string | null>(null);
+  const [taskModalJobNo, setTaskModalJobNo] = useState<string>('');
+  const [taskText, setTaskText] = useState('');
+  const [savingTask, setSavingTask] = useState(false);
+  const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
 
   // Extract unique customers from all jobs
   const customers = useMemo(() => {
@@ -233,27 +238,43 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
     });
   };
 
-  // Open quick note modal
-  const openQuickNote = (jobId: string, jobNo: string, e: React.MouseEvent) => {
+  // Open task modal
+  const openTaskModal = (jobId: string, jobNo: string, existingTask: string | null, e: React.MouseEvent) => {
     e.stopPropagation(); // Don't trigger row click
-    setQuickNoteJobId(jobId);
-    setQuickNoteJobNo(jobNo);
-    setNoteText('');
+    setTaskModalJobId(jobId);
+    setTaskModalJobNo(jobNo);
+    setTaskText(existingTask || '');
   };
 
-  // Save quick note
-  const handleSaveNote = async () => {
-    if (!quickNoteJobId || !noteText.trim()) return;
-    setSavingNote(true);
+  // Save task
+  const handleSaveTask = async () => {
+    if (!taskModalJobId || !taskText.trim()) return;
+    setSavingTask(true);
     try {
-      await communicationsApi.addNote(quickNoteJobId, noteText.trim());
-      setQuickNoteJobId(null);
-      setNoteText('');
-      // Optionally refresh or show success
+      await jobsApi.setTask(taskModalJobId, taskText.trim());
+      setTaskModalJobId(null);
+      setTaskText('');
+      // Refresh to show highlighted row
+      fetchWorkflowData();
     } catch (err) {
-      console.error('Failed to save note:', err);
+      console.error('Failed to save task:', err);
     } finally {
-      setSavingNote(false);
+      setSavingTask(false);
+    }
+  };
+
+  // Complete task
+  const handleCompleteTask = async (jobId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Don't trigger row click
+    setCompletingTaskId(jobId);
+    try {
+      await jobsApi.completeTask(jobId);
+      // Refresh to remove highlight
+      fetchWorkflowData();
+    } catch (err) {
+      console.error('Failed to complete task:', err);
+    } finally {
+      setCompletingTaskId(null);
     }
   };
 
@@ -438,12 +459,18 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
                     <tbody className="divide-y divide-gray-100">
                       {stage.jobs.map((job) => {
                         const dueInfo = getDaysUntil(job.deliveryDate);
+                        const hasTask = !!job.activeTask;
 
                         return (
                           <tr
                             key={job.id}
                             onClick={() => onSelectJob(job.id)}
-                            className="hover:bg-blue-50 cursor-pointer transition-colors"
+                            className={cn(
+                              "cursor-pointer transition-colors",
+                              hasTask
+                                ? "bg-amber-50 hover:bg-amber-100 border-l-4 border-l-amber-400"
+                                : "hover:bg-blue-50"
+                            )}
                           >
                             <td className="px-3 py-2">
                               <span className="font-mono text-blue-600 font-medium text-xs">
@@ -462,6 +489,12 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
                               {job.title && (
                                 <div className="text-xs text-gray-500">
                                   {job.title}
+                                </div>
+                              )}
+                              {/* Show active task below title */}
+                              {hasTask && (
+                                <div className="text-xs text-amber-700 font-medium mt-1 truncate max-w-[200px]" title={job.activeTask || ''}>
+                                  📋 {job.activeTask}
                                 </div>
                               )}
                             </td>
@@ -491,14 +524,37 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
                             <td className="px-3 py-2">
                               {renderQCIndicators(job)}
                             </td>
-                            <td className="px-3 py-2 text-center">
-                              <button
-                                onClick={(e) => openQuickNote(job.id, job.jobNo, e)}
-                                className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                                title="Add note"
-                              >
-                                <MessageSquare className="w-4 h-4" />
-                              </button>
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-1">
+                                {/* Complete task button (only if task exists) */}
+                                {hasTask && (
+                                  <button
+                                    onClick={(e) => handleCompleteTask(job.id, e)}
+                                    className="p-1 text-green-600 hover:text-green-700 hover:bg-green-50 rounded transition-colors"
+                                    title="Complete task"
+                                    disabled={completingTaskId === job.id}
+                                  >
+                                    {completingTaskId === job.id ? (
+                                      <RefreshCw className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                      <Check className="w-4 h-4" />
+                                    )}
+                                  </button>
+                                )}
+                                {/* Add/edit task button */}
+                                <button
+                                  onClick={(e) => openTaskModal(job.id, job.jobNo, job.activeTask, e)}
+                                  className={cn(
+                                    "p-1 rounded transition-colors",
+                                    hasTask
+                                      ? "text-amber-600 hover:text-amber-700 hover:bg-amber-100"
+                                      : "text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                                  )}
+                                  title={hasTask ? "Edit task" : "Add task"}
+                                >
+                                  <ClipboardList className="w-4 h-4" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -535,37 +591,43 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
         </div>
       )}
 
-      {/* Quick Note Modal */}
-      {quickNoteJobId && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setQuickNoteJobId(null)}>
+      {/* Task Modal */}
+      {taskModalJobId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setTaskModalJobId(null)}>
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-4 py-3 border-b">
-              <h3 className="font-semibold text-gray-900">Add Note - Job {quickNoteJobNo}</h3>
+            <div className="flex items-center justify-between px-4 py-3 border-b bg-amber-50">
+              <h3 className="font-semibold text-gray-900">
+                <span className="text-amber-600">📋</span> Task - Job {taskModalJobNo}
+              </h3>
               <button
-                onClick={() => setQuickNoteJobId(null)}
+                onClick={() => setTaskModalJobId(null)}
                 className="p-1 text-gray-400 hover:text-gray-600 rounded"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             <div className="p-4">
+              <p className="text-sm text-gray-600 mb-2">
+                Jobs with tasks are highlighted until marked complete.
+              </p>
               <textarea
-                value={noteText}
-                onChange={(e) => setNoteText(e.target.value)}
-                placeholder="Enter your note..."
-                className="w-full h-32 px-3 py-2 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={taskText}
+                onChange={(e) => setTaskText(e.target.value)}
+                placeholder="What needs to be done for this job?"
+                className="w-full h-24 px-3 py-2 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-amber-500"
                 autoFocus
               />
             </div>
             <div className="flex justify-end gap-2 px-4 py-3 border-t bg-gray-50">
-              <Button variant="outline" onClick={() => setQuickNoteJobId(null)}>
+              <Button variant="outline" onClick={() => setTaskModalJobId(null)}>
                 Cancel
               </Button>
               <Button
-                onClick={handleSaveNote}
-                disabled={!noteText.trim() || savingNote}
+                onClick={handleSaveTask}
+                disabled={!taskText.trim() || savingTask}
+                className="bg-amber-600 hover:bg-amber-700"
               >
-                {savingNote ? 'Saving...' : 'Save Note'}
+                {savingTask ? 'Saving...' : 'Set Task'}
               </Button>
             </div>
           </div>

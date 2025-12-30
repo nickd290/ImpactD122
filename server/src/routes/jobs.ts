@@ -22,7 +22,9 @@ import {
   updatePO,
   deletePO,
   // Multi-step payment workflow (4-step process)
+  markInvoiceSent,
   markCustomerPaid,
+  markVendorPaid,
   markImpactToBradfordPaid,
   sendJDInvoice,
   downloadJDInvoicePDF,
@@ -34,6 +36,9 @@ import {
   updateQCOverrides,
   // Workflow status override
   updateWorkflowStatus,
+  // Active tasks (production meeting action items)
+  setJobTask,
+  completeJobTask,
 } from '../controllers/jobsController';
 
 const router = Router();
@@ -55,13 +60,21 @@ router.patch('/:id/bradford-payment', updateBradfordPayment);
 router.patch('/:id/qc-overrides', updateQCOverrides);
 router.patch('/:id/workflow-status', updateWorkflowStatus);
 
+// Active task routes (production meeting action items)
+router.patch('/:id/task', setJobTask);
+router.patch('/:id/task/complete', completeJobTask);
+
 // NEW: Payment tracking routes
 router.patch('/:id/payments', updatePayments);
 router.post('/batch-payment', batchUpdatePayments);
 
 // Multi-step payment workflow (4-step process)
+// Invoice sent (manual tracking)
+router.patch('/:id/invoice-sent', markInvoiceSent);
 // Step 1: Customer → Impact (Financials tab)
 router.patch('/:id/customer-paid', markCustomerPaid);
+// Vendor payment (for non-Bradford vendors)
+router.patch('/:id/vendor-paid', markVendorPaid);
 // Step 2: Impact → Bradford (Bradford Stats tab) - triggers JD Invoice
 router.patch('/:id/bradford-paid', markImpactToBradfordPaid);
 // Step 3: Send JD Invoice manually (can resend)

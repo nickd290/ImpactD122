@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   X, Calendar, User, Package, FileText, Edit2, Mail, Printer, Receipt,
-  DollarSign, Plus, Trash2, Building2, Check, Save, Download, AlertTriangle, Send, ChevronDown, Link, ExternalLink, MessageSquare, Upload, Truck
+  DollarSign, Plus, Trash2, Building2, Check, Save, Download, AlertTriangle, Send, ChevronDown, Link, ExternalLink, MessageSquare, Upload, Truck, Circle, CheckCircle2
 } from 'lucide-react';
 import { toDateInputValue } from '../lib/utils';
 import { EditableField } from './EditableField';
@@ -11,7 +11,7 @@ import { pdfApi, emailApi, communicationsApi, invoiceApi, filesApi, jobsApi } fr
 import { SendEmailModal } from './SendEmailModal';
 import { CommunicationThread } from './CommunicationThread';
 import { useQuery } from '@tanstack/react-query';
-import { WorkflowStatusBadge, getNextWorkflowStatuses } from './WorkflowStatusBadge';
+import { WorkflowStatusBadge, getNextWorkflowStatuses, WORKFLOW_STAGES, getStageIndex } from './WorkflowStatusBadge';
 import { PDFPreviewModal } from './PDFPreviewModal';
 
 interface Job {
@@ -136,6 +136,7 @@ interface Job {
     impactSpreadShare?: number;
     bradfordTotal: number;
     impactTotal: number;
+    bradfordOwesJD?: number;
     marginPercent?: number;
     poCount?: number;
     isOverridden?: boolean;
@@ -196,7 +197,14 @@ interface Job {
   workflowStatus?: string;
   workflowStatusOverride?: string;
   workflowUpdatedAt?: string;
+  // JD Payment tracking
   jdInvoiceNumber?: string;
+  jdInvoiceGeneratedAt?: string;
+  jdInvoiceEmailedAt?: string;
+  jdInvoiceEmailedTo?: string;
+  jdPaymentPaid?: boolean;
+  jdPaymentDate?: string;
+  jdPaymentAmount?: number;
 }
 
 interface JobDetailModalProps {
@@ -211,7 +219,7 @@ interface JobDetailModalProps {
   onRefresh?: () => void;
 }
 
-type TabType = 'details' | 'vendors-costs' | 'communications';
+type TabType = 'details' | 'vendors-costs' | 'financials' | 'communications';
 
 export function JobDetailModal({
   job,
@@ -1136,57 +1144,100 @@ export function JobDetailModal({
         </div>
       </div>
 
-      {/* Workflow Status Row */}
+      {/* Workflow Progress Checklist */}
       {job.workflowStatus && (
         <div className="bg-card border border-border rounded-lg p-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-[10px] text-muted-foreground uppercase">Workflow</span>
-              <WorkflowStatusBadge status={job.workflowStatus} size="md" />
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-muted-foreground uppercase font-semibold">Workflow Progress</span>
               {job.workflowStatusOverride && (
-                <span className="text-xs text-orange-500 font-medium">(Manual)</span>
-              )}
-              {job.workflowUpdatedAt && (
-                <span className="text-xs text-muted-foreground">
-                  Updated {new Date(job.workflowUpdatedAt).toLocaleDateString()}
-                </span>
+                <span className="text-xs text-orange-500 font-medium">(Manual Override)</span>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              {/* Stage Override Dropdown */}
-              <select
-                value={job.workflowStatusOverride || job.workflowStatus || ''}
-                onChange={async (e) => {
-                  const newStatus = e.target.value;
-                  if (newStatus === '__auto__') {
-                    await jobsApi.updateWorkflowStatus(job.id, null, true);
-                  } else {
-                    await jobsApi.updateWorkflowStatus(job.id, newStatus);
-                  }
+            {job.workflowUpdatedAt && (
+              <span className="text-xs text-muted-foreground">
+                Updated {new Date(job.workflowUpdatedAt).toLocaleDateString()}
+              </span>
+            )}
+          </div>
+
+          {/* Workflow Stages Checklist */}
+          <div className="space-y-1 mb-3">
+            {WORKFLOW_STAGES.map((stage, index) => {
+              const currentStatus = job.workflowStatusOverride || job.workflowStatus;
+              const currentIndex = getStageIndex(currentStatus);
+              const isCompleted = index < currentIndex;
+              const isCurrent = index === currentIndex;
+              const isPending = index > currentIndex;
+
+              return (
+                <button
+                  key={stage.status}
+                  onClick={async () => {
+                    await jobsApi.updateWorkflowStatus(job.id, stage.status);
+                    onRefresh?.();
+                  }}
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-left transition-colors ${
+                    isCurrent
+                      ? 'bg-blue-100 border border-blue-300'
+                      : 'hover:bg-muted/50'
+                  }`}
+                >
+                  {/* Status Icon */}
+                  {isCompleted ? (
+                    <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
+                  ) : isCurrent ? (
+                    <div className="w-4 h-4 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
+                      <div className="w-2 h-2 rounded-full bg-white" />
+                    </div>
+                  ) : (
+                    <Circle className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                  )}
+
+                  {/* Stage Label */}
+                  <span
+                    className={`text-sm ${
+                      isCompleted
+                        ? 'text-green-700 line-through'
+                        : isCurrent
+                        ? 'text-blue-800 font-semibold'
+                        : 'text-muted-foreground'
+                    }`}
+                  >
+                    {stage.label}
+                  </span>
+
+                  {/* Current indicator */}
+                  {isCurrent && (
+                    <span className="ml-auto text-xs text-blue-600 font-medium">Current</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Next Action Buttons */}
+          <div className="flex items-center gap-2 pt-2 border-t border-border">
+            {getNextWorkflowStatuses(job.workflowStatusOverride || job.workflowStatus).map(({ status, action }) => (
+              <button
+                key={status}
+                onClick={() => handleWorkflowStatusChange(status)}
+                className="px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
+              >
+                {action}
+              </button>
+            ))}
+            {job.workflowStatusOverride && (
+              <button
+                onClick={async () => {
+                  await jobsApi.updateWorkflowStatus(job.id, null, true);
                   onRefresh?.();
                 }}
-                className="text-xs border rounded px-2 py-1 bg-background"
+                className="px-3 py-1.5 text-xs font-medium border border-orange-300 text-orange-600 rounded hover:bg-orange-50 transition-colors ml-auto"
               >
-                <option value="NEW_JOB">New Job</option>
-                <option value="AWAITING_PROOF_FROM_VENDOR">Waiting on Proofs</option>
-                <option value="AWAITING_CUSTOMER_RESPONSE">Awaiting Customer Approval</option>
-                <option value="APPROVED_PENDING_VENDOR">Approved - Notify Vendor</option>
-                <option value="IN_PRODUCTION">In Production</option>
-                <option value="COMPLETED">Shipped</option>
-                {job.workflowStatusOverride && (
-                  <option value="__auto__">↩ Reset to Auto</option>
-                )}
-              </select>
-              {getNextWorkflowStatuses(job.workflowStatus).map(({ status, action }) => (
-                <button
-                  key={status}
-                  onClick={() => handleWorkflowStatusChange(status)}
-                  className="px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
-                >
-                  {action}
-                </button>
-              ))}
-            </div>
+                ↩ Reset to Auto
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -2855,9 +2906,254 @@ export function JobDetailModal({
     </div>
   );
 
+  // Financials Tab Component - Payment progress checklist
+  const FinancialsTab = ({ job, onRefresh }: { job: Job; onRefresh?: () => void }) => {
+    const [isUpdating, setIsUpdating] = useState<string | null>(null);
+
+    // Smart vendor path detection
+    const vendorName = job.vendor?.name || 'Vendor';
+    const isBradfordVendor = job.vendor?.isPartner || vendorName.toLowerCase().includes('bradford');
+
+    // Format currency
+    const formatCurrency = (amount?: number | null) => {
+      if (!amount) return '-';
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      }).format(amount);
+    };
+
+    // Format date
+    const formatDate = (dateStr?: string | null) => {
+      if (!dateStr) return '-';
+      return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    };
+
+    // Get payment stages based on vendor path
+    const getPaymentStages = () => {
+      const baseStages = [
+        {
+          key: 'invoiceSent',
+          label: 'Invoice Sent',
+          isComplete: !!job.invoiceEmailedAt,
+          date: job.invoiceEmailedAt,
+          recipient: job.invoiceEmailedTo,
+          action: job.invoiceEmailedAt ? 'Mark Unsent' : 'Mark Sent',
+          actionStatus: job.invoiceEmailedAt ? 'unsent' : 'sent',
+        },
+        {
+          key: 'customerPaid',
+          label: 'Customer Paid',
+          isComplete: !!job.customerPaymentDate,
+          date: job.customerPaymentDate,
+          amount: job.customerPaymentAmount || job.sellPrice,
+          action: job.customerPaymentDate ? 'Mark Unpaid' : 'Mark Paid',
+          actionStatus: job.customerPaymentDate ? 'unpaid' : 'paid',
+        },
+      ];
+
+      if (isBradfordVendor) {
+        // Bradford vendor path: Impact→Bradford→JD
+        return [
+          ...baseStages,
+          {
+            key: 'bradfordPaid',
+            label: 'Impact → Bradford',
+            isComplete: job.bradfordPaymentPaid || false,
+            date: job.bradfordPaymentDate,
+            amount: job.bradfordPaymentAmount || job.profit?.bradfordTotal,
+            action: job.bradfordPaymentPaid ? 'Mark Unpaid' : 'Mark Paid',
+            actionStatus: job.bradfordPaymentPaid ? 'unpaid' : 'paid',
+          },
+          {
+            key: 'jdPaid',
+            label: 'Bradford → JD',
+            isComplete: job.jdPaymentPaid || false,
+            date: job.jdPaymentDate,
+            amount: job.jdPaymentAmount || job.profit?.bradfordOwesJD,
+            action: job.jdPaymentPaid ? 'Mark Unpaid' : 'Mark Paid',
+            actionStatus: job.jdPaymentPaid ? 'unpaid' : 'paid',
+          },
+        ];
+      } else {
+        // Non-Bradford path: Impact→Vendor + Bradford profit split
+        return [
+          ...baseStages,
+          {
+            key: 'vendorPaid',
+            label: `Impact → ${vendorName}`,
+            isComplete: !!job.vendorPaymentDate,
+            date: job.vendorPaymentDate,
+            amount: job.vendorPaymentAmount,
+            action: job.vendorPaymentDate ? 'Mark Unpaid' : 'Mark Paid',
+            actionStatus: job.vendorPaymentDate ? 'unpaid' : 'paid',
+          },
+          {
+            key: 'bradfordSplitPaid',
+            label: 'Impact → Bradford (Split)',
+            isComplete: job.bradfordPaymentPaid || false,
+            date: job.bradfordPaymentDate,
+            amount: job.profit?.bradfordTotal,
+            action: job.bradfordPaymentPaid ? 'Mark Unpaid' : 'Mark Paid',
+            actionStatus: job.bradfordPaymentPaid ? 'unpaid' : 'paid',
+          },
+        ];
+      }
+    };
+
+    const stages = getPaymentStages();
+
+    // Handle payment action
+    const handlePaymentAction = async (stageKey: string, actionStatus: string) => {
+      setIsUpdating(stageKey);
+      try {
+        switch (stageKey) {
+          case 'invoiceSent':
+            await jobsApi.markInvoiceSent(job.id, { status: actionStatus });
+            break;
+          case 'customerPaid':
+            await jobsApi.markCustomerPaid(job.id, { status: actionStatus });
+            break;
+          case 'vendorPaid':
+            await jobsApi.markVendorPaid(job.id, { status: actionStatus });
+            break;
+          case 'bradfordPaid':
+          case 'bradfordSplitPaid':
+            await jobsApi.markBradfordPaid(job.id, { status: actionStatus, sendInvoice: false });
+            break;
+          case 'jdPaid':
+            await jobsApi.markJDPaid(job.id, { status: actionStatus });
+            break;
+        }
+        onRefresh?.();
+      } catch (error) {
+        console.error('Payment action failed:', error);
+      } finally {
+        setIsUpdating(null);
+      }
+    };
+
+    return (
+      <div className="space-y-6">
+        {/* Payment Progress */}
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Payment Progress</h3>
+            <span className="text-xs text-gray-400">
+              {isBradfordVendor ? 'Bradford Partner Path' : `${vendorName} Path`}
+            </span>
+          </div>
+          <div className="p-4">
+            <div className="space-y-3">
+              {stages.map((stage, index) => {
+                const isCurrentStage = !stage.isComplete && (index === 0 || stages[index - 1]?.isComplete);
+                return (
+                  <div
+                    key={stage.key}
+                    className={`flex items-center gap-4 p-3 rounded-lg transition-colors ${
+                      stage.isComplete
+                        ? 'bg-green-50 border border-green-200'
+                        : isCurrentStage
+                        ? 'bg-blue-50 border border-blue-200'
+                        : 'bg-gray-50 border border-gray-200'
+                    }`}
+                  >
+                    {/* Status Icon */}
+                    <div className="flex-shrink-0">
+                      {stage.isComplete ? (
+                        <CheckCircle2 className="w-6 h-6 text-green-600" />
+                      ) : isCurrentStage ? (
+                        <Circle className="w-6 h-6 text-blue-600 fill-blue-100" />
+                      ) : (
+                        <Circle className="w-6 h-6 text-gray-400" />
+                      )}
+                    </div>
+
+                    {/* Stage Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={`font-medium ${stage.isComplete ? 'text-green-800' : isCurrentStage ? 'text-blue-800' : 'text-gray-600'}`}>
+                          {stage.label}
+                        </span>
+                        {stage.amount && (
+                          <span className={`text-sm ${stage.isComplete ? 'text-green-600' : 'text-gray-500'}`}>
+                            {formatCurrency(stage.amount)}
+                          </span>
+                        )}
+                      </div>
+                      {stage.isComplete && stage.date && (
+                        <div className="text-xs text-gray-500 mt-0.5">
+                          {formatDate(stage.date)}
+                          {stage.recipient && ` → ${stage.recipient}`}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action Button */}
+                    <button
+                      onClick={() => handlePaymentAction(stage.key, stage.actionStatus)}
+                      disabled={isUpdating === stage.key}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                        stage.isComplete
+                          ? 'text-gray-600 bg-white border border-gray-300 hover:bg-gray-50'
+                          : 'text-white bg-blue-600 hover:bg-blue-700'
+                      } disabled:opacity-50 disabled:cursor-not-allowed`}
+                    >
+                      {isUpdating === stage.key ? '...' : stage.action}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Financial Summary */}
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Financial Summary</h3>
+          </div>
+          <div className="p-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <div className="text-xs text-gray-500 mb-1">Sell Price</div>
+                <div className="text-lg font-semibold text-gray-900">{formatCurrency(job.sellPrice)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-500 mb-1">Vendor Cost</div>
+                <div className="text-lg font-semibold text-gray-900">{formatCurrency(job.profit?.totalCost)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-500 mb-1">Spread</div>
+                <div className="text-lg font-semibold text-green-600">{formatCurrency(job.profit?.spread)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-500 mb-1">Margin</div>
+                <div className="text-lg font-semibold text-gray-900">
+                  {job.profit?.marginPercent ? `${job.profit.marginPercent.toFixed(1)}%` : '-'}
+                </div>
+              </div>
+              <div className="border-t border-gray-100 pt-3">
+                <div className="text-xs text-gray-500 mb-1">Bradford Share</div>
+                <div className="text-base font-medium text-gray-700">{formatCurrency(job.profit?.bradfordTotal)}</div>
+              </div>
+              <div className="border-t border-gray-100 pt-3">
+                <div className="text-xs text-gray-500 mb-1">Impact Share</div>
+                <div className="text-base font-medium text-gray-700">{formatCurrency(job.profit?.impactTotal)}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const tabs: { id: TabType; label: string; badge?: number }[] = [
     { id: 'details', label: 'Details' },
     { id: 'vendors-costs', label: 'Vendors & Costs' },
+    { id: 'financials', label: 'Financials' },
     { id: 'communications', label: 'Communications', badge: pendingCommCount },
   ];
 
@@ -3375,6 +3671,9 @@ export function JobDetailModal({
                 vendorName={job.vendor?.name}
                 vendorEmail={job.vendor?.email}
               />
+            )}
+            {activeTab === 'financials' && job && (
+              <FinancialsTab job={job} onRefresh={onRefresh} />
             )}
           </div>
         </div>

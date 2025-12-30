@@ -1441,3 +1441,70 @@ export const updateWorkflowStatus = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to update workflow status' });
   }
 };
+
+// Set active task on a job (production meeting action item)
+export const setJobTask = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { task } = req.body;
+
+    if (!task || !task.trim()) {
+      return res.status(400).json({ error: 'Task text is required' });
+    }
+
+    const now = new Date();
+    const job = await prisma.job.update({
+      where: { id },
+      data: {
+        activeTask: task.trim(),
+        activeTaskCreatedAt: now,
+        activeTaskCreatedBy: 'staff',
+        updatedAt: now,
+      },
+      include: JOB_INCLUDE,
+    });
+
+    // Log to activity
+    await logJobChange(id, 'TASK_SET', 'activeTask', null, task.trim());
+
+    res.json(transformJob(job));
+  } catch (error) {
+    console.error('Set job task error:', error);
+    res.status(500).json({ error: 'Failed to set task' });
+  }
+};
+
+// Complete (clear) active task on a job
+export const completeJobTask = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Get current task before clearing for logging
+    const currentJob = await prisma.job.findUnique({
+      where: { id },
+      select: { activeTask: true },
+    });
+
+    const now = new Date();
+    const job = await prisma.job.update({
+      where: { id },
+      data: {
+        activeTask: null,
+        activeTaskCreatedAt: null,
+        activeTaskCreatedBy: null,
+        updatedAt: now,
+      },
+      include: JOB_INCLUDE,
+    });
+
+    // Log to activity
+    if (currentJob?.activeTask) {
+      await logJobChange(id, 'TASK_COMPLETED', 'activeTask', currentJob.activeTask, null);
+    }
+
+    res.json(transformJob(job));
+  } catch (error) {
+    console.error('Complete job task error:', error);
+    res.status(500).json({ error: 'Failed to complete task' });
+  }
+};

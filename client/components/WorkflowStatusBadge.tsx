@@ -7,6 +7,25 @@ interface WorkflowStatusBadgeProps {
   showLabel?: boolean;
 }
 
+// Ordered workflow stages for checklist display
+export const WORKFLOW_STAGES = [
+  { status: 'NEW_JOB', label: 'New Job' },
+  { status: 'AWAITING_PROOF_FROM_VENDOR', label: 'PO Sent / Awaiting Proof' },
+  { status: 'PROOF_RECEIVED', label: 'Proof Received' },
+  { status: 'PROOF_SENT_TO_CUSTOMER', label: 'Sent to Customer' },
+  { status: 'AWAITING_CUSTOMER_RESPONSE', label: 'Awaiting Response' },
+  { status: 'APPROVED_PENDING_VENDOR', label: 'Approved - Notify Vendor' },
+  { status: 'IN_PRODUCTION', label: 'In Production' },
+  { status: 'COMPLETED', label: 'Shipped' },
+  { status: 'INVOICED', label: 'Invoiced' },
+  { status: 'PAID', label: 'Paid' },
+] as const;
+
+// Helper to get stage index (for determining completion state)
+export function getStageIndex(status: string): number {
+  return WORKFLOW_STAGES.findIndex(s => s.status === status);
+}
+
 // Status configuration with colors and labels
 const STATUS_CONFIG: Record<string, { label: string; bgColor: string; textColor: string; emoji?: string }> = {
   NEW_JOB: {

@@ -305,6 +305,9 @@ export function transformJob(job: any) {
     poGeneratedCount: job.poGeneratedCount || 0,
     invoiceGeneratedAt: job.invoiceGeneratedAt,
     invoiceGeneratedCount: job.invoiceGeneratedCount || 0,
+    invoiceEmailedAt: job.invoiceEmailedAt,
+    invoiceEmailedTo: job.invoiceEmailedTo || null,
+    invoiceEmailedCount: job.invoiceEmailedCount || 0,
 
     // Simplified profit object (from ProfitSplit model or calculated)
     profit,
@@ -668,6 +671,11 @@ export function transformJobForWorkflow(job: any) {
 
     // QC Indicators
     qc: qcIndicators,
+
+    // Active Task (production meeting action items)
+    activeTask: job.activeTask || null,
+    activeTaskCreatedAt: job.activeTaskCreatedAt || null,
+    activeTaskCreatedBy: job.activeTaskCreatedBy || null,
   };
 }
 

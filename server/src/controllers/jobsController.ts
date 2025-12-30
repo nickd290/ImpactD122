@@ -12,6 +12,8 @@ import {
 import { normalizeSize, getSelfMailerPricing } from '../utils/bradfordPricing';
 import { sendArtworkFollowUpEmail, sendJDInvoiceToBradfordEmail, sendVendorPOWithPortalEmail } from '../services/emailService';
 import { initiateBothThreads } from '../services/communicationService';
+import { COMPANY_IDS } from '../constants';
+import { JOB_INCLUDE } from './jobs/jobsHelpers';
 
 /**
  * Check if a job meets criteria for Impact→Bradford PO creation
@@ -2421,11 +2423,71 @@ export const deletePO = async (req: Request, res: Response) => {
 // ============================================
 // MULTI-STEP PAYMENT WORKFLOW (4-STEP PROCESS)
 // ============================================
+// Step 0: Invoice Sent (manual tracking)
 // Step 1: Customer → Impact (Financials tab)
-// Step 2: Impact → Bradford (Bradford Stats tab)
-// Step 3: JD Invoice auto-sent to Bradford (triggered by Step 2)
-// Step 4: Bradford → JD Paid (Bradford Stats tab)
+// Step 2: Impact → Bradford OR Impact → Vendor
+// Step 3: JD Invoice auto-sent to Bradford (triggered by Step 2 for Bradford path)
+// Step 4: Bradford → JD Paid (Bradford Stats tab) OR Impact → Bradford Split
 // ============================================
+
+// Step 0: Mark Invoice Sent (manual tracking)
+export const markInvoiceSent = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { email, status } = req.body; // status: 'sent' | 'unsent', email: optional recipient
+
+    const existingJob = await prisma.job.findUnique({
+      where: { id },
+      select: {
+        invoiceEmailedAt: true,
+        invoiceEmailedTo: true,
+        invoiceEmailedCount: true,
+      },
+    });
+
+    if (!existingJob) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    // Handle unsent status - clear invoice sent tracking
+    if (status === 'unsent') {
+      await logPaymentChange(id, 'invoiceEmailedAt', existingJob.invoiceEmailedAt, null, 'admin');
+
+      const job = await prisma.job.update({
+        where: { id },
+        data: {
+          invoiceEmailedAt: null,
+          invoiceEmailedTo: null,
+          updatedAt: new Date(),
+        },
+        include: JOB_INCLUDE,
+      });
+      return res.json(transformJob(job));
+    }
+
+    // Default: mark as sent
+    const sentAt = new Date();
+
+    // Log the change
+    await logPaymentChange(id, 'invoiceEmailedAt', existingJob.invoiceEmailedAt, sentAt, 'admin');
+
+    const job = await prisma.job.update({
+      where: { id },
+      data: {
+        invoiceEmailedAt: sentAt,
+        invoiceEmailedTo: email || existingJob.invoiceEmailedTo || null,
+        invoiceEmailedCount: { increment: 1 },
+        updatedAt: new Date(),
+      },
+      include: JOB_INCLUDE,
+    });
+
+    res.json(transformJob(job));
+  } catch (error) {
+    console.error('Mark invoice sent error:', error);
+    res.status(500).json({ error: 'Failed to mark invoice sent' });
+  }
+};
 
 // Step 1: Mark Customer Paid (Customer → Impact)
 export const markCustomerPaid = async (req: Request, res: Response) => {
@@ -2497,6 +2559,74 @@ export const markCustomerPaid = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Mark customer paid error:', error);
     res.status(500).json({ error: 'Failed to mark customer paid' });
+  }
+};
+
+// Step 1.5: Mark Vendor Paid (Impact → Vendor) - for non-Bradford vendors
+export const markVendorPaid = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { date, amount, status } = req.body;
+
+    const existingJob = await prisma.job.findUnique({
+      where: { id },
+      include: {
+        ProfitSplit: true,
+        PurchaseOrder: true,
+      },
+    });
+
+    if (!existingJob) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    // Handle unpaid status - clear vendor payment
+    if (status === 'unpaid') {
+      await logPaymentChange(id, 'vendorPaymentDate', existingJob.vendorPaymentDate, null, 'admin');
+
+      const job = await prisma.job.update({
+        where: { id },
+        data: {
+          vendorPaymentDate: null,
+          vendorPaymentAmount: null,
+          updatedAt: new Date(),
+        },
+        include: JOB_INCLUDE,
+      });
+      return res.json(transformJob(job));
+    }
+
+    // Default: mark as paid
+    const paymentDate = date ? new Date(date) : new Date();
+
+    // Calculate vendor payment amount - try from PO first
+    let paymentAmount = amount;
+    if (!paymentAmount) {
+      // Sum Impact→Vendor PO costs (non-Bradford)
+      const vendorPOs = (existingJob.PurchaseOrder || []).filter(
+        (po: any) =>
+          po.originCompanyId === COMPANY_IDS.IMPACT_DIRECT && po.targetCompanyId !== COMPANY_IDS.BRADFORD
+      );
+      paymentAmount = vendorPOs.reduce((sum: number, po: any) => sum + (Number(po.buyCost) || 0), 0);
+    }
+
+    // Log the change
+    await logPaymentChange(id, 'vendorPaymentDate', existingJob.vendorPaymentDate, paymentDate, 'admin');
+
+    const job = await prisma.job.update({
+      where: { id },
+      data: {
+        vendorPaymentDate: paymentDate,
+        vendorPaymentAmount: paymentAmount || null,
+        updatedAt: new Date(),
+      },
+      include: JOB_INCLUDE,
+    });
+
+    res.json(transformJob(job));
+  } catch (error) {
+    console.error('Mark vendor paid error:', error);
+    res.status(500).json({ error: 'Failed to mark vendor paid' });
   }
 };
 
@@ -2947,4 +3077,4 @@ export const updateInvoiceStatus = async (req: Request, res: Response) => {
 };
 
 // Re-export from crud controller
-export { getJobsWorkflowView, updateQCOverrides, updateWorkflowStatus } from './jobs/jobsCrudController';
+export { getJobsWorkflowView, updateQCOverrides, updateWorkflowStatus, setJobTask, completeJobTask } from './jobs/jobsCrudController';

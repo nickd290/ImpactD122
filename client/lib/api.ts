@@ -58,24 +58,34 @@ export const jobsApi = {
   }),
 
   // Multi-step Payment Workflow (4-step process)
-  // Step 1: Mark Customer Paid (Customer → Impact)
-  markCustomerPaid: (id: string, date?: string) => apiFetch(`/jobs/${id}/customer-paid`, {
+  // Step 0: Mark Invoice Sent (manual tracking)
+  markInvoiceSent: (id: string, data: { status?: string; email?: string }) => apiFetch(`/jobs/${id}/invoice-sent`, {
     method: 'PATCH',
-    body: JSON.stringify({ date }),
+    body: JSON.stringify(data),
+  }),
+  // Step 1: Mark Customer Paid (Customer → Impact)
+  markCustomerPaid: (id: string, data?: { date?: string; status?: string }) => apiFetch(`/jobs/${id}/customer-paid`, {
+    method: 'PATCH',
+    body: JSON.stringify(data || {}),
+  }),
+  // Step 1.5: Mark Vendor Paid (Impact → Vendor) - for non-Bradford vendors
+  markVendorPaid: (id: string, data?: { date?: string; amount?: number; status?: string }) => apiFetch(`/jobs/${id}/vendor-paid`, {
+    method: 'PATCH',
+    body: JSON.stringify(data || {}),
   }),
   // Step 2: Mark Bradford Paid (Impact → Bradford) - triggers JD Invoice
-  markBradfordPaid: (id: string, date?: string, sendInvoice?: boolean) => apiFetch(`/jobs/${id}/bradford-paid`, {
+  markBradfordPaid: (id: string, data?: { date?: string; sendInvoice?: boolean; status?: string }) => apiFetch(`/jobs/${id}/bradford-paid`, {
     method: 'PATCH',
-    body: JSON.stringify({ date, sendInvoice }),
+    body: JSON.stringify(data || {}),
   }),
   // Step 3: Send JD Invoice manually (can resend)
   sendJDInvoice: (id: string) => apiFetch(`/jobs/${id}/send-jd-invoice`, {
     method: 'POST',
   }),
   // Step 4: Mark JD Paid (Bradford → JD)
-  markJDPaid: (id: string, date?: string) => apiFetch(`/jobs/${id}/jd-paid`, {
+  markJDPaid: (id: string, data?: { date?: string; status?: string }) => apiFetch(`/jobs/${id}/jd-paid`, {
     method: 'PATCH',
-    body: JSON.stringify({ date }),
+    body: JSON.stringify(data || {}),
   }),
   // Download JD Invoice PDF
   downloadJDInvoicePDF: (id: string) => {
@@ -108,6 +118,16 @@ export const jobsApi = {
     apiFetch(`/jobs/${id}/workflow-status`, {
       method: 'PATCH',
       body: JSON.stringify({ status, clearOverride }),
+    }),
+  // Active tasks (production meeting action items)
+  setTask: (id: string, task: string) =>
+    apiFetch(`/jobs/${id}/task`, {
+      method: 'PATCH',
+      body: JSON.stringify({ task }),
+    }),
+  completeTask: (id: string) =>
+    apiFetch(`/jobs/${id}/task/complete`, {
+      method: 'PATCH',
     }),
 };
 

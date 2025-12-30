@@ -102,6 +102,143 @@ export const markCustomerPaid = async (req: Request, res: Response) => {
 };
 
 // ============================================================================
+// STEP 1.5: INVOICE SENT (Manual tracking)
+// ============================================================================
+
+/**
+ * Mark customer invoice as sent (manual tracking)
+ * Can set or clear the invoice sent status
+ */
+export const markInvoiceSent = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { email, status } = req.body; // status: 'sent' | 'unsent', email: optional recipient
+
+    const existingJob = await prisma.job.findUnique({
+      where: { id },
+      select: {
+        invoiceEmailedAt: true,
+        invoiceEmailedTo: true,
+        invoiceEmailedCount: true,
+      },
+    });
+
+    if (!existingJob) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    // Handle unsent status - clear invoice sent tracking
+    if (status === 'unsent') {
+      await logPaymentChange(id, 'invoiceEmailedAt', existingJob.invoiceEmailedAt, null, 'admin');
+
+      const job = await prisma.job.update({
+        where: { id },
+        data: {
+          invoiceEmailedAt: null,
+          invoiceEmailedTo: null,
+          updatedAt: new Date(),
+        },
+        include: JOB_INCLUDE,
+      });
+      return res.json(transformJob(job));
+    }
+
+    // Default: mark as sent
+    const sentAt = new Date();
+
+    // Log the change
+    await logPaymentChange(id, 'invoiceEmailedAt', existingJob.invoiceEmailedAt, sentAt, 'admin');
+
+    const job = await prisma.job.update({
+      where: { id },
+      data: {
+        invoiceEmailedAt: sentAt,
+        invoiceEmailedTo: email || existingJob.invoiceEmailedTo || null,
+        invoiceEmailedCount: { increment: 1 },
+        updatedAt: new Date(),
+      },
+      include: JOB_INCLUDE,
+    });
+
+    res.json(transformJob(job));
+  } catch (error) {
+    console.error('Mark invoice sent error:', error);
+    res.status(500).json({ error: 'Failed to mark invoice sent' });
+  }
+};
+
+/**
+ * Mark vendor payment as complete (Impact → Vendor)
+ * Used for non-Bradford vendors (JD direct, or other vendors)
+ */
+export const markVendorPaid = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { date, amount, status } = req.body;
+
+    const existingJob = await prisma.job.findUnique({
+      where: { id },
+      include: {
+        ProfitSplit: true,
+        PurchaseOrder: true,
+      },
+    });
+
+    if (!existingJob) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    // Handle unpaid status - clear vendor payment
+    if (status === 'unpaid') {
+      await logPaymentChange(id, 'vendorPaymentDate', existingJob.vendorPaymentDate, null, 'admin');
+
+      const job = await prisma.job.update({
+        where: { id },
+        data: {
+          vendorPaymentDate: null,
+          vendorPaymentAmount: null,
+          updatedAt: new Date(),
+        },
+        include: JOB_INCLUDE,
+      });
+      return res.json(transformJob(job));
+    }
+
+    // Default: mark as paid
+    const paymentDate = date ? new Date(date) : new Date();
+
+    // Calculate vendor payment amount - try from PO first
+    let paymentAmount = amount;
+    if (!paymentAmount) {
+      // Sum Impact→Vendor PO costs (non-Bradford)
+      const vendorPOs = (existingJob.PurchaseOrder || []).filter(
+        (po: any) =>
+          po.originCompanyId === COMPANY_IDS.IMPACT_DIRECT && po.targetCompanyId !== COMPANY_IDS.BRADFORD
+      );
+      paymentAmount = vendorPOs.reduce((sum: number, po: any) => sum + (Number(po.buyCost) || 0), 0);
+    }
+
+    // Log the change
+    await logPaymentChange(id, 'vendorPaymentDate', existingJob.vendorPaymentDate, paymentDate, 'admin');
+
+    const job = await prisma.job.update({
+      where: { id },
+      data: {
+        vendorPaymentDate: paymentDate,
+        vendorPaymentAmount: paymentAmount || null,
+        updatedAt: new Date(),
+      },
+      include: JOB_INCLUDE,
+    });
+
+    res.json(transformJob(job));
+  } catch (error) {
+    console.error('Mark vendor paid error:', error);
+    res.status(500).json({ error: 'Failed to mark vendor paid' });
+  }
+};
+
+// ============================================================================
 // STEP 2: BRADFORD PAYMENT (Impact → Bradford) - Triggers JD Invoice
 // ============================================================================
 

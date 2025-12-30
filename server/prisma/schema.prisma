@@ -135,6 +135,12 @@ model Job {
   workflowStatusOverride    String?          // Manual override for workflow stage display
   workflowStatusOverrideAt  DateTime?
   workflowStatusOverrideBy  String?
+
+  // === ACTIVE TASK (Production Meeting Action Items) ===
+  activeTask                String?          // Task text (null = no active task)
+  activeTaskCreatedAt       DateTime?
+  activeTaskCreatedBy       String?
+
   title                     String?
   description               String?
   notes                     String?
