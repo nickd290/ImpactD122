@@ -19,8 +19,11 @@ function getOpenAIClient(): OpenAI {
 // Uses dynamic import for ESM-only pdf-to-img package
 async function convertPdfToImages(pdfBuffer: Buffer): Promise<string[]> {
   const images: string[] = [];
-  // Dynamic import for ESM-only module
-  const { pdf } = await import('pdf-to-img');
+  // Use Function constructor to preserve dynamic import at runtime
+  // (prevents TypeScript from transpiling import() to require())
+  const importDynamic = new Function('modulePath', 'return import(modulePath)');
+  const pdfToImg = await importDynamic('pdf-to-img');
+  const { pdf } = pdfToImg;
   const document = await pdf(pdfBuffer, { scale: 2 });
 
   for await (const image of document) {
