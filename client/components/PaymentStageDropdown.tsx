@@ -140,6 +140,17 @@ export function PaymentStageDropdown({
   const currentStage = getCurrentStage();
   const isDone = currentStage === 'done';
 
+  // Get button label based on current stage
+  const getButtonLabel = (): string => {
+    switch (currentStage) {
+      case 'invoice': return 'Not Invoiced';
+      case 'customer': return 'Invoiced';
+      case 'bradford': return 'Cust. Paid';
+      case 'jd': return 'Bradford';
+      case 'done': return 'Done';
+    }
+  };
+
   // Get button styling based on completion
   const getButtonStyle = () => {
     if (isDone) return 'bg-green-100 text-green-700 border-green-200';
@@ -161,17 +172,9 @@ export function PaymentStageDropdown({
         onClick={() => setIsOpen(!isOpen)}
         className={`inline-flex items-center gap-1.5 px-2 py-1 text-xs font-medium rounded border transition-colors hover:opacity-80 ${getButtonStyle()}`}
       >
-        {isDone ? (
-          <>
-            <Check className="w-3 h-3" />
-            Done
-          </>
-        ) : (
-          <>
-            <span className="tabular-nums">{completedCount}/4</span>
-            <ChevronDown className="w-3 h-3" />
-          </>
-        )}
+        {isDone && <Check className="w-3 h-3" />}
+        <span>{getButtonLabel()}</span>
+        {!isDone && <ChevronDown className="w-3 h-3" />}
       </button>
 
       {/* Dropdown Menu */}
