@@ -295,6 +295,7 @@ export function transformJob(job: any) {
 
     // === WORKFLOW STATUS ===
     workflowStatus: job.workflowStatus || 'NEW_JOB',
+    workflowStatusOverride: job.workflowStatusOverride || null,
     workflowUpdatedAt: job.workflowUpdatedAt,
 
     // === DOCUMENT GENERATION TRACKING ===

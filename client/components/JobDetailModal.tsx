@@ -194,6 +194,7 @@ interface Job {
   hasPaidInvoice?: boolean;
   // Workflow status tracking
   workflowStatus?: string;
+  workflowStatusOverride?: string;
   workflowUpdatedAt?: string;
   jdInvoiceNumber?: string;
 }
@@ -1142,6 +1143,9 @@ export function JobDetailModal({
             <div className="flex items-center gap-3">
               <span className="text-[10px] text-muted-foreground uppercase">Workflow</span>
               <WorkflowStatusBadge status={job.workflowStatus} size="md" />
+              {job.workflowStatusOverride && (
+                <span className="text-xs text-orange-500 font-medium">(Manual)</span>
+              )}
               {job.workflowUpdatedAt && (
                 <span className="text-xs text-muted-foreground">
                   Updated {new Date(job.workflowUpdatedAt).toLocaleDateString()}
@@ -1149,6 +1153,30 @@ export function JobDetailModal({
               )}
             </div>
             <div className="flex items-center gap-2">
+              {/* Stage Override Dropdown */}
+              <select
+                value={job.workflowStatusOverride || job.workflowStatus || ''}
+                onChange={async (e) => {
+                  const newStatus = e.target.value;
+                  if (newStatus === '__auto__') {
+                    await jobsApi.updateWorkflowStatus(job.id, null, true);
+                  } else {
+                    await jobsApi.updateWorkflowStatus(job.id, newStatus);
+                  }
+                  onRefresh?.();
+                }}
+                className="text-xs border rounded px-2 py-1 bg-background"
+              >
+                <option value="NEW_JOB">New Job</option>
+                <option value="AWAITING_PROOF_FROM_VENDOR">Waiting on Proofs</option>
+                <option value="AWAITING_CUSTOMER_RESPONSE">Awaiting Customer Approval</option>
+                <option value="APPROVED_PENDING_VENDOR">Approved - Notify Vendor</option>
+                <option value="IN_PRODUCTION">In Production</option>
+                <option value="COMPLETED">Shipped</option>
+                {job.workflowStatusOverride && (
+                  <option value="__auto__">↩ Reset to Auto</option>
+                )}
+              </select>
               {getNextWorkflowStatuses(job.workflowStatus).map(({ status, action }) => (
                 <button
                   key={status}
