@@ -26,6 +26,7 @@ import {
   sendJDInvoice,
   downloadJDInvoicePDF,
   markJDPaid,
+  bulkGenerateJDInvoices,
   // Invoice status
   updateInvoiceStatus,
 } from '../controllers/jobsController';
@@ -60,6 +61,8 @@ router.patch('/:id/bradford-paid', markImpactToBradfordPaid);
 router.post('/:id/send-jd-invoice', sendJDInvoice);
 // Download JD Invoice PDF
 router.get('/:id/jd-invoice-pdf', downloadJDInvoicePDF);
+// Bulk generate JD invoice numbers (one-time operation)
+router.post('/bulk-generate-jd-invoices', bulkGenerateJDInvoices);
 // Step 4: Bradford → JD Paid (Bradford Stats tab)
 router.patch('/:id/jd-paid', markJDPaid);
 

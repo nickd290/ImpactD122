@@ -120,6 +120,11 @@ export const COLORS = {
   // Brand
   jdBlue: '#1E40AF',
   jdBlueMuted: '#93C5FD',
+
+  // Bradford Brand
+  bradfordNavy: '#003366',
+  bradfordGold: '#CC9900',
+  bradfordLight: '#f0f5fa',
 } as const;
 
 export const FONTS = {
@@ -184,6 +189,18 @@ export function impactHeader(title: string, subtitle?: string): string {
     <div style="background-color: #1a1a1a; padding: 24px 32px;">
       <h1 style="color: #ffffff; margin: 0; font-size: 18px; font-weight: 600; letter-spacing: 0.5px;">IMPACT DIRECT PRINTING</h1>
       ${subtitle ? `<p style="color: ${COLORS.textLight}; margin: 4px 0 0 0; font-size: 13px;">${subtitle}</p>` : ''}
+    </div>
+  `;
+}
+
+/**
+ * Bradford Exchange Ltd branded header
+ */
+export function bradfordHeader(title: string, subtitle?: string): string {
+  return `
+    <div style="background-color: ${COLORS.bradfordNavy}; padding: 24px 32px; border-bottom: 4px solid ${COLORS.bradfordGold};">
+      <h1 style="color: #ffffff; margin: 0; font-size: 18px; font-weight: 600; letter-spacing: 0.5px;">BRADFORD EXCHANGE LTD.</h1>
+      ${subtitle ? `<p style="color: #b0c4de; margin: 4px 0 0 0; font-size: 13px;">${subtitle}</p>` : ''}
     </div>
   `;
 }
@@ -480,6 +497,14 @@ export class EmailTemplateBuilder {
   }
 
   /**
+   * Add Bradford Exchange Ltd branded header
+   */
+  bradfordHeader(subtitle?: string): this {
+    this.parts.push(bradfordHeader('BRADFORD EXCHANGE LTD.', subtitle));
+    return this;
+  }
+
+  /**
    * Add body content wrapper with padding
    */
   body(): this {
@@ -636,6 +661,7 @@ export default {
   header,
   jdHeader,
   impactHeader,
+  bradfordHeader,
   footer,
   divider,
   sectionHeader,

@@ -51,6 +51,39 @@ function calculateProfit(job: any) {
   // If job has cached ProfitSplit, use it
   if (job.ProfitSplit) {
     const ps = job.ProfitSplit;
+    const purchaseOrders = job.PurchaseOrder || [];
+
+    // Get Bradford→JD POs (what Bradford owes JD for manufacturing)
+    const bradfordJdPOs = purchaseOrders.filter((po: any) =>
+      po.originCompanyId === 'bradford' && po.targetCompanyId === 'jd-graphic'
+    );
+
+    // Calculate what Bradford owes JD (from PO buyCost)
+    let bradfordOwesJD = bradfordJdPOs.reduce((sum: number, po: any) => {
+      return sum + (Number(po.buyCost) || 0);
+    }, 0);
+
+    // Fallback: Calculate from sizeName and quantity if no PO buyCost
+    if (bradfordOwesJD === 0 && job.sizeName && job.quantity > 0) {
+      const pricing = getSelfMailerPricing(job.sizeName);
+      if (pricing) {
+        bradfordOwesJD = pricing.printCPM * (job.quantity / 1000);
+      }
+    }
+
+    // Get Impact→JD POs (direct jobs where Impact orders from JD)
+    // Check both targetCompanyId and vendor name for JD Graphic (handle both Vendor and vendor casing)
+    const impactJdPOs = purchaseOrders.filter((po: any) => {
+      const vendorName = (po.Vendor?.name || po.vendor?.name || '').toLowerCase();
+      return po.originCompanyId === 'impact-direct' &&
+        (po.targetCompanyId === 'jd-graphic' || vendorName.includes('jd graphic'));
+    });
+
+    // Calculate what Impact owes JD (from PO buyCost)
+    const impactOwesJD = impactJdPOs.reduce((sum: number, po: any) => {
+      return sum + (Number(po.buyCost) || 0);
+    }, 0);
+
     return {
       sellPrice: Number(ps.sellPrice),
       totalCost: Number(ps.totalCost),
@@ -61,10 +94,12 @@ function calculateProfit(job: any) {
       impactSpreadShare: Number(ps.grossMargin) * 0.5,
       bradfordTotal: Number(ps.bradfordShare),
       impactTotal: Number(ps.impactShare),
+      bradfordOwesJD,
+      impactOwesJD,
       marginPercent: Number(ps.sellPrice) > 0
         ? (Number(ps.grossMargin) / Number(ps.sellPrice)) * 100
         : 0,
-      poCount: (job.PurchaseOrder || []).length,
+      poCount: purchaseOrders.length,
       isOverridden: ps.isOverridden || false,
       overrideReason: ps.overrideReason || null,
       calculatedAt: ps.calculatedAt,
@@ -85,6 +120,37 @@ function calculateProfit(job: any) {
   const impactPOs = purchaseOrders.filter((po: any) =>
     po.originCompanyId === 'impact-direct' && po.targetCompanyId === 'bradford'
   );
+
+  // Get Bradford→JD POs (what Bradford owes JD for manufacturing)
+  const bradfordJdPOs = purchaseOrders.filter((po: any) =>
+    po.originCompanyId === 'bradford' && po.targetCompanyId === 'jd-graphic'
+  );
+
+  // Calculate what Bradford owes JD (from PO buyCost)
+  let bradfordOwesJD = bradfordJdPOs.reduce((sum: number, po: any) => {
+    return sum + (Number(po.buyCost) || 0);
+  }, 0);
+
+  // Fallback: Calculate from sizeName and quantity if no PO buyCost
+  if (bradfordOwesJD === 0 && job.sizeName && job.quantity > 0) {
+    const pricing = getSelfMailerPricing(job.sizeName);
+    if (pricing) {
+      bradfordOwesJD = pricing.printCPM * (job.quantity / 1000);
+    }
+  }
+
+  // Get Impact→JD POs (direct jobs where Impact orders from JD)
+  // Check both targetCompanyId and vendor name for JD Graphic (handle both Vendor and vendor casing)
+  const impactJdPOs = purchaseOrders.filter((po: any) => {
+    const vendorName = (po.Vendor?.name || po.vendor?.name || '').toLowerCase();
+    return po.originCompanyId === 'impact-direct' &&
+      (po.targetCompanyId === 'jd-graphic' || vendorName.includes('jd graphic'));
+  });
+
+  // Calculate what Impact owes JD (from PO buyCost)
+  const impactOwesJD = impactJdPOs.reduce((sum: number, po: any) => {
+    return sum + (Number(po.buyCost) || 0);
+  }, 0);
 
   if (impactPOs.length > 0) {
     totalCost = impactPOs.reduce((sum: number, po: any) => {
@@ -118,6 +184,8 @@ function calculateProfit(job: any) {
     impactSpreadShare: split.impactSpreadShare,
     bradfordTotal: split.bradfordTotal,
     impactTotal: split.impactTotal,
+    bradfordOwesJD,
+    impactOwesJD,
     marginPercent: split.marginPercent,
     poCount: purchaseOrders.length,
     isOverridden: false,
@@ -2527,8 +2595,25 @@ export const markImpactToBradfordPaid = async (req: Request, res: Response) => {
         updateData.jdInvoiceGeneratedAt = new Date();
         updateData.jdInvoiceEmailedAt = emailResult.emailedAt;
         updateData.jdInvoiceEmailedTo = emailResult.emailedTo;
+        if (emailResult.jdInvoiceNumber) {
+          updateData.jdInvoiceNumber = emailResult.jdInvoiceNumber;
+        }
 
-        console.log(`📧 JD Invoice sent to Bradford for job ${existingJob.jobNo}`);
+        // Log activity
+        await prisma.jobActivity.create({
+          data: {
+            id: crypto.randomUUID(),
+            jobId: existingJob.id,
+            action: 'JD_INVOICE_EMAILED',
+            field: 'jdInvoice',
+            oldValue: null,
+            newValue: emailResult.jdInvoiceNumber || null,
+            changedBy: 'system',
+            changedByRole: 'BROKER_ADMIN',
+          },
+        });
+
+        console.log(`📧 JD Invoice ${emailResult.jdInvoiceNumber} sent to Bradford for job ${existingJob.jobNo}`);
       } else {
         console.error(`❌ Failed to send JD invoice for job ${existingJob.jobNo}:`, emailResult.error);
       }
@@ -2618,7 +2703,22 @@ export const sendJDInvoice = async (req: Request, res: Response) => {
           jdInvoiceGeneratedAt: new Date(),
           jdInvoiceEmailedAt: emailResult.emailedAt,
           jdInvoiceEmailedTo: emailResult.emailedTo,
+          jdInvoiceNumber: emailResult.jdInvoiceNumber || null,
           updatedAt: new Date(),
+        },
+      });
+
+      // Log activity
+      await prisma.jobActivity.create({
+        data: {
+          id: crypto.randomUUID(),
+          jobId: id,
+          action: 'JD_INVOICE_EMAILED',
+          field: 'jdInvoice',
+          oldValue: null,
+          newValue: emailResult.jdInvoiceNumber || null,
+          changedBy: 'system',
+          changedByRole: 'BROKER_ADMIN',
         },
       });
 
@@ -2626,6 +2726,7 @@ export const sendJDInvoice = async (req: Request, res: Response) => {
         success: true,
         emailedAt: emailResult.emailedAt,
         emailedTo: emailResult.emailedTo,
+        jdInvoiceNumber: emailResult.jdInvoiceNumber,
       });
     } else {
       res.status(500).json({
@@ -2698,6 +2799,61 @@ export const downloadJDInvoicePDF = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Download JD invoice error:', error);
     res.status(500).json({ error: 'Failed to generate JD invoice PDF' });
+  }
+};
+
+// Bulk generate JD invoice numbers for all jobs (one-time operation)
+export const bulkGenerateJDInvoices = async (req: Request, res: Response) => {
+  try {
+    // Find all jobs without a JD invoice number
+    const allJobs = await prisma.job.findMany({
+      where: {
+        jdInvoiceNumber: null,
+      },
+      select: {
+        id: true,
+        jobNo: true,
+      },
+    });
+
+    // Filter to only jobs that have a jobNo
+    const jobs = allJobs.filter(job => job.jobNo !== null && job.jobNo !== '');
+
+    if (jobs.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No jobs need invoice numbers',
+        generated: 0,
+      });
+    }
+
+    // Generate invoice numbers for each job
+    const updates = await Promise.all(
+      jobs.map(async (job) => {
+        const invoiceNumber = `JD-${job.jobNo}`;
+        await prisma.job.update({
+          where: { id: job.id },
+          data: {
+            jdInvoiceNumber: invoiceNumber,
+            jdInvoiceGeneratedAt: new Date(),
+            updatedAt: new Date(),
+          },
+        });
+        return { jobNo: job.jobNo, invoiceNumber };
+      })
+    );
+
+    console.log(`📄 Bulk generated ${updates.length} JD invoice numbers`);
+
+    res.json({
+      success: true,
+      message: `Generated ${updates.length} invoice numbers`,
+      generated: updates.length,
+      invoices: updates,
+    });
+  } catch (error) {
+    console.error('Bulk generate JD invoices error:', error);
+    res.status(500).json({ error: 'Failed to bulk generate JD invoices' });
   }
 };
 

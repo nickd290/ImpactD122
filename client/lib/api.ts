@@ -80,6 +80,10 @@ export const jobsApi = {
   downloadJDInvoicePDF: (id: string) => {
     window.open(`${API_BASE_URL}/jobs/${id}/jd-invoice-pdf`, '_blank');
   },
+  // Bulk generate JD invoice numbers (one-time operation)
+  bulkGenerateJDInvoices: () => apiFetch('/jobs/bulk-generate-jd-invoices', {
+    method: 'POST',
+  }),
 };
 
 // Entities API

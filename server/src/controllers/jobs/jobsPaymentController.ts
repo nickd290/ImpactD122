@@ -389,6 +389,68 @@ export const downloadJDInvoicePDF = async (req: Request, res: Response) => {
 };
 
 // ============================================================================
+// BULK INVOICE GENERATION
+// ============================================================================
+
+/**
+ * Bulk generate JD invoice numbers for all jobs that don't have one
+ * This is a one-time operation to populate existing jobs
+ */
+export const bulkGenerateJDInvoices = async (req: Request, res: Response) => {
+  try {
+    // Find all jobs without a JD invoice number
+    const allJobs = await prisma.job.findMany({
+      where: {
+        jdInvoiceNumber: null,
+      },
+      select: {
+        id: true,
+        jobNo: true,
+      },
+    });
+
+    // Filter to only jobs with a jobNo (Prisma 6 doesn't allow not: null)
+    const jobs = allJobs.filter(job => job.jobNo !== null && job.jobNo !== '');
+
+    if (jobs.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No jobs need invoice numbers',
+        generated: 0,
+      });
+    }
+
+    // Generate invoice numbers for each job
+    const updates = await Promise.all(
+      jobs.map(async (job) => {
+        const invoiceNumber = `JD-${job.jobNo}`;
+        await prisma.job.update({
+          where: { id: job.id },
+          data: {
+            jdInvoiceNumber: invoiceNumber,
+            jdInvoiceGeneratedAt: new Date(),
+            updatedAt: new Date(),
+          },
+        });
+        return { jobNo: job.jobNo, invoiceNumber };
+      })
+    );
+
+    console.log(`📄 Bulk generated ${updates.length} JD invoice numbers`);
+
+    res.json({
+      success: true,
+      message: `Generated ${updates.length} invoice numbers`,
+      generated: updates.length,
+      invoices: updates,
+    });
+  } catch (error) {
+    console.error('Bulk generate JD invoices error:', error);
+    res.status(500).json({ error: 'Failed to bulk generate JD invoices' });
+  }
+};
+
+// ============================================================================
 // STEP 4: JD PAYMENT (Bradford → JD)
 // ============================================================================
 

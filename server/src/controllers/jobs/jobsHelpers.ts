@@ -68,6 +68,27 @@ export function calculateProfit(job: any) {
   // If job has cached ProfitSplit, use it
   if (job.ProfitSplit) {
     const ps = job.ProfitSplit;
+    const purchaseOrders = job.PurchaseOrder || [];
+
+    // Get Bradford→JD POs (what Bradford owes JD for manufacturing)
+    const bradfordJdPOs = purchaseOrders.filter((po: any) =>
+      po.originCompanyId === COMPANY_IDS.BRADFORD &&
+      po.targetCompanyId === COMPANY_IDS.JD_GRAPHIC
+    );
+
+    // Calculate what Bradford owes JD (manufacturing cost)
+    let bradfordOwesJD = bradfordJdPOs.reduce((sum: number, po: any) => {
+      return sum + (Number(po.buyCost) || 0);
+    }, 0);
+
+    // Fallback: Calculate from sizeName and quantity if no PO buyCost
+    if (bradfordOwesJD === 0 && job.sizeName && job.quantity > 0) {
+      const pricing = getSelfMailerPricing(job.sizeName);
+      if (pricing) {
+        bradfordOwesJD = pricing.printCPM * (job.quantity / 1000);
+      }
+    }
+
     return {
       sellPrice: Number(ps.sellPrice),
       totalCost: Number(ps.totalCost),
@@ -78,10 +99,11 @@ export function calculateProfit(job: any) {
       impactSpreadShare: Number(ps.grossMargin) * 0.5,
       bradfordTotal: Number(ps.bradfordShare),
       impactTotal: Number(ps.impactShare),
+      bradfordOwesJD,
       marginPercent: Number(ps.sellPrice) > 0
         ? (Number(ps.grossMargin) / Number(ps.sellPrice)) * 100
         : 0,
-      poCount: (job.PurchaseOrder || []).length,
+      poCount: purchaseOrders.length,
       isOverridden: ps.isOverridden || false,
       overrideReason: ps.overrideReason || null,
       calculatedAt: ps.calculatedAt,
@@ -103,6 +125,25 @@ export function calculateProfit(job: any) {
     po.originCompanyId === COMPANY_IDS.IMPACT_DIRECT &&
     po.targetCompanyId === COMPANY_IDS.BRADFORD
   );
+
+  // Get Bradford→JD POs (what Bradford owes JD for manufacturing)
+  const bradfordJdPOs = purchaseOrders.filter((po: any) =>
+    po.originCompanyId === COMPANY_IDS.BRADFORD &&
+    po.targetCompanyId === COMPANY_IDS.JD_GRAPHIC
+  );
+
+  // Calculate what Bradford owes JD (manufacturing cost)
+  let bradfordOwesJD = bradfordJdPOs.reduce((sum: number, po: any) => {
+    return sum + (Number(po.buyCost) || 0);
+  }, 0);
+
+  // Fallback: Calculate from sizeName and quantity if no PO buyCost
+  if (bradfordOwesJD === 0 && job.sizeName && job.quantity > 0) {
+    const pricing = getSelfMailerPricing(job.sizeName);
+    if (pricing) {
+      bradfordOwesJD = pricing.printCPM * (job.quantity / 1000);
+    }
+  }
 
   if (impactPOs.length > 0) {
     totalCost = impactPOs.reduce((sum: number, po: any) => {
@@ -136,6 +177,7 @@ export function calculateProfit(job: any) {
     impactSpreadShare: split.impactSpreadShare,
     bradfordTotal: split.bradfordTotal,
     impactTotal: split.impactTotal,
+    bradfordOwesJD,
     marginPercent: split.marginPercent,
     poCount: purchaseOrders.length,
     isOverridden: false,
@@ -243,12 +285,17 @@ export function transformJob(job: any) {
     bradfordPaymentDate: job.bradfordPaymentDate,
 
     // === JD PAYMENT TRACKING ===
+    jdInvoiceNumber: job.jdInvoiceNumber || null,
     jdInvoiceGeneratedAt: job.jdInvoiceGeneratedAt,
     jdInvoiceEmailedAt: job.jdInvoiceEmailedAt,
     jdInvoiceEmailedTo: job.jdInvoiceEmailedTo,
     jdPaymentPaid: job.jdPaymentPaid || false,
     jdPaymentDate: job.jdPaymentDate,
     jdPaymentAmount: job.jdPaymentAmount ? Number(job.jdPaymentAmount) : null,
+
+    // === WORKFLOW STATUS ===
+    workflowStatus: job.workflowStatus || 'NEW_JOB',
+    workflowUpdatedAt: job.workflowUpdatedAt,
 
     // === DOCUMENT GENERATION TRACKING ===
     quoteGeneratedAt: job.quoteGeneratedAt,

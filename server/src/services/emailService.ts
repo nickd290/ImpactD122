@@ -257,6 +257,116 @@ function getPOEmailBody(
   `;
 }
 
+// Generate email body for PO - Bradford Exchange Ltd branding
+function getBradfordPOEmailBody(
+  po: any,
+  vendorName: string,
+  job: any,
+  options?: {
+    artworkFilesLink?: string;
+    specialInstructions?: string;
+    pdfUrl?: string;
+    portalUrl?: string;
+  }
+): string {
+  const poNumber = po.poNumber || po.id;
+  const buyCost = po.buyCost ? `$${Number(po.buyCost).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '';
+
+  // Job specs for email body
+  const specs = job?.specs || {};
+  const quantity = job?.quantity ? Number(job.quantity).toLocaleString() : '';
+  const sizeName = job?.sizeName || specs.finishedSize || '';
+  const dueDate = job?.dueDate ? new Date(job.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+  const mailDate = job?.mailDate ? new Date(job.mailDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+
+  // Build specs rows
+  const specsRows: string[] = [];
+  if (quantity) specsRows.push(`<tr><td style="padding: 6px 12px; color: #666;">Quantity:</td><td style="padding: 6px 12px; font-weight: 500;">${quantity}</td></tr>`);
+  if (sizeName) specsRows.push(`<tr><td style="padding: 6px 12px; color: #666;">Size:</td><td style="padding: 6px 12px; font-weight: 500;">${sizeName}</td></tr>`);
+  if (specs.paperType) specsRows.push(`<tr><td style="padding: 6px 12px; color: #666;">Paper:</td><td style="padding: 6px 12px; font-weight: 500;">${specs.paperType}</td></tr>`);
+  if (specs.colors) specsRows.push(`<tr><td style="padding: 6px 12px; color: #666;">Colors:</td><td style="padding: 6px 12px; font-weight: 500;">${specs.colors}</td></tr>`);
+  if (specs.finishing) specsRows.push(`<tr><td style="padding: 6px 12px; color: #666;">Finishing:</td><td style="padding: 6px 12px; font-weight: 500;">${specs.finishing}</td></tr>`);
+  if (dueDate) specsRows.push(`<tr><td style="padding: 6px 12px; color: #666;">Due Date:</td><td style="padding: 6px 12px; font-weight: 500;">${dueDate}</td></tr>`);
+  if (mailDate) specsRows.push(`<tr><td style="padding: 6px 12px; color: #666;">Mail Date:</td><td style="padding: 6px 12px; font-weight: 500;">${mailDate}</td></tr>`);
+
+  // Job specs table
+  const specsSection = specsRows.length > 0 ? `
+      <div style="background: #f0f5fa; padding: 16px; border-radius: 8px; margin: 16px 0;">
+        <strong style="color: #003366; font-size: 14px;">JOB SPECIFICATIONS</strong>
+        <table style="width: 100%; margin-top: 8px; border-collapse: collapse;">
+          ${specsRows.join('')}
+        </table>
+      </div>
+  ` : '';
+
+  // Portal link section (prominent green box)
+  const portalSection = options?.portalUrl ? `
+      <div style="background: #dcfce7; padding: 16px; border-radius: 8px; margin: 20px 0; border: 2px solid #22c55e; text-align: center;">
+        <strong style="color: #166534; font-size: 16px;">📁 Access Job Portal</strong><br/>
+        <p style="color: #166534; margin: 8px 0 12px 0; font-size: 13px;">Download PO, artwork, and all job files:</p>
+        <a href="${options.portalUrl}" style="display: inline-block; background: #22c55e; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: bold;">
+          Open Job Portal →
+        </a>
+      </div>
+  ` : '';
+
+  // Artwork link section (blue box with Bradford color)
+  const artworkSection = options?.artworkFilesLink ? `
+      <div style="background: #f0f5fa; padding: 12px; border-radius: 6px; margin: 16px 0; border: 1px solid #003366;">
+        <strong style="color: #003366;">Artwork Files:</strong><br/>
+        <a href="${options.artworkFilesLink}" style="color: #003366; word-break: break-all;">${options.artworkFilesLink}</a>
+      </div>
+  ` : '';
+
+  // Special instructions section (gold/yellow box for Bradford)
+  const instructionsSection = (options?.specialInstructions || specs.specialInstructions) ? `
+      <div style="background: #fef9c3; padding: 12px; border-radius: 6px; margin: 16px 0; border: 1px solid #CC9900;">
+        <strong style="color: #a16207;">⚠️ Special Instructions:</strong><br/>
+        <span style="white-space: pre-wrap;">${options?.specialInstructions || specs.specialInstructions}</span>
+      </div>
+  ` : '';
+
+  // PDF link section
+  const pdfLinkSection = options?.pdfUrl ? `
+      <p><a href="${options.pdfUrl}" style="color: #003366;">View/Download PO PDF</a></p>
+  ` : '';
+
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <!-- Bradford Exchange Header -->
+      <div style="background-color: #003366; padding: 24px 32px; border-bottom: 4px solid #CC9900;">
+        <h1 style="color: #ffffff; margin: 0; font-size: 18px; font-weight: 600; letter-spacing: 0.5px;">BRADFORD EXCHANGE LTD.</h1>
+        <p style="color: #b0c4de; margin: 4px 0 0 0; font-size: 13px;">Purchase Order</p>
+      </div>
+
+      <div style="padding: 20px;">
+        <p>Dear ${vendorName},</p>
+
+        <p>Please find attached the Purchase Order #${poNumber}${job?.jobNo ? ` for Job #${job.jobNo}` : ''}${job?.title ? ` - ${job.title}` : ''}.</p>
+
+        ${buyCost ? `<p><strong>PO Amount:</strong> ${buyCost}</p>` : ''}
+
+        ${specsSection}
+        ${portalSection}
+        ${artworkSection}
+        ${instructionsSection}
+        ${pdfLinkSection}
+
+        <p>Please confirm receipt by replying to this email.</p>
+
+        <p>Thank you!</p>
+
+        <hr style="border: none; border-top: 1px solid #ccc; margin: 20px 0;" />
+
+        <p style="color: #666; font-size: 12px;">
+          Bradford Exchange Ltd.<br />
+          Reply to this email and it will be attached to Job #${job?.jobNo || 'N/A'}
+        </p>
+      </div>
+    </div>
+  `;
+}
+
 // Send invoice email
 export async function sendInvoiceEmail(
   job: any,
@@ -331,13 +441,23 @@ export async function sendPOEmail(
       console.warn('⚠️ R2 upload failed, continuing without hosted PDF:', uploadError);
     }
 
-    const subject = `Purchase Order #${poNumber} - Impact Direct Printing`;
-    const body = getPOEmailBody(po, vendorName, job, {
-      artworkFilesLink: options?.artworkFilesLink,
-      specialInstructions: options?.specialInstructions,
-      pdfUrl,
-      portalUrl: options?.portalUrl,
-    });
+    // Determine branding based on routing type
+    const isBradfordRouting = job.routingType === 'BRADFORD_JD';
+    const companyName = isBradfordRouting ? 'Bradford Exchange Ltd.' : 'Impact Direct Printing';
+    const subject = `Purchase Order #${poNumber} - ${companyName}`;
+    const body = isBradfordRouting
+      ? getBradfordPOEmailBody(po, vendorName, job, {
+          artworkFilesLink: options?.artworkFilesLink,
+          specialInstructions: options?.specialInstructions,
+          pdfUrl,
+          portalUrl: options?.portalUrl,
+        })
+      : getPOEmailBody(po, vendorName, job, {
+          artworkFilesLink: options?.artworkFilesLink,
+          specialInstructions: options?.specialInstructions,
+          pdfUrl,
+          portalUrl: options?.portalUrl,
+        });
     const replyTo = getJobEmailAddress(jobNo);
 
     // Build additional attachments from job files
@@ -589,6 +709,7 @@ const JD_INVOICE_CC_EMAIL = 'nick@jdgraphic.com';
 function getJDInvoiceEmailBody(job: any): string {
   const jobNo = job.jobNo || job.id;
   const bradfordPO = job.bradfordPONumber || job.customerPONumber || 'N/A';
+  const invoiceNumber = job.jdInvoiceNumber || job.invoiceNumber || `JD-J-${jobNo}`;
 
   // Calculate total from manufacturing + paper
   let totalAmount = 0;
@@ -613,7 +734,7 @@ function getJDInvoiceEmailBody(job: any): string {
       <div style="padding: 20px;">
         <p>Dear Steve,</p>
 
-        <p>Please find attached the manufacturing invoice for <strong>Job #${jobNo}</strong> (Bradford PO: ${bradfordPO}).</p>
+        <p>Please find attached the manufacturing invoice <strong>${invoiceNumber}</strong> for <strong>Job #${jobNo}</strong> (Bradford PO: ${bradfordPO}).</p>
 
         ${formattedAmount ? `<p><strong>Invoice Total:</strong> ${formattedAmount}</p>` : ''}
 
@@ -639,15 +760,27 @@ function getJDInvoiceEmailBody(job: any): string {
 // Send JD Invoice to Bradford
 export async function sendJDInvoiceToBradfordEmail(
   job: any
-): Promise<EmailResult & { emailedTo?: string }> {
+): Promise<EmailResult & { emailedTo?: string; jdInvoiceNumber?: string }> {
   try {
-    // Generate JD Invoice PDF
-    const pdfBuffer = generateJDToBradfordInvoicePDF(job);
-
     const jobNo = job.jobNo || job.id;
-    const subject = `JD Graphic Invoice - Job #${jobNo}`;
-    const body = getJDInvoiceEmailBody(job);
-    const filename = `JD-Invoice-Job-${jobNo}.pdf`;
+
+    // Generate JD invoice number: JD-J-{jobNo}
+    // Use existing jdInvoiceNumber if present, otherwise generate new
+    const jdInvoiceNumber = job.jdInvoiceNumber || `JD-J-${jobNo}`;
+
+    // Add invoice number to job data for PDF generation
+    const jobWithInvoiceNumber = {
+      ...job,
+      jdInvoiceNumber,
+      invoiceNumber: jdInvoiceNumber, // For PDF template compatibility
+    };
+
+    // Generate JD Invoice PDF with invoice number
+    const pdfBuffer = generateJDToBradfordInvoicePDF(jobWithInvoiceNumber);
+
+    const subject = `JD Graphic Invoice ${jdInvoiceNumber} - Job #${jobNo}`;
+    const body = getJDInvoiceEmailBody(jobWithInvoiceNumber);
+    const filename = `JD-Invoice-${jdInvoiceNumber}.pdf`;
 
     const result = await sendEmail({
       to: BRADFORD_INVOICE_EMAIL,
@@ -662,15 +795,17 @@ export async function sendJDInvoiceToBradfordEmail(
       console.log('📧 JD Invoice sent to Bradford:', {
         to: BRADFORD_INVOICE_EMAIL,
         jobNo,
+        jdInvoiceNumber,
         subject,
       });
       return {
         ...result,
-        emailedTo: BRADFORD_INVOICE_EMAIL
+        emailedTo: BRADFORD_INVOICE_EMAIL,
+        jdInvoiceNumber,
       };
     }
 
-    return result;
+    return { ...result, jdInvoiceNumber };
   } catch (error: any) {
     console.error('Error sending JD invoice to Bradford:', error);
     return { success: false, error: error.message || 'Failed to generate or send JD invoice' };

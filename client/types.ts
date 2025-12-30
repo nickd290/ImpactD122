@@ -34,6 +34,20 @@ export enum JobStatus {
   CANCELLED = 'CANCELLED'
 }
 
+export enum JobWorkflowStatus {
+  NEW_JOB = 'NEW_JOB',
+  AWAITING_PROOF_FROM_VENDOR = 'AWAITING_PROOF_FROM_VENDOR',
+  PROOF_RECEIVED = 'PROOF_RECEIVED',
+  PROOF_SENT_TO_CUSTOMER = 'PROOF_SENT_TO_CUSTOMER',
+  AWAITING_CUSTOMER_RESPONSE = 'AWAITING_CUSTOMER_RESPONSE',
+  APPROVED_PENDING_VENDOR = 'APPROVED_PENDING_VENDOR',
+  IN_PRODUCTION = 'IN_PRODUCTION',
+  COMPLETED = 'COMPLETED',
+  INVOICED = 'INVOICED',
+  PAID = 'PAID',
+  CANCELLED = 'CANCELLED'
+}
+
 export type ProductType = 'BOOK' | 'FLAT' | 'FOLDED' | 'OTHER';
 
 export interface JobSpecs {
@@ -94,7 +108,8 @@ export interface Job {
   bradfordPaymentDate?: string;
   bradfordPaymentAmount?: number | null;
 
-  // JD Invoice/Payment Tracking (NEW)
+  // JD Invoice/Payment Tracking
+  jdInvoiceNumber?: string;
   jdInvoiceGeneratedAt?: string;
   jdInvoiceEmailedAt?: string;
   jdInvoiceEmailedTo?: string;
@@ -113,6 +128,8 @@ export interface Job {
   artworkFilename?: string;
 
   status: JobStatus;
+  workflowStatus?: JobWorkflowStatus;
+  workflowUpdatedAt?: string;
   locked?: boolean; // If true, job is read-only until unlocked
 
   dateCreated: number;

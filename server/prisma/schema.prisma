@@ -130,6 +130,8 @@ model Job {
   quoteId                   String?
   customerId                String
   status                    JobStatus        @default(ACTIVE)
+  workflowStatus            JobWorkflowStatus @default(NEW_JOB)
+  workflowUpdatedAt         DateTime?
   title                     String?
   description               String?
   notes                     String?
@@ -168,6 +170,7 @@ model Job {
   bradfordPaymentDate       DateTime?        // When was Bradford paid
 
   // JD → Bradford Invoice tracking
+  jdInvoiceNumber           String?          // JD invoice number (e.g., "JD-J-2068")
   jdInvoiceGeneratedAt      DateTime?        // When JD invoice PDF was generated
   jdInvoiceEmailedAt        DateTime?        // When JD invoice was emailed to Bradford
   jdInvoiceEmailedTo        String?          // Email address JD invoice was sent to
@@ -784,6 +787,20 @@ enum JobStatus {
   ACTIVE      // Job is in progress (not paid)
   PAID        // Job is paid/completed
   CANCELLED   // Job was cancelled
+}
+
+enum JobWorkflowStatus {
+  NEW_JOB                    // Just created
+  AWAITING_PROOF_FROM_VENDOR // PO sent to JD, waiting for proof
+  PROOF_RECEIVED             // JD uploaded proof to portal
+  PROOF_SENT_TO_CUSTOMER     // Sent to customer for approval
+  AWAITING_CUSTOMER_RESPONSE // Waiting for customer approval
+  APPROVED_PENDING_VENDOR    // Customer approved, need to notify JD
+  IN_PRODUCTION              // JD is printing
+  COMPLETED                  // Job done
+  INVOICED                   // Invoice sent to customer
+  PAID                       // Payment received
+  CANCELLED                  // Cancelled
 }
 
 enum JobType {

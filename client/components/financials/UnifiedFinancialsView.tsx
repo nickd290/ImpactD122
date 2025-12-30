@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Users, DollarSign, Package, TrendingUp } from 'lucide-react';
+import { Users, DollarSign, Package, TrendingUp, FileText } from 'lucide-react';
 
 // Import existing views as tab content (temporary - will be refactored to lean tabs)
 import { BradfordStatsView } from '../BradfordStatsView';
 import { FinancialsView } from '../FinancialsView';
 import { PaperInventoryView } from '../PaperInventoryView';
 import { AccountingDashboardView } from '../AccountingDashboardView';
+import { JDView } from '../JDView';
 
 interface UnifiedFinancialsViewProps {
   jobs: any[];
@@ -17,13 +18,14 @@ interface UnifiedFinancialsViewProps {
   onShowEmailDraft: (job: any) => void;
 }
 
-type FinancialsTab = 'partner' | 'cashflow' | 'inventory' | 'analysis';
+type FinancialsTab = 'partner' | 'cashflow' | 'inventory' | 'analysis' | 'jd';
 
 const tabs: { id: FinancialsTab; label: string; icon: React.ReactNode }[] = [
   { id: 'partner', label: 'Partner', icon: <Users className="w-4 h-4" /> },
   { id: 'cashflow', label: 'Cash Flow', icon: <DollarSign className="w-4 h-4" /> },
   { id: 'inventory', label: 'Inventory', icon: <Package className="w-4 h-4" /> },
   { id: 'analysis', label: 'Analysis', icon: <TrendingUp className="w-4 h-4" /> },
+  { id: 'jd', label: 'JD Invoices', icon: <FileText className="w-4 h-4" /> },
 ];
 
 export function UnifiedFinancialsView({
@@ -89,6 +91,10 @@ export function UnifiedFinancialsView({
 
         {activeTab === 'analysis' && (
           <AccountingDashboardView />
+        )}
+
+        {activeTab === 'jd' && (
+          <JDView jobs={allJobs} onRefresh={onRefresh} />
         )}
       </div>
     </div>

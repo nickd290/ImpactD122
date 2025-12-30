@@ -10,6 +10,7 @@ import { pdfApi, emailApi, communicationsApi, invoiceApi, filesApi } from '../li
 import { SendEmailModal } from './SendEmailModal';
 import { CommunicationThread } from './CommunicationThread';
 import { useQuery } from '@tanstack/react-query';
+import { WorkflowStatusBadge, getNextWorkflowStatuses } from './WorkflowStatusBadge';
 
 interface Job {
   id: string;
@@ -182,6 +183,10 @@ interface Job {
     paidAt?: string | null;
   }>;
   hasPaidInvoice?: boolean;
+  // Workflow status tracking
+  workflowStatus?: string;
+  workflowUpdatedAt?: string;
+  jdInvoiceNumber?: string;
 }
 
 interface JobDetailModalProps {
@@ -808,19 +813,27 @@ export function JobDetailModal({
   const handleSaveJob = async () => {
     setIsSavingJob(true);
     try {
+      console.log('[handleSaveJob] Saving editedJob:', editedJob);
       const response = await fetch(`/api/jobs/${job.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editedJob),
       });
 
-      if (!response.ok) throw new Error('Failed to save job');
+      console.log('[handleSaveJob] Response status:', response.status);
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('[handleSaveJob] Error:', errorData);
+        throw new Error(errorData.message || errorData.error || 'Failed to save job');
+      }
+      const result = await response.json();
+      console.log('[handleSaveJob] Success:', result);
       setIsEditMode(false);
       setEditedJob({});
       if (onRefresh) onRefresh();
     } catch (error) {
       console.error('Failed to save job:', error);
-      alert('Failed to save job');
+      alert(`Failed to save job: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsSavingJob(false);
     }
@@ -858,6 +871,46 @@ export function JobDetailModal({
     } catch (error) {
       console.error(`Failed to save ${field}:`, error);
       throw error;
+    }
+  };
+
+  // Workflow status change handler
+  const handleWorkflowStatusChange = async (newStatus: string) => {
+    if (!job) return;
+
+    try {
+      // Special case: Notify vendor when approving
+      if (newStatus === 'IN_PRODUCTION' && job.workflowStatus === 'APPROVED_PENDING_VENDOR') {
+        // Call the vendor approval notification endpoint
+        const emailResponse = await fetch(`/api/emails/vendor-approval/${job.id}`, {
+          method: 'POST',
+        });
+        if (!emailResponse.ok) {
+          const error = await emailResponse.json();
+          console.error('Failed to send vendor approval notification:', error);
+          // Don't throw - we still want to update the status
+        }
+      }
+
+      // Update the workflow status
+      const response = await fetch(`/api/jobs/${job.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workflowStatus: newStatus,
+          workflowUpdatedAt: new Date().toISOString(),
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to update workflow status');
+      }
+
+      if (onRefresh) onRefresh();
+    } catch (error) {
+      console.error('Failed to update workflow status:', error);
+      alert(`Failed to update status: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -1004,13 +1057,21 @@ export function JobDetailModal({
             </span>
           )}
         </div>
-        {/* Sell Price - Inline Editable */}
+        {/* Sell Price - Editable in Edit Mode */}
         <div className="bg-card border border-border rounded-lg p-3">
           <span className="text-[10px] text-muted-foreground uppercase block mb-1">Sell Price</span>
           {job.invoiceGeneratedAt ? (
             <p className="text-lg font-semibold text-foreground" title="Locked after invoice generated">
               {formatCurrency(job.sellPrice || 0)}
             </p>
+          ) : isEditMode ? (
+            <input
+              type="number"
+              step="0.01"
+              value={editedJob.sellPrice ?? job.sellPrice ?? ''}
+              onChange={(e) => updateEditedField('sellPrice', parseFloat(e.target.value) || 0)}
+              className="w-full px-2 py-1 text-lg font-semibold border border-input rounded focus:ring-2 focus:ring-primary"
+            />
           ) : (
             <InlineEditableCell
               value={job.sellPrice}
@@ -1046,6 +1107,34 @@ export function JobDetailModal({
           </p>
         </div>
       </div>
+
+      {/* Workflow Status Row */}
+      {job.workflowStatus && (
+        <div className="bg-card border border-border rounded-lg p-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] text-muted-foreground uppercase">Workflow</span>
+              <WorkflowStatusBadge status={job.workflowStatus} size="md" />
+              {job.workflowUpdatedAt && (
+                <span className="text-xs text-muted-foreground">
+                  Updated {new Date(job.workflowUpdatedAt).toLocaleDateString()}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {getNextWorkflowStatuses(job.workflowStatus).map(({ status, action }) => (
+                <button
+                  key={status}
+                  onClick={() => handleWorkflowStatusChange(status)}
+                  className="px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
+                >
+                  {action}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Customer & Vendor Row */}
       <div className="grid grid-cols-2 gap-3">

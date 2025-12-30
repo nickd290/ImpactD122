@@ -45,6 +45,89 @@ async function sendInternalNotification(
   }
 }
 
+// Proof notification recipients
+const PROOF_NOTIFICATION_TO = 'brandon@impactdirectprinting.com';
+const PROOF_NOTIFICATION_CC = 'nick@jdgraphic.com';
+
+/**
+ * Send proof received notification to Brandon (CC Nick)
+ */
+async function sendProofReceivedNotification(
+  jobNo: string,
+  jobTitle: string,
+  vendorName: string,
+  fileNames: string[]
+): Promise<void> {
+  if (!process.env.SENDGRID_API_KEY) {
+    console.warn('SendGrid not configured, skipping proof notification');
+    return;
+  }
+
+  const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'brandon@impactdirectprinting.com';
+  const jobEmail = getJobEmailAddress(jobNo);
+
+  const body = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <div style="background-color: #8B5CF6; padding: 20px; text-align: center;">
+        <h1 style="color: white; margin: 0; font-size: 22px;">📋 Proof Uploaded</h1>
+      </div>
+
+      <div style="padding: 20px; border: 1px solid #e5e7eb; border-top: none;">
+        <p style="font-size: 16px; margin-bottom: 20px;">A new proof has been uploaded and is ready for review.</p>
+
+        <div style="background: #f3f4f6; padding: 16px; border-radius: 8px; margin-bottom: 20px;">
+          <table style="width: 100%;">
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; width: 100px;">Job #:</td>
+              <td style="padding: 8px 0; font-weight: 600;">${jobNo}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280;">Title:</td>
+              <td style="padding: 8px 0; font-weight: 600;">${jobTitle}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280;">Vendor:</td>
+              <td style="padding: 8px 0; font-weight: 600;">${vendorName}</td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+          <p style="margin: 0 0 8px 0; font-weight: 600; color: #1e40af;">📎 Files Uploaded:</p>
+          <ul style="margin: 0; padding-left: 20px; color: #374151;">
+            ${fileNames.map(name => `<li style="padding: 4px 0;">${name}</li>`).join('')}
+          </ul>
+        </div>
+
+        <p style="color: #6b7280; font-size: 14px;">
+          Please review the proof and send it to the customer for approval.
+        </p>
+
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;" />
+
+        <p style="color: #9ca3af; font-size: 12px;">
+          Impact Direct Printing<br/>
+          This is an automated notification.
+        </p>
+      </div>
+    </div>
+  `;
+
+  try {
+    await sgMail.send({
+      to: PROOF_NOTIFICATION_TO,
+      cc: PROOF_NOTIFICATION_CC,
+      from: { email: fromEmail, name: 'Impact Direct Printing' },
+      subject: `🔔 Proof Uploaded - Job #${jobNo} - ${jobTitle}`,
+      html: body,
+      replyTo: jobEmail,
+    });
+    console.log(`📧 Proof notification sent to ${PROOF_NOTIFICATION_TO} (CC: ${PROOF_NOTIFICATION_CC})`);
+  } catch (error) {
+    console.error('Failed to send proof notification:', error);
+  }
+}
+
 /**
  * GET /api/vendor-portal/:token
  * Get portal data for a vendor token
@@ -446,7 +529,16 @@ export async function uploadVendorProofs(req: Request, res: Response) {
       },
     });
 
-    // Send notification
+    // Update workflow status to PROOF_RECEIVED
+    await prisma.job.update({
+      where: { id: portal.jobId },
+      data: {
+        workflowStatus: 'PROOF_RECEIVED',
+        workflowUpdatedAt: new Date(),
+      },
+    });
+
+    // Send notification to internal job email
     const vendorName = portal.Job.Vendor?.name || 'Vendor';
     await sendInternalNotification(
       portal.Job.jobNo,
@@ -463,6 +555,14 @@ export async function uploadVendorProofs(req: Request, res: Response) {
           <p><strong>Uploaded At:</strong> ${new Date().toLocaleString()}</p>
         </div>
       `
+    );
+
+    // Send proof received notification to Brandon + CC Nick
+    await sendProofReceivedNotification(
+      portal.Job.jobNo,
+      portal.Job.title || '',
+      vendorName,
+      files.map((f) => f.originalname)
     );
 
     res.json({

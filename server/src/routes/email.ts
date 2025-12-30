@@ -7,6 +7,7 @@ import {
   emailShipmentTracking,
   emailVendorPOWithPortal,
   sendProofToCustomer,
+  notifyVendorApproval,
 } from '../controllers/emailController';
 
 const router = Router();
@@ -31,5 +32,8 @@ router.post('/po-portal/:jobId/:poId', emailVendorPOWithPortal);
 
 // Send proof to customer
 router.post('/proof/:jobId', sendProofToCustomer);
+
+// Notify vendor that job has been approved - proceed with production
+router.post('/vendor-approval/:jobId', notifyVendorApproval);
 
 export default router;
