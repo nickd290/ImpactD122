@@ -255,6 +255,7 @@ export function JobDetailModal({
   const [emailType, setEmailType] = useState<'invoice' | 'po' | null>(null);
   const [selectedPOForEmail, setSelectedPOForEmail] = useState<{
     id: string;
+    jobId: string;
     poNumber: string;
     vendorName: string;
     vendorEmail?: string;
@@ -593,9 +594,9 @@ export function JobDetailModal({
 
   // PO Management with smart creation
   const handleAddPO = async () => {
-    // For Impact → Vendor POs, must have a vendor selected
-    if (poType === 'impact-vendor' && !poVendorId) {
-      alert('Please select a vendor');
+    // For Impact → Vendor POs, must have a vendor on the job
+    if (poType === 'impact-vendor' && !job.vendor?.id) {
+      alert('Please set a vendor on the job first (in job details)');
       return;
     }
 
@@ -627,7 +628,7 @@ export function JobDetailModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           poType,
-          vendorId: poType === 'impact-vendor' ? poVendorId : undefined,
+          vendorId: poType === 'impact-vendor' ? job.vendor?.id : undefined,
           buyCost: poCost,
           description: poDescription || selectedDescriptions || defaultDescription,
         }),
@@ -755,7 +756,7 @@ export function JobDetailModal({
           mfgCost: calculatedMfgCost ?? (editPOData.mfgCost ? parseFloat(editPOData.mfgCost) : undefined),
           printCPM: editPOData.printCPM ? parseFloat(editPOData.printCPM) : undefined,
           paperCPM: editPOData.paperCPM ? parseFloat(editPOData.paperCPM) : undefined,
-          vendorId: editPOData.vendorId || undefined,
+          // vendorId is now inherited from job - not editable on PO
         }),
       });
 
@@ -1745,6 +1746,7 @@ export function JobDetailModal({
                             const po = vendor.pos![0];
                             setSelectedPOForEmail({
                               id: po.id,
+                              jobId: job.id,
                               poNumber: po.poNumber,
                               vendorEmail: po.vendor?.email || job.vendor?.email || '',
                               vendorName: vendor.vendorName,
@@ -2349,20 +2351,10 @@ export function JobDetailModal({
                         <span className="font-mono text-sm text-blue-700">{po.poNumber || '-'}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <select
-                          value={editPOData.vendorId}
-                          onChange={(e) => setEditPOData(prev => ({ ...prev, vendorId: e.target.value }))}
-                          onKeyDown={(e) => e.stopPropagation()}
-                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                          disabled={isLoadingVendors}
-                        >
-                          <option value="">Select vendor...</option>
-                          {vendors.map(vendor => (
-                            <option key={vendor.id} value={vendor.id}>
-                              {vendor.name}{vendor.isPartner ? ' (Partner)' : ''}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="px-2 py-1.5 text-sm text-gray-600 bg-gray-50 rounded">
+                          {job.vendor?.name || 'No vendor'}
+                          <span className="text-xs text-gray-400 block">From job</span>
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <input
@@ -2592,25 +2584,22 @@ export function JobDetailModal({
               </p>
             </div>
 
-            {/* Vendor Selection - only for Impact → Vendor POs */}
+            {/* Vendor Display - inherited from job (read-only) */}
             {poType === 'impact-vendor' && (
               <div>
-                <label className="text-xs font-medium text-gray-600 uppercase block mb-2">Vendor *</label>
-                <select
-                  value={poVendorId}
-                  onChange={(e) => setPOVendorId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  disabled={isLoadingVendors}
-                >
-                  <option value="">Select vendor...</option>
-                  {vendors.map(vendor => (
-                    <option key={vendor.id} value={vendor.id}>
-                      {vendor.name}{vendor.isPartner ? ' (Partner)' : ''}
-                    </option>
-                  ))}
-                </select>
-                {poVendorId && vendors.find(v => v.id === poVendorId)?.isPartner && (
-                  <p className="text-xs text-orange-600 mt-1">Partner vendor - 50/50 profit split will apply</p>
+                <label className="text-xs font-medium text-gray-600 uppercase block mb-2">Vendor</label>
+                {job.vendor ? (
+                  <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700">
+                    {job.vendor.name}
+                    {job.vendor.isPartner && (
+                      <span className="ml-2 text-xs text-orange-600">(Partner - 50/50 split)</span>
+                    )}
+                    <p className="text-xs text-gray-500 mt-1">Inherited from job. Change vendor in job details.</p>
+                  </div>
+                ) : (
+                  <div className="px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-700">
+                    No vendor assigned to job. Set vendor in job details first.
+                  </div>
                 )}
               </div>
             )}
@@ -2697,6 +2686,48 @@ export function JobDetailModal({
               </span>
             </div>
 
+            {/* Margin Calculation */}
+            {(() => {
+              const newPOCost = poManualCost && parseFloat(poManualCost) > 0 ? parseFloat(poManualCost) : selectedTotal;
+              const existingPOCosts = (job.purchaseOrders || [])
+                .filter((po: any) => po.originCompanyId === 'impact-direct')
+                .reduce((sum: number, po: any) => sum + (po.buyCost || 0), 0);
+              const totalCostAfter = existingPOCosts + newPOCost;
+              const sellPrice = Number(job.sellPrice) || 0;
+              const margin = sellPrice - totalCostAfter;
+              const marginPercent = sellPrice > 0 ? (margin / sellPrice) * 100 : 0;
+              const isNegative = margin < 0;
+              const isLow = marginPercent > 0 && marginPercent < 10;
+
+              return (
+                <div className={`p-3 rounded-lg border ${isNegative ? 'bg-red-50 border-red-200' : isLow ? 'bg-yellow-50 border-yellow-200' : 'bg-gray-50 border-gray-200'}`}>
+                  <div className="text-xs text-gray-500 mb-1">After this PO:</div>
+                  <div className="grid grid-cols-3 gap-2 text-sm">
+                    <div>
+                      <span className="text-gray-500">Sell:</span>
+                      <span className="font-medium ml-1">{formatCurrency(sellPrice)}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Cost:</span>
+                      <span className="font-medium ml-1">{formatCurrency(totalCostAfter)}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Margin:</span>
+                      <span className={`font-bold ml-1 ${isNegative ? 'text-red-600' : isLow ? 'text-yellow-600' : 'text-green-600'}`}>
+                        {formatCurrency(margin)} ({marginPercent.toFixed(0)}%)
+                      </span>
+                    </div>
+                  </div>
+                  {isNegative && (
+                    <div className="text-xs text-red-600 mt-2 font-medium">Warning: Negative margin - you will lose money on this job!</div>
+                  )}
+                  {isLow && !isNegative && (
+                    <div className="text-xs text-yellow-600 mt-2">Low margin - verify pricing is correct</div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Description */}
             <div>
               <label className="text-xs font-medium text-gray-600 uppercase block mb-2">Description (Optional)</label>
@@ -2727,7 +2758,7 @@ export function JobDetailModal({
               </button>
               <button
                 onClick={handleAddPO}
-                disabled={isSaving || (poType === 'impact-vendor' && !poVendorId) || (selectedLineItems.size === 0 && (!poManualCost || parseFloat(poManualCost) <= 0))}
+                disabled={isSaving || (poType === 'impact-vendor' && !job.vendor?.id) || (selectedLineItems.size === 0 && (!poManualCost || parseFloat(poManualCost) <= 0))}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSaving ? 'Creating...' : 'Create PO'}
@@ -2933,6 +2964,7 @@ export function JobDetailModal({
                                 setEmailType('po');
                                 setSelectedPOForEmail({
                                   id: po.id,
+                                  jobId: job.id,
                                   poNumber: po.poNumber,
                                   vendorName: po.vendor?.name || po.targetCompany?.name || job.vendor?.name || 'Vendor',
                                   vendorEmail: po.vendor?.email || po.targetCompany?.email || job.vendor?.email,
@@ -3120,6 +3152,7 @@ export function JobDetailModal({
       {selectedPOForEmail && (
         <SendEmailModal
           type="po"
+          jobId={selectedPOForEmail.jobId}
           poId={selectedPOForEmail.id}
           poNumber={selectedPOForEmail.poNumber}
           defaultEmail={selectedPOForEmail.vendorEmail || ''}

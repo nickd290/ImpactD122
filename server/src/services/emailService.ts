@@ -1,5 +1,6 @@
 import sgMail from '@sendgrid/mail';
 import { generateInvoicePDF, generateVendorPOPDF, generateJDToBradfordInvoicePDF } from './pdfService';
+import { getVendorPoCcEmail, getArtworkCcEmails } from '../constants/emails';
 
 // Initialize SendGrid
 const apiKey = process.env.SENDGRID_API_KEY;
@@ -399,7 +400,8 @@ export async function sendInvoiceEmail(
 
 // Send PO email (vendor PO)
 // CC nick@jdgraphic.com on all vendor PO emails
-const VENDOR_PO_CC_EMAIL = 'nick@jdgraphic.com';
+// Use centralized CC email from constants (defaults to nick@jdgraphic.com)
+const VENDOR_PO_CC_EMAIL = getVendorPoCcEmail();
 
 export async function sendPOEmail(
   po: any,
@@ -530,12 +532,8 @@ function getArtworkFollowUpEmailBody(po: any, vendorName: string, job: any, artw
   `;
 }
 
-// CC list for artwork notifications
-const ARTWORK_CC_EMAILS = [
-  'brandon@impactdirectprinting.com',
-  'nick@jdgraphic.com',
-  'devin@jdgraphic.com',
-];
+// CC list for artwork notifications (from centralized constants)
+const ARTWORK_CC_EMAILS = getArtworkCcEmails();
 
 // Generate email body for artwork notification (new job-based notification)
 function getArtworkNotificationEmailBody(job: any, artworkUrl: string): string {

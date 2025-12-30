@@ -180,18 +180,19 @@ export const emailApi = {
       method: 'POST',
       body: JSON.stringify({ recipientEmail }),
     }),
+  // Send PO to vendor with portal link (always uses portal endpoint)
   sendPO: (
+    jobId: string,
     poId: string,
     recipientEmails: string | string[],
     options?: {
-      artworkFilesLink?: string;
       specialInstructions?: string;
     }
   ) =>
-    apiFetch(`/email/po/${poId}`, {
+    apiFetch(`/email/po-portal/${jobId}/${poId}`, {
       method: 'POST',
       body: JSON.stringify({
-        recipientEmails: Array.isArray(recipientEmails) ? recipientEmails : [recipientEmails],
+        recipientEmail: Array.isArray(recipientEmails) ? recipientEmails[0] : recipientEmails,
         ...options,
       }),
     }),

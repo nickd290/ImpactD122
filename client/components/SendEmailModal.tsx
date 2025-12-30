@@ -105,7 +105,6 @@ export function SendEmailModal({
   const [success, setSuccess] = useState(false);
 
   // PO-specific fields
-  const [artworkLink, setArtworkLink] = useState('');
   const [specialInstructions, setSpecialInstructions] = useState('');
 
   const documentLabel = type === 'invoice' ? 'Invoice' : 'Purchase Order';
@@ -167,13 +166,15 @@ export function SendEmailModal({
       if (type === 'invoice' && jobId) {
         // Invoice only supports single recipient for now
         await emailApi.sendInvoice(jobId, selectedEmails[0]);
-      } else if (type === 'po' && poId) {
-        await emailApi.sendPO(poId, selectedEmails, {
-          artworkFilesLink: artworkLink || undefined,
-          specialInstructions: specialInstructions || undefined,
-        });
+      } else if (type === 'po' && jobId && poId) {
+        // Send PO with portal link - one email per recipient
+        for (const email of selectedEmails) {
+          await emailApi.sendPO(jobId, poId, email, {
+            specialInstructions: specialInstructions || undefined,
+          });
+        }
       } else {
-        throw new Error('Invalid configuration');
+        throw new Error('Invalid configuration - jobId required for PO emails');
       }
 
       setSuccess(true);
@@ -302,22 +303,6 @@ export function SendEmailModal({
           {/* PO-specific fields */}
           {type === 'po' && (
             <>
-              {/* Artwork Link */}
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1.5">
-                  Artwork/Files Link
-                  <span className="text-muted-foreground font-normal ml-1">(optional)</span>
-                </label>
-                <Input
-                  type="url"
-                  value={artworkLink}
-                  onChange={(e) => setArtworkLink(e.target.value)}
-                  placeholder="https://dropbox.com/... or https://drive.google.com/..."
-                  disabled={loading || success}
-                  className="w-full"
-                />
-              </div>
-
               {/* Special Instructions */}
               <div>
                 <label className="block text-sm font-medium text-foreground mb-1.5">
@@ -334,9 +319,11 @@ export function SendEmailModal({
                 />
               </div>
 
-              {/* Info about file attachments */}
+              {/* Info about portal link */}
               <div className="text-xs text-muted-foreground bg-blue-50 p-2 rounded">
-                📎 Job files will be automatically attached to this email
+                Vendor will receive a portal link to view job details, files, and PO.
+                <br />
+                <span className="text-gray-500">CC: nick@jdgraphic.com</span>
               </div>
             </>
           )}
