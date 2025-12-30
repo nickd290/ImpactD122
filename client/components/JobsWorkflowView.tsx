@@ -32,6 +32,9 @@ interface WorkflowJob {
   inHomesDate: string | null;
   createdAt: string;
   quantity: number;
+  sellPrice: number;
+  spread: number;
+  customerPONumber: string | null;
   customerName: string;
   customerId: string;
   vendorName: string;
@@ -298,12 +301,15 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 border-b">
                       <tr>
-                        <th className="px-4 py-2 text-left font-medium text-gray-600 w-24">Job #</th>
-                        <th className="px-4 py-2 text-left font-medium text-gray-600">Customer</th>
-                        <th className="px-4 py-2 text-left font-medium text-gray-600">Vendor</th>
-                        <th className="px-4 py-2 text-left font-medium text-gray-600 w-20">Qty</th>
-                        <th className="px-4 py-2 text-left font-medium text-gray-600 w-24">Due</th>
-                        <th className="px-4 py-2 text-left font-medium text-gray-600">QC Status</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-600 w-20">Job #</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-600 w-24">Cust PO</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-600">Customer</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-600">Vendor</th>
+                        <th className="px-3 py-2 text-right font-medium text-gray-600 w-20">Price</th>
+                        <th className="px-3 py-2 text-right font-medium text-gray-600 w-20">Spread</th>
+                        <th className="px-3 py-2 text-right font-medium text-gray-600 w-16">Qty</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-600 w-20">Due</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-600">QC Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -316,36 +322,50 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
                             onClick={() => onSelectJob(job.id)}
                             className="hover:bg-blue-50 cursor-pointer transition-colors"
                           >
-                            <td className="px-4 py-2.5">
-                              <span className="font-mono text-blue-600 font-medium">
+                            <td className="px-3 py-2">
+                              <span className="font-mono text-blue-600 font-medium text-xs">
                                 {job.jobNo}
                               </span>
                             </td>
-                            <td className="px-4 py-2.5">
-                              <div className="font-medium text-gray-900 truncate max-w-[200px]">
+                            <td className="px-3 py-2">
+                              <span className="font-mono text-gray-600 text-xs truncate block max-w-[80px]">
+                                {job.customerPONumber || '-'}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="font-medium text-gray-900 truncate max-w-[150px]">
                                 {job.customerName}
                               </div>
                               {job.title && (
-                                <div className="text-xs text-gray-500 truncate max-w-[200px]">
+                                <div className="text-xs text-gray-500 truncate max-w-[150px]">
                                   {job.title}
                                 </div>
                               )}
                             </td>
-                            <td className="px-4 py-2.5 text-gray-700">
+                            <td className="px-3 py-2 text-gray-700 truncate max-w-[120px]">
                               {job.vendorName}
                             </td>
-                            <td className="px-4 py-2.5 text-gray-700">
+                            <td className="px-3 py-2 text-right font-medium text-gray-900">
+                              ${job.sellPrice?.toLocaleString() || '0'}
+                            </td>
+                            <td className={cn(
+                              "px-3 py-2 text-right font-medium",
+                              job.spread >= 0 ? 'text-green-600' : 'text-red-600'
+                            )}>
+                              ${job.spread?.toLocaleString() || '0'}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">
                               {job.quantity?.toLocaleString() || '-'}
                             </td>
-                            <td className="px-4 py-2.5">
+                            <td className="px-3 py-2">
                               <span className={cn(
-                                'font-medium',
+                                'font-medium text-xs',
                                 dueInfo.urgent ? 'text-red-600' : 'text-gray-700'
                               )}>
                                 {dueInfo.text}
                               </span>
                             </td>
-                            <td className="px-4 py-2.5">
+                            <td className="px-3 py-2">
                               {renderQCIndicators(job)}
                             </td>
                           </tr>

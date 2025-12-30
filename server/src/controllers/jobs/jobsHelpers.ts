@@ -550,15 +550,20 @@ export const JOB_INCLUDE_WORKFLOW = {
   PurchaseOrder: {
     where: {
       originCompanyId: 'impact-direct',
-      targetVendorId: { not: null },
     },
     select: {
       id: true,
       poNumber: true,
       status: true,
       issuedAt: true,
+      buyCost: true,
+      targetVendorId: true,
     },
-    take: 1,
+  },
+  ProfitSplit: {
+    select: {
+      grossMargin: true,
+    },
   },
 };
 
@@ -578,8 +583,19 @@ export function transformJobForWorkflow(job: any) {
   // Get portal status
   const portal = job.JobPortal;
 
-  // Get vendor PO status
-  const vendorPO = job.PurchaseOrder?.[0] || null;
+  // Get all Impact-origin POs
+  const allPOs = job.PurchaseOrder || [];
+  // Vendor PO = the one sent to external vendor (has targetVendorId)
+  const vendorPO = allPOs.find((po: any) => po.targetVendorId) || null;
+
+  // Calculate spread (use ProfitSplit if available, otherwise calculate from POs)
+  let spread = 0;
+  if (job.ProfitSplit?.grossMargin) {
+    spread = Number(job.ProfitSplit.grossMargin);
+  } else {
+    const totalCost = allPOs.reduce((sum: number, po: any) => sum + (Number(po.buyCost) || 0), 0);
+    spread = (Number(job.sellPrice) || 0) - totalCost;
+  }
 
   // Determine QC indicators
   const qcIndicators = {
@@ -626,6 +642,11 @@ export function transformJobForWorkflow(job: any) {
 
     // Quantity
     quantity: job.quantity || 0,
+
+    // Pricing
+    sellPrice: Number(job.sellPrice) || 0,
+    spread: spread,
+    customerPONumber: job.customerPONumber || null,
 
     // Customer/Vendor names
     customerName: job.Company?.name || 'Unknown',
