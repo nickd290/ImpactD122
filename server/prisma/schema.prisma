@@ -152,6 +152,7 @@ model Job {
   inHomesDate               DateTime?
   packingSlipNotes          String?
   customerPONumber          String?
+  customerJobNumber         String?          // Customer's internal job/reference number (e.g., Lahlouh OH######)
   customerPOFile            String?
   partnerPONumber           String?          // Bradford/Partner PO number (also used as payment reference)
 

@@ -38,6 +38,24 @@ export function POUploader({ onParsed, onCancel, jobId }: POUploaderProps) {
       setLoading(true);
       setError('');
       const result = await aiApi.parsePO(file, jobId);
+
+      // Check if the parser returned an error
+      if (result.error) {
+        const errorDetails = result.rawResponse
+          ? `\n\nAI Response (truncated): ${result.rawResponse}`
+          : '';
+        setError(`Parse failed: ${result.errorMessage} (${result.errorType})${errorDetails}`);
+        return;
+      }
+
+      // Check if result is essentially empty (no meaningful data extracted)
+      const hasData = result.customerName || result.poNumber || result.title ||
+                     result.quantity > 0 || (result.lineItems?.length > 0);
+      if (!hasData) {
+        setError('No data could be extracted from this document. Please try a clearer image or PDF, or enter manually.');
+        return;
+      }
+
       onParsed(result);
     } catch (err: any) {
       setError(err.message || 'Failed to parse purchase order');

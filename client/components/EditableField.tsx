@@ -6,6 +6,7 @@
  */
 
 import React from 'react';
+import { toDateInputValue } from '../lib/utils';
 
 interface SelectOption {
   label: string;
@@ -170,7 +171,7 @@ export function EditableField({
         return (
           <input
             type="date"
-            value={stringValue ? stringValue.split('T')[0] : ''}
+            value={toDateInputValue(stringValue)}
             onChange={(e) => onChange(e.target.value)}
             className={`${baseInputStyles} ${disabledStyles} ${inputClassName}`}
             disabled={disabled}

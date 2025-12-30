@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { User, Building2, ChevronDown, ChevronRight, Link, Send, Calendar, Package } from 'lucide-react';
+import { toDateInputValue } from '../../lib/utils';
 
 interface JobSpecs {
   productType?: string;
@@ -170,7 +171,7 @@ export function JobOverviewTab({
           {isEditMode ? (
             <input
               type="date"
-              value={getValue('dueDate') ?? ''}
+              value={toDateInputValue(getValue('dueDate'))}
               onChange={(e) => onUpdateField('dueDate', e.target.value)}
               className="w-full text-sm font-medium border rounded px-2 py-1"
             />

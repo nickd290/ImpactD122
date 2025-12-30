@@ -3,6 +3,7 @@ import {
   X, Calendar, User, Package, FileText, Edit2, Mail, Printer, Receipt,
   DollarSign, Plus, Trash2, Building2, Check, Save, Download, AlertTriangle, Send, ChevronDown, Link, ExternalLink, MessageSquare, Upload, Truck
 } from 'lucide-react';
+import { toDateInputValue } from '../lib/utils';
 import { EditableField } from './EditableField';
 import { InlineEditableCell } from './InlineEditableCell';
 import { LineItemRow } from './LineItemRow';
@@ -1226,7 +1227,7 @@ export function JobDetailModal({
             {isEditMode ? (
               <input
                 type="date"
-                value={editedJob.dueDate ?? job.dueDate ?? ''}
+                value={toDateInputValue(editedJob.dueDate ?? job.dueDate)}
                 onChange={(e) => updateEditedField('dueDate', e.target.value)}
                 className="px-2 py-1 text-sm border border-input rounded focus:ring-2 focus:ring-primary block mt-0.5"
               />

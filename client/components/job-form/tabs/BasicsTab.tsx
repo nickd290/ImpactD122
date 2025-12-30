@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, Loader2, Check } from 'lucide-react';
 import { JobFormData, Customer, Vendor } from '../types';
+import { toDateInputValue } from '../../../lib/utils';
 
 interface ParsedCustomer {
   name: string;
@@ -305,7 +306,7 @@ export function BasicsTab({
         </label>
         <input
           type="date"
-          value={formData.dueDate}
+          value={toDateInputValue(formData.dueDate)}
           onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
         />

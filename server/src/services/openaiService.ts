@@ -267,15 +267,19 @@ Return JSON:
 };
 
 export const parsePurchaseOrder = async (base64Data: string, mimeType: string): Promise<any> => {
+  console.log('📄 PO Parser: Starting parse...');
+  console.log('📄 PO Parser: MIME type:', mimeType);
+  console.log('📄 PO Parser: Base64 length:', base64Data.length);
+
   try {
     // Handle PDF files by converting to images first
     let imageContents: Array<{ type: 'image_url'; image_url: { url: string } }> = [];
 
     if (mimeType === 'application/pdf') {
-      console.log('📄 Converting PDF to images for OpenAI Vision...');
+      console.log('📄 PO Parser: Converting PDF to images for OpenAI Vision...');
       const pdfBuffer = Buffer.from(base64Data, 'base64');
       const pdfImages = await convertPdfToImages(pdfBuffer);
-      console.log(`📄 Converted PDF to ${pdfImages.length} page(s)`);
+      console.log(`📄 PO Parser: Converted PDF to ${pdfImages.length} page(s)`);
 
       // Add each page as an image (limit to first 5 pages to avoid token limits)
       const pagesToProcess = pdfImages.slice(0, 5);
@@ -306,6 +310,10 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
 
     2. **PO Details**:
        - poNumber: The PO number (look for "PO#", "Purchase Order #", "Order #")
+       - customerJobNumber: Customer's internal job/reference number - IMPORTANT: This is SEPARATE from PO number!
+         - Look for "Job" column, "Job #", "Job Number", "Reference #"
+         - Lahlouh format: "OH######" (e.g., OH175071, OH174966)
+         - Often found in a "Job" column on the line item
        - title: Job name/title/description
        - projectName: Project or campaign name if different from title
 
@@ -388,7 +396,11 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
         - labelingInstructions: Labeling requirements
 
     11. **Additional Notes - CRITICAL FOR VENDOR**:
-        - additionalNotes: Capture ANY important information that doesn't fit structured fields:
+        - rawDescriptionText: COPY THE ENTIRE ORIGINAL DESCRIPTION/LINE ITEM TEXT VERBATIM
+          - This preserves ALL information even if structured extraction misses details
+          - Include ALL versions, specs, instructions, quantities EXACTLY as written on the PO
+          - Do NOT summarize - copy word-for-word
+        - additionalNotes: In ADDITION to rawDescriptionText, extract:
           - Mailing instructions (mail date, drop location, USPS requirements)
           - File delivery dates/requirements
           - Proof requirements and dates
@@ -398,6 +410,8 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
           - Data file instructions
           - Version details (e.g., "REGULAR PRINT" vs "LARGE PRINT")
           - Client approval requirements
+          - Vendor instructions (e.g., "JD GRAPHIC TO...")
+          - Customer responsibilities (e.g., "LAHLOUH TO SUPPLY...")
           - Any other vendor-critical information
         - This is a catch-all - include EVERYTHING the vendor needs to know to do the job correctly
 
@@ -448,9 +462,10 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
     Return comprehensive JSON with ALL extracted fields:
     {
       customerName, contactPerson, contactEmail, contactPhone, customerAddress,
-      poNumber, title, projectName,
+      poNumber, customerJobNumber, title, projectName,
       dueDate, mailDate, inHomesDate,
       shipToName, shipToAddress, shipVia, specialInstructions,
+      rawDescriptionText,
       specs: {
         productType, flatSize, finishedSize, paperType, paperWeight, coverPaperType,
         colors, coating, finishing, folds, perforations, dieCut,
@@ -469,6 +484,8 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
       paymentTerms, fob, accountNumber
     }`;
 
+    console.log('📄 PO Parser: Calling OpenAI gpt-4o with', imageContents.length, 'image(s)...');
+
     const response = await getOpenAIClient().chat.completions.create({
       model: 'gpt-4o',
       messages: [{
@@ -482,14 +499,39 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
     });
 
     const text = response.choices[0]?.message?.content || '';
+    console.log('📄 PO Parser: OpenAI response received, length:', text.length);
+    console.log('📄 PO Parser: OpenAI raw response (first 500 chars):', text.substring(0, 500));
 
-    if (!text) return {};
+    if (!text) {
+      console.error('❌ PO Parser: Empty response from OpenAI');
+      return {
+        error: true,
+        errorMessage: 'Empty response from OpenAI',
+        errorType: 'EmptyResponse',
+      };
+    }
 
     // Extract JSON from markdown code blocks if present
     const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
-    const parsed = JSON.parse(jsonMatch ? jsonMatch[1] : text);
+    const jsonText = jsonMatch ? jsonMatch[1] : text;
+
+    console.log('📄 PO Parser: Attempting to parse JSON...');
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonText);
+    } catch (jsonError) {
+      console.error('❌ PO Parser: JSON parse failed:', jsonError);
+      console.error('❌ PO Parser: Raw text that failed to parse:', jsonText.substring(0, 1000));
+      return {
+        error: true,
+        errorMessage: 'Failed to parse AI response as JSON',
+        errorType: 'JSONParseError',
+        rawResponse: text.substring(0, 500),
+      };
+    }
 
     // Log the full parsed data for debugging
+    console.log('📋 PO Parser: Parsed JSON keys:', Object.keys(parsed));
     console.log('📋 PO Parser (OpenAI) - Full AI Response:', JSON.stringify(parsed, null, 2));
 
     // Calculate total quantity from all line items
@@ -499,6 +541,7 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
       // Basic job info
       title: parsed.title || parsed.projectName || "PO Import",
       customerPONumber: parsed.poNumber,
+      customerJobNumber: parsed.customerJobNumber || null,  // Customer's internal job # (e.g., Lahlouh OH######)
       customerName: parsed.customerName,
 
       // Contact info
@@ -606,8 +649,14 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
       packingInstructions: parsed.packingInstructions || null,
       labelingInstructions: parsed.labelingInstructions || null,
 
-      // Notes - capture ALL critical vendor information
-      notes: parsed.additionalNotes || null,
+      // Raw description text - verbatim copy from PO for reference
+      rawDescriptionText: parsed.rawDescriptionText || null,
+
+      // Notes - combine ALL critical vendor information
+      notes: [
+        parsed.rawDescriptionText ? `=== ORIGINAL PO TEXT ===\n${parsed.rawDescriptionText}` : null,
+        parsed.additionalNotes ? `=== ADDITIONAL NOTES ===\n${parsed.additionalNotes}` : null,
+      ].filter(Boolean).join('\n\n') || null,
 
       // Customer PO Total - sum of all line items for revenue display
       customerPOTotal: parsed.items?.reduce((sum: number, item: any) => sum + (item.lineTotal || 0), 0) || 0,
@@ -690,8 +739,17 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
     };
 
   } catch (e) {
-    console.error("PO Parsing Error (OpenAI)", e);
-    return {};
+    console.error("❌ PO Parsing Error (OpenAI):", e);
+    const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+    const errorType = e instanceof Error ? e.name : 'UnknownError';
+    console.error("❌ PO Parser: Error type:", errorType);
+    console.error("❌ PO Parser: Error message:", errorMessage);
+
+    return {
+      error: true,
+      errorMessage,
+      errorType,
+    };
   }
 };
 
