@@ -1,5 +1,11 @@
 import OpenAI from 'openai';
 
+// Polyfill browser APIs for pdf-to-img (which uses pdfjs-dist)
+// Must be done before any PDF processing
+import { DOMMatrix, DOMPoint } from 'canvas';
+(globalThis as any).DOMMatrix = DOMMatrix;
+(globalThis as any).DOMPoint = DOMPoint;
+
 // Lazy-initialize OpenAI Client to ensure env vars are loaded
 let openai: OpenAI | null = null;
 
