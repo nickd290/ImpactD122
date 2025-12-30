@@ -7,7 +7,7 @@ import { toDateInputValue } from '../lib/utils';
 import { EditableField } from './EditableField';
 import { InlineEditableCell } from './InlineEditableCell';
 import { LineItemRow } from './LineItemRow';
-import { pdfApi, emailApi, communicationsApi, invoiceApi, filesApi } from '../lib/api';
+import { pdfApi, emailApi, communicationsApi, invoiceApi, filesApi, jobsApi } from '../lib/api';
 import { SendEmailModal } from './SendEmailModal';
 import { CommunicationThread } from './CommunicationThread';
 import { useQuery } from '@tanstack/react-query';
@@ -38,6 +38,13 @@ interface Job {
   bradfordPaymentPaid?: boolean;
   bradfordPaymentDate?: string;
   notes?: string;
+  // QC Overrides
+  artOverride?: boolean;
+  dataOverride?: string;
+  vendorConfirmOverride?: boolean;
+  proofOverride?: string;
+  trackingOverride?: string;
+  trackingCarrierOverride?: string;
   customer?: {
     id: string;
     name: string;
@@ -3135,6 +3142,176 @@ export function JobDetailModal({
                     <p className="text-gray-400 italic text-sm">No notes for this job</p>
                   )}
                 </div>
+
+                {/* QC Status Controls */}
+                {job && (
+                  <div className="mt-6 pt-6 border-t border-gray-200">
+                    <details className="group">
+                      <summary className="flex items-center justify-between cursor-pointer text-sm font-semibold text-gray-700 hover:text-gray-900 py-2">
+                        <span>QC Status Controls (Manual Override)</span>
+                        <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
+                      </summary>
+                      <div className="pt-4 space-y-4">
+                        {/* Art Override */}
+                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div>
+                            <span className="text-sm font-medium text-gray-700">Artwork</span>
+                            <p className="text-xs text-gray-500">Mark as sent without uploading files</p>
+                          </div>
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={job.artOverride || false}
+                              onChange={async (e) => {
+                                try {
+                                  await jobsApi.updateQCOverrides(job.id, {
+                                    artOverride: e.target.checked
+                                  });
+                                  onRefresh?.();
+                                } catch (err) {
+                                  console.error('Failed to update art override:', err);
+                                }
+                              }}
+                              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-600">Sent</span>
+                          </label>
+                        </div>
+
+                        {/* Data Override */}
+                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div>
+                            <span className="text-sm font-medium text-gray-700">Data Files</span>
+                            <p className="text-xs text-gray-500">Mark data status manually</p>
+                          </div>
+                          <select
+                            value={job.dataOverride || ''}
+                            onChange={async (e) => {
+                              try {
+                                const value = e.target.value === '' ? null : e.target.value;
+                                await jobsApi.updateQCOverrides(job.id, {
+                                  dataOverride: value as 'SENT' | 'NA' | null
+                                });
+                                onRefresh?.();
+                              } catch (err) {
+                                console.error('Failed to update data override:', err);
+                              }
+                            }}
+                            className="text-sm border border-gray-300 rounded-md px-2 py-1 focus:ring-blue-500 focus:border-blue-500"
+                          >
+                            <option value="">Auto</option>
+                            <option value="SENT">Sent</option>
+                            <option value="NA">N/A</option>
+                          </select>
+                        </div>
+
+                        {/* Vendor Override */}
+                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div>
+                            <span className="text-sm font-medium text-gray-700">Vendor Confirmation</span>
+                            <p className="text-xs text-gray-500">Mark as confirmed without portal</p>
+                          </div>
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={job.vendorConfirmOverride || false}
+                              onChange={async (e) => {
+                                try {
+                                  await jobsApi.updateQCOverrides(job.id, {
+                                    vendorConfirmOverride: e.target.checked
+                                  });
+                                  onRefresh?.();
+                                } catch (err) {
+                                  console.error('Failed to update vendor override:', err);
+                                }
+                              }}
+                              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-600">Confirmed</span>
+                          </label>
+                        </div>
+
+                        {/* Proof Override */}
+                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div>
+                            <span className="text-sm font-medium text-gray-700">Proof Status</span>
+                            <p className="text-xs text-gray-500">Set proof approval status manually</p>
+                          </div>
+                          <select
+                            value={job.proofOverride || ''}
+                            onChange={async (e) => {
+                              try {
+                                const value = e.target.value === '' ? null : e.target.value;
+                                await jobsApi.updateQCOverrides(job.id, {
+                                  proofOverride: value as 'PENDING' | 'APPROVED' | 'CHANGES_REQUESTED' | null
+                                });
+                                onRefresh?.();
+                              } catch (err) {
+                                console.error('Failed to update proof override:', err);
+                              }
+                            }}
+                            className="text-sm border border-gray-300 rounded-md px-2 py-1 focus:ring-blue-500 focus:border-blue-500"
+                          >
+                            <option value="">Auto</option>
+                            <option value="PENDING">Pending</option>
+                            <option value="APPROVED">Approved</option>
+                            <option value="CHANGES_REQUESTED">Changes Requested</option>
+                          </select>
+                        </div>
+
+                        {/* Tracking Override */}
+                        <div className="p-3 bg-gray-50 rounded-lg">
+                          <div className="flex items-center justify-between mb-2">
+                            <div>
+                              <span className="text-sm font-medium text-gray-700">Tracking</span>
+                              <p className="text-xs text-gray-500">Enter tracking number manually</p>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              placeholder="Tracking number"
+                              defaultValue={job.trackingOverride || ''}
+                              onBlur={async (e) => {
+                                const value = e.target.value.trim();
+                                if (value !== (job.trackingOverride || '')) {
+                                  try {
+                                    await jobsApi.updateQCOverrides(job.id, {
+                                      trackingOverride: value || null
+                                    });
+                                    onRefresh?.();
+                                  } catch (err) {
+                                    console.error('Failed to update tracking:', err);
+                                  }
+                                }
+                              }}
+                              className="flex-1 text-sm border border-gray-300 rounded-md px-2 py-1 focus:ring-blue-500 focus:border-blue-500"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Carrier"
+                              defaultValue={job.trackingCarrierOverride || ''}
+                              onBlur={async (e) => {
+                                const value = e.target.value.trim();
+                                if (value !== (job.trackingCarrierOverride || '')) {
+                                  try {
+                                    await jobsApi.updateQCOverrides(job.id, {
+                                      trackingCarrierOverride: value || undefined
+                                    });
+                                    onRefresh?.();
+                                  } catch (err) {
+                                    console.error('Failed to update carrier:', err);
+                                  }
+                                }
+                              }}
+                              className="w-24 text-sm border border-gray-300 rounded-md px-2 py-1 focus:ring-blue-500 focus:border-blue-500"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </details>
+                  </div>
+                )}
               </>
             )}
             {activeTab === 'vendors-costs' && (

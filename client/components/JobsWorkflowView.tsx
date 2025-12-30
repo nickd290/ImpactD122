@@ -7,18 +7,23 @@ import { jobsApi } from '../lib/api';
 interface QCIndicators {
   artwork: 'sent' | 'missing' | 'partial';
   artworkCount: number;
+  artworkIsOverride: boolean;
   data: 'sent' | 'missing' | 'na';
   dataCount: number;
+  dataIsOverride: boolean;
   vendorConfirmed: boolean;
   vendorConfirmedAt: string | null;
   vendorConfirmedBy: string | null;
+  vendorIsOverride: boolean;
   vendorStatus: string | null;
   proofStatus: 'PENDING' | 'APPROVED' | 'CHANGES_REQUESTED' | null;
   proofVersion: number;
   hasProof: boolean;
+  proofIsOverride: boolean;
   hasTracking: boolean;
   trackingNumber: string | null;
   trackingCarrier: string | null;
+  trackingIsOverride: boolean;
 }
 
 interface WorkflowJob {
@@ -61,11 +66,13 @@ interface JobsWorkflowViewProps {
 function QCBadge({
   status,
   label,
-  count
+  count,
+  isOverride
 }: {
   status: 'sent' | 'missing' | 'na' | 'approved' | 'pending' | 'changes' | 'confirmed' | 'waiting';
   label: string;
   count?: number;
+  isOverride?: boolean;
 }) {
   const getStatusStyle = () => {
     switch (status) {
@@ -106,10 +113,14 @@ function QCBadge({
   };
 
   return (
-    <span className={cn(
-      'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium border',
-      getStatusStyle()
-    )}>
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium border',
+        getStatusStyle(),
+        isOverride && 'ring-2 ring-orange-400 ring-offset-1'
+      )}
+      title={isOverride ? 'Manually set' : undefined}
+    >
       {getIcon()}
       <span>{label}</span>
       {count !== undefined && count > 0 && <span className="opacity-70">({count})</span>}
@@ -191,6 +202,7 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
           status={qc.artwork}
           label="Art"
           count={qc.artworkCount}
+          isOverride={qc.artworkIsOverride}
         />
 
         {/* Data Files */}
@@ -198,29 +210,38 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
           status={qc.data}
           label="Data"
           count={qc.data !== 'na' ? qc.dataCount : undefined}
+          isOverride={qc.dataIsOverride}
         />
 
         {/* Vendor Confirmation */}
         <QCBadge
           status={qc.vendorConfirmed ? 'confirmed' : 'waiting'}
           label="Vendor"
+          isOverride={qc.vendorIsOverride}
         />
 
         {/* Proof Status */}
-        {qc.hasProof && (
+        {(qc.hasProof || qc.proofIsOverride) && (
           <QCBadge
             status={
               qc.proofStatus === 'APPROVED' ? 'approved' :
               qc.proofStatus === 'CHANGES_REQUESTED' ? 'changes' :
               'pending'
             }
-            label={`Proof v${qc.proofVersion}`}
+            label={`Proof${qc.proofVersion > 0 ? ` v${qc.proofVersion}` : ''}`}
+            isOverride={qc.proofIsOverride}
           />
         )}
 
         {/* Tracking */}
         {qc.hasTracking && (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
+          <span
+            className={cn(
+              'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200',
+              qc.trackingIsOverride && 'ring-2 ring-orange-400 ring-offset-1'
+            )}
+            title={qc.trackingIsOverride ? 'Manually set' : undefined}
+          >
             <Truck className="w-3 h-3" />
             Shipped
           </span>

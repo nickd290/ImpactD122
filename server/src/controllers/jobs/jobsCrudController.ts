@@ -1288,3 +1288,117 @@ async function recalculateProfitSplit(id: string, job: any) {
     },
   });
 }
+
+/**
+ * Update QC override fields for a job
+ * Allows staff to manually set QC status when auto-calculation doesn't reflect reality
+ */
+export const updateQCOverrides = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const {
+      // Art override
+      artOverride,
+      artOverrideNote,
+      clearArtOverride,
+      // Data override
+      dataOverride,
+      dataOverrideNote,
+      // Vendor override
+      vendorConfirmOverride,
+      vendorConfirmOverrideNote,
+      clearVendorOverride,
+      // Proof override
+      proofOverride,
+      proofOverrideNote,
+      // Tracking override
+      trackingOverride,
+      trackingCarrierOverride,
+    } = req.body;
+
+    const now = new Date();
+    const updatedBy = 'staff'; // TODO: Get from auth context
+
+    // Build update data object
+    const updateData: any = { updatedAt: now };
+
+    // Art override
+    if (clearArtOverride) {
+      updateData.artOverride = false;
+      updateData.artOverrideAt = null;
+      updateData.artOverrideBy = null;
+      updateData.artOverrideNote = null;
+    } else if (artOverride !== undefined) {
+      updateData.artOverride = artOverride;
+      updateData.artOverrideAt = artOverride ? now : null;
+      updateData.artOverrideBy = artOverride ? updatedBy : null;
+      if (artOverrideNote !== undefined) updateData.artOverrideNote = artOverrideNote;
+    }
+
+    // Data override
+    if (dataOverride === null) {
+      updateData.dataOverride = null;
+      updateData.dataOverrideAt = null;
+      updateData.dataOverrideBy = null;
+      updateData.dataOverrideNote = null;
+    } else if (dataOverride !== undefined) {
+      updateData.dataOverride = dataOverride;
+      updateData.dataOverrideAt = now;
+      updateData.dataOverrideBy = updatedBy;
+      if (dataOverrideNote !== undefined) updateData.dataOverrideNote = dataOverrideNote;
+    }
+
+    // Vendor override
+    if (clearVendorOverride) {
+      updateData.vendorConfirmOverride = false;
+      updateData.vendorConfirmOverrideAt = null;
+      updateData.vendorConfirmOverrideBy = null;
+      updateData.vendorConfirmOverrideNote = null;
+    } else if (vendorConfirmOverride !== undefined) {
+      updateData.vendorConfirmOverride = vendorConfirmOverride;
+      updateData.vendorConfirmOverrideAt = vendorConfirmOverride ? now : null;
+      updateData.vendorConfirmOverrideBy = vendorConfirmOverride ? updatedBy : null;
+      if (vendorConfirmOverrideNote !== undefined) updateData.vendorConfirmOverrideNote = vendorConfirmOverrideNote;
+    }
+
+    // Proof override
+    if (proofOverride === null) {
+      updateData.proofOverride = null;
+      updateData.proofOverrideAt = null;
+      updateData.proofOverrideBy = null;
+      updateData.proofOverrideNote = null;
+    } else if (proofOverride !== undefined) {
+      updateData.proofOverride = proofOverride;
+      updateData.proofOverrideAt = now;
+      updateData.proofOverrideBy = updatedBy;
+      if (proofOverrideNote !== undefined) updateData.proofOverrideNote = proofOverrideNote;
+    }
+
+    // Tracking override
+    if (trackingOverride === null) {
+      updateData.trackingOverride = null;
+      updateData.trackingCarrierOverride = null;
+      updateData.trackingOverrideAt = null;
+      updateData.trackingOverrideBy = null;
+    } else if (trackingOverride !== undefined) {
+      updateData.trackingOverride = trackingOverride;
+      updateData.trackingOverrideAt = now;
+      updateData.trackingOverrideBy = updatedBy;
+      if (trackingCarrierOverride !== undefined) updateData.trackingCarrierOverride = trackingCarrierOverride;
+    }
+
+    const job = await prisma.job.update({
+      where: { id },
+      data: updateData,
+      include: JOB_INCLUDE,
+    });
+
+    // Log activity
+    await logJobChange(id, 'QC_OVERRIDE', 'qcOverrides', null, JSON.stringify(req.body));
+
+    res.json(transformJob(job));
+  } catch (error) {
+    console.error('Update QC overrides error:', error);
+    res.status(500).json({ error: 'Failed to update QC overrides' });
+  }
+};

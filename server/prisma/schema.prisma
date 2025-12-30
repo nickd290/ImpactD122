@@ -233,6 +233,38 @@ model Job {
   vendorShipToState         String?
   vendorShipToZip           String?
   vendorSpecialInstructions String?
+
+  // === QC OVERRIDE FIELDS ===
+  // Art Override: Mark as sent without uploading files
+  artOverride               Boolean          @default(false)
+  artOverrideAt             DateTime?
+  artOverrideBy             String?
+  artOverrideNote           String?
+
+  // Data Override: Mark as sent or N/A without uploading files
+  dataOverride              String?          // "SENT" | "NA" | null
+  dataOverrideAt            DateTime?
+  dataOverrideBy            String?
+  dataOverrideNote          String?
+
+  // Vendor Override: Mark as confirmed without portal action
+  vendorConfirmOverride     Boolean          @default(false)
+  vendorConfirmOverrideAt   DateTime?
+  vendorConfirmOverrideBy   String?
+  vendorConfirmOverrideNote String?
+
+  // Proof Override: Set status directly
+  proofOverride             ProofStatus?
+  proofOverrideAt           DateTime?
+  proofOverrideBy           String?
+  proofOverrideNote         String?
+
+  // Tracking Override: Manual tracking entry
+  trackingOverride          String?
+  trackingCarrierOverride   String?
+  trackingOverrideAt        DateTime?
+  trackingOverrideBy        String?
+
   File                      File[]
   Invoice                   Invoice[]
   Company                   Company          @relation(fields: [customerId], references: [id])

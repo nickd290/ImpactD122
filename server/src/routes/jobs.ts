@@ -30,6 +30,8 @@ import {
   bulkGenerateJDInvoices,
   // Invoice status
   updateInvoiceStatus,
+  // QC overrides
+  updateQCOverrides,
 } from '../controllers/jobsController';
 
 const router = Router();
@@ -48,6 +50,7 @@ router.patch('/:id/status', updateJobStatus);
 router.patch('/:id/lock', toggleJobLock);
 router.patch('/:id/bradford-ref', updateBradfordRef);
 router.patch('/:id/bradford-payment', updateBradfordPayment);
+router.patch('/:id/qc-overrides', updateQCOverrides);
 
 // NEW: Payment tracking routes
 router.patch('/:id/payments', updatePayments);

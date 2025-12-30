@@ -85,6 +85,24 @@ export const jobsApi = {
   bulkGenerateJDInvoices: () => apiFetch('/jobs/bulk-generate-jd-invoices', {
     method: 'POST',
   }),
+  // QC Overrides
+  updateQCOverrides: (id: string, overrides: {
+    artOverride?: boolean;
+    artOverrideNote?: string;
+    clearArtOverride?: boolean;
+    dataOverride?: 'SENT' | 'NA' | null;
+    dataOverrideNote?: string;
+    vendorConfirmOverride?: boolean;
+    vendorConfirmOverrideNote?: string;
+    clearVendorOverride?: boolean;
+    proofOverride?: 'PENDING' | 'APPROVED' | 'CHANGES_REQUESTED' | null;
+    proofOverrideNote?: string;
+    trackingOverride?: string | null;
+    trackingCarrierOverride?: string;
+  }) => apiFetch(`/jobs/${id}/qc-overrides`, {
+    method: 'PATCH',
+    body: JSON.stringify(overrides),
+  }),
 };
 
 // Entities API

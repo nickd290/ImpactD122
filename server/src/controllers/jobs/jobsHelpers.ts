@@ -597,34 +597,40 @@ export function transformJobForWorkflow(job: any) {
     spread = (Number(job.sellPrice) || 0) - totalCost;
   }
 
-  // Determine QC indicators
+  // Determine QC indicators (overrides take precedence)
   const qcIndicators = {
-    // Artwork: sent, missing, partial
-    artwork: artworkFiles.length > 0 ? 'sent' : 'missing',
+    // Artwork: sent, missing, partial - override takes precedence
+    artwork: job.artOverride ? 'sent' : (artworkFiles.length > 0 ? 'sent' : 'missing'),
     artworkCount: artworkFiles.length,
+    artworkIsOverride: job.artOverride || false,
 
-    // Data files: sent, missing, n/a (if not direct mail)
-    data: dataFiles.length > 0 ? 'sent' :
-          (job.specs?.isDirectMail ? 'missing' : 'na'),
+    // Data files: sent, missing, n/a - override takes precedence
+    data: job.dataOverride === 'SENT' ? 'sent' :
+          job.dataOverride === 'NA' ? 'na' :
+          (dataFiles.length > 0 ? 'sent' : (job.specs?.isDirectMail ? 'missing' : 'na')),
     dataCount: dataFiles.length,
+    dataIsOverride: !!job.dataOverride,
 
-    // Vendor confirmation via portal
-    vendorConfirmed: portal?.confirmedAt ? true : false,
-    vendorConfirmedAt: portal?.confirmedAt || null,
-    vendorConfirmedBy: portal?.confirmedByName || null,
+    // Vendor confirmation - override takes precedence
+    vendorConfirmed: job.vendorConfirmOverride || (portal?.confirmedAt ? true : false),
+    vendorConfirmedAt: job.vendorConfirmOverride ? job.vendorConfirmOverrideAt : (portal?.confirmedAt || null),
+    vendorConfirmedBy: job.vendorConfirmOverride ? job.vendorConfirmOverrideBy : (portal?.confirmedByName || null),
+    vendorIsOverride: job.vendorConfirmOverride || false,
 
     // Vendor status from portal
     vendorStatus: portal?.vendorStatus || null,
 
-    // Proof status
-    proofStatus: latestProof?.status || null,
+    // Proof status - override takes precedence
+    proofStatus: job.proofOverride || latestProof?.status || null,
     proofVersion: latestProof?.version || 0,
     hasProof: proofFiles.length > 0,
+    proofIsOverride: !!job.proofOverride,
 
-    // Tracking
-    hasTracking: !!(portal?.trackingNumber),
-    trackingNumber: portal?.trackingNumber || null,
-    trackingCarrier: portal?.trackingCarrier || null,
+    // Tracking - override takes precedence
+    hasTracking: !!(job.trackingOverride || portal?.trackingNumber),
+    trackingNumber: job.trackingOverride || portal?.trackingNumber || null,
+    trackingCarrier: job.trackingCarrierOverride || portal?.trackingCarrier || null,
+    trackingIsOverride: !!job.trackingOverride,
   };
 
   return {
@@ -667,6 +673,7 @@ export function transformJobForWorkflow(job: any) {
 /**
  * Calculate workflow stage dynamically from actual job data
  * Overrides stored workflowStatus for accurate grouping in control station
+ * Manual overrides take precedence over actual data
  */
 export function calculateWorkflowStage(job: any): string {
   const portal = job.JobPortal;
@@ -674,20 +681,29 @@ export function calculateWorkflowStage(job: any): string {
   const latestProof = job.Proof?.[0] || null;
   const hasVendorProof = files.some((f: any) => f.kind === 'VENDOR_PROOF');
 
+  // Check for tracking (override or portal)
+  const hasTracking = !!(job.trackingOverride || portal?.trackingNumber);
+
+  // Check for vendor confirmation (override or portal)
+  const vendorConfirmed = job.vendorConfirmOverride || portal?.confirmedAt;
+
+  // Check for proof approval (override or actual)
+  const proofApproved = job.proofOverride === 'APPROVED' || latestProof?.status === 'APPROVED';
+
   // Priority order (most progressed → least)
-  if (portal?.vendorStatus === 'SHIPPED' || portal?.trackingNumber) {
+  if (portal?.vendorStatus === 'SHIPPED' || hasTracking) {
     return 'COMPLETED';
   }
   if (portal?.vendorStatus === 'IN_PRODUCTION' || portal?.vendorStatus === 'PRINTING_COMPLETE') {
     return 'IN_PRODUCTION';
   }
-  if (latestProof?.status === 'APPROVED') {
+  if (proofApproved) {
     return 'APPROVED_PENDING_VENDOR';
   }
   if (hasVendorProof || latestProof) {
     return 'AWAITING_CUSTOMER_RESPONSE';
   }
-  if (portal?.confirmedAt) {
+  if (vendorConfirmed) {
     return 'AWAITING_PROOF_FROM_VENDOR';
   }
   return 'NEW_JOB';
