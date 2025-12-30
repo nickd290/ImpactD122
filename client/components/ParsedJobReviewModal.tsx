@@ -22,6 +22,7 @@ export function ParsedJobReviewModal({
 }: ParsedJobReviewModalProps) {
   // Basic Info
   const [title, setTitle] = useState(parsedData.title || 'New Print Job');
+  const [jobType, setJobType] = useState<'single' | 'multipart'>('single');
   const [customerId, setCustomerId] = useState('');
   const [vendorId, setVendorId] = useState('');
   const [customerPONumber, setCustomerPONumber] = useState(parsedData.customerPONumber || '');
@@ -315,7 +316,7 @@ export function ParsedJobReviewModal({
     const jobData = {
       title,
       customerId,
-      vendorId,
+      vendorId: jobType === 'single' ? vendorId : undefined, // No vendor for multipart (assigned per component)
       customerPONumber,
       bradfordRefNumber,
       dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
@@ -323,6 +324,12 @@ export function ParsedJobReviewModal({
       inHomesDate: inHomesDate ? new Date(inHomesDate).toISOString() : undefined,
       notes,
       quantity: quantity || undefined,
+      // Job type for multi-part vs single vendor workflow
+      jobType,
+      // Product components for multi-part jobs (blanket PO)
+      productComponents: jobType === 'multipart' ? parsedData.productComponents : undefined,
+      // Raw description text from PO
+      rawDescriptionText: parsedData.rawDescriptionText || undefined,
       specs: {
         productType,
         paperType,
@@ -343,10 +350,10 @@ export function ParsedJobReviewModal({
       },
       lineItems,
       status: 'ACTIVE',
-      // Bradford pricing data for auto-PO creation
+      // Bradford pricing data for auto-PO creation (only for single-vendor Bradford jobs)
       // CORRECT: Impact's cost = Paper SELL + Print, then 50/50 profit split
-      isBradfordJob: isBradfordVendor && isBradfordSize(finishedSize),
-      bradfordPricing: isBradfordVendor && isBradfordSize(finishedSize) ? {
+      isBradfordJob: jobType === 'single' && isBradfordVendor && isBradfordSize(finishedSize),
+      bradfordPricing: jobType === 'single' && isBradfordVendor && isBradfordSize(finishedSize) ? {
         printCPM: bradfordPrintCPM,
         paperCostCPM: bradfordPaperCostCPM,
         paperSellCPM: bradfordPaperSellCPM,
@@ -367,7 +374,7 @@ export function ParsedJobReviewModal({
     const jobData = {
       title,
       customerId,
-      vendorId,
+      vendorId: jobType === 'single' ? vendorId : undefined,
       customerPONumber,
       bradfordRefNumber,
       dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
@@ -375,6 +382,9 @@ export function ParsedJobReviewModal({
       inHomesDate: inHomesDate ? new Date(inHomesDate).toISOString() : undefined,
       notes,
       quantity: quantity || undefined,
+      jobType,
+      productComponents: jobType === 'multipart' ? parsedData.productComponents : undefined,
+      rawDescriptionText: parsedData.rawDescriptionText || undefined,
       specs: {
         productType,
         paperType,
@@ -399,7 +409,8 @@ export function ParsedJobReviewModal({
     onSaveDraft(jobData);
   };
 
-  const hasWarnings = !customerId || !vendorId || lineItems.some((item: any) => !item.description || !item.quantity || item.quantity <= 0);
+  // Vendor not required for multipart jobs (assigned per component later)
+  const hasWarnings = !customerId || (jobType === 'single' && !vendorId) || lineItems.some((item: any) => !item.description || !item.quantity || item.quantity <= 0);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -425,7 +436,7 @@ export function ParsedJobReviewModal({
                 <p className="font-medium mb-1">Please review these fields:</p>
                 <ul className="list-disc list-inside space-y-1">
                   {!customerId && <li>Customer is required</li>}
-                  {!vendorId && <li>Vendor is required</li>}
+                  {jobType === 'single' && !vendorId && <li>Vendor is required for single-vendor jobs</li>}
                   {lineItems.some((item: any) => !item.description) && <li>Line item descriptions are required</li>}
                   {lineItems.some((item: any) => item.quantity <= 0) && <li>Line item quantities must be greater than 0</li>}
                 </ul>
@@ -615,6 +626,20 @@ export function ParsedJobReviewModal({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Job Type
+                </label>
+                <select
+                  value={jobType}
+                  onChange={(e) => setJobType(e.target.value as 'single' | 'multipart')}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                >
+                  <option value="single">Single Vendor</option>
+                  <option value="multipart">Multi-Part Vendors</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   Customer <span className="text-red-500">*</span>
                 </label>
                 <div className="flex items-center space-x-2">
@@ -642,34 +667,79 @@ export function ParsedJobReviewModal({
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Vendor <span className="text-red-500">*</span>
-                </label>
-                <div className="flex items-center space-x-2">
-                  <select
-                    value={vendorId}
-                    onChange={(e) => setVendorId(e.target.value)}
-                    className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 ${
-                      !vendorId ? 'border-red-300 bg-red-50' : ''
-                    }`}
-                  >
-                    <option value="">Select Vendor...</option>
-                    {vendors.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.name}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={() => setShowNewVendorForm(true)}
-                    className="flex items-center justify-center w-10 h-10 bg-orange-100 text-orange-600 rounded-lg hover:bg-orange-200"
-                    title="Add new vendor"
-                  >
-                    <Plus className="w-5 h-5" />
-                  </button>
+              {/* Single Vendor - only show for single vendor jobs */}
+              {jobType === 'single' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Vendor <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex items-center space-x-2">
+                    <select
+                      value={vendorId}
+                      onChange={(e) => setVendorId(e.target.value)}
+                      className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                        !vendorId ? 'border-red-300 bg-red-50' : ''
+                      }`}
+                    >
+                      <option value="">Select Vendor...</option>
+                      {vendors.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => setShowNewVendorForm(true)}
+                      className="flex items-center justify-center w-10 h-10 bg-orange-100 text-orange-600 rounded-lg hover:bg-orange-200"
+                      title="Add new vendor"
+                    >
+                      <Plus className="w-5 h-5" />
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {/* Multi-Part info - show when multi-part selected */}
+              {jobType === 'multipart' && (
+                <div className="col-span-2 bg-purple-50 border border-purple-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-purple-700 font-medium">Multi-Part Job (Blanket PO)</span>
+                    <span className="text-sm text-purple-600">
+                      ({parsedData.productComponents?.length || 0} components detected)
+                    </span>
+                  </div>
+                  <p className="text-sm text-purple-600 mb-3">
+                    Vendors will be assigned to individual components after job creation.
+                  </p>
+
+                  {/* Show detected components */}
+                  {parsedData.productComponents && parsedData.productComponents.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-purple-800 uppercase">Detected Components:</p>
+                      <div className="grid gap-2">
+                        {parsedData.productComponents.map((component: any, idx: number) => (
+                          <div key={idx} className="flex items-center justify-between bg-white border border-purple-200 rounded px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <span className="w-6 h-6 bg-purple-100 text-purple-700 rounded-full flex items-center justify-center text-xs font-medium">
+                                {idx + 1}
+                              </span>
+                              <div>
+                                <span className="font-medium text-gray-900">{component.componentType}</span>
+                                {component.description && (
+                                  <span className="text-sm text-gray-500 ml-2">- {component.description}</span>
+                                )}
+                              </div>
+                            </div>
+                            {component.quantity && (
+                              <span className="text-sm text-gray-600">{component.quantity.toLocaleString()} qty</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Customer PO Number</label>
