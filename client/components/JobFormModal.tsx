@@ -142,7 +142,8 @@ export function JobFormModal({
       return;
     }
 
-    if (!formData.vendorId) {
+    // Vendor only required for single-vendor jobs
+    if (formData.jobType !== 'multipart' && !formData.vendorId) {
       alert('Please select a vendor');
       return;
     }
@@ -190,6 +191,8 @@ export function JobFormModal({
 
     onSubmit({
       ...formData,
+      // Clear vendorId for multipart jobs (vendors assigned per component)
+      vendorId: formData.jobType === 'multipart' ? undefined : formData.vendorId,
       sellPrice: parsedSellPrice,
       specs: specsData,
       lineItems: validLineItems,

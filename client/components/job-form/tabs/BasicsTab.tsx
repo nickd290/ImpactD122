@@ -117,6 +117,58 @@ export function BasicsTab({
         </select>
       </div>
 
+      {/* Job Type */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Job Type
+        </label>
+        <select
+          value={formData.jobType || 'single'}
+          onChange={(e) => setFormData({ ...formData, jobType: e.target.value as 'single' | 'multipart' })}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        >
+          <option value="single">Single Vendor</option>
+          <option value="multipart">Multi-Part Vendors</option>
+        </select>
+        <p className="mt-1 text-xs text-gray-500">
+          {formData.jobType === 'multipart'
+            ? 'Blanket PO - vendors assigned per component'
+            : 'Standard single-vendor job'}
+        </p>
+      </div>
+
+      {/* Vendor - only required for single vendor */}
+      {formData.jobType !== 'multipart' && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Vendor *
+          </label>
+          <select
+            value={formData.vendorId}
+            onChange={(e) => setFormData({ ...formData, vendorId: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            required
+          >
+            <option value="">Select vendor...</option>
+            {vendors.map((vendor) => (
+              <option key={vendor.id} value={vendor.id}>
+                {vendor.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Multi-part info */}
+      {formData.jobType === 'multipart' && (
+        <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+          <p className="text-sm text-purple-700 font-medium">Multi-Part Job (Blanket PO)</p>
+          <p className="text-xs text-purple-600 mt-1">
+            Vendors will be assigned to individual components after job creation.
+          </p>
+        </div>
+      )}
+
       {/* Customer */}
       <div>
         <div className="flex items-center justify-between mb-1">
@@ -210,26 +262,6 @@ export function BasicsTab({
           {customers.map((customer) => (
             <option key={customer.id} value={customer.id}>
               {customer.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Vendor */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Vendor *
-        </label>
-        <select
-          value={formData.vendorId}
-          onChange={(e) => setFormData({ ...formData, vendorId: e.target.value })}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          required
-        >
-          <option value="">Select vendor...</option>
-          {vendors.map((vendor) => (
-            <option key={vendor.id} value={vendor.id}>
-              {vendor.name}
             </option>
           ))}
         </select>

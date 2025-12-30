@@ -1,6 +1,7 @@
 // Shared types for job form tabs
 
 export type RoutingType = 'BRADFORD_JD' | 'THIRD_PARTY_VENDOR';
+export type JobType = 'single' | 'multipart';
 
 export interface JobFormData {
   title: string;
@@ -14,6 +15,7 @@ export interface JobFormData {
   jdSuppliesPaper: boolean;
   paperInventoryId: string;
   routingType: RoutingType;
+  jobType: JobType;
 }
 
 export interface Specs {
