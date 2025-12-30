@@ -417,7 +417,7 @@ export const emailVendorPOWithPortal = async (req: Request, res: Response) => {
 
     const vendorName = vendor.name || 'Vendor';
     const baseUrl = process.env.APP_URL || 'https://app.impactdirectprinting.com';
-    const portalUrl = `${baseUrl}/api/portal/${portal.shareToken}`;
+    const portalUrl = `${baseUrl}/portal/${portal.shareToken}`;
 
     const result = await sendVendorPOWithPortalEmail(
       po,

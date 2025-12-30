@@ -1061,7 +1061,7 @@ async function createVendorPO(
         });
 
         const baseUrl = process.env.APP_URL || process.env.PUBLIC_URL || 'https://app.impactdirectprinting.com';
-        const portalUrl = `${baseUrl}/api/portal/${portal.shareToken}`;
+        const portalUrl = `${baseUrl}/portal/${portal.shareToken}`;
 
         // Send PO email with portal link
         const specs = job?.specs as Record<string, any> | null;
