@@ -393,6 +393,36 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
        - If pricing is "/M" or "per thousand": include pricePerThousand and calculate lineTotal = pricePerThousand × (quantity / 1000)
        - If there are multiple size/quantity combinations, capture each separately
 
+    9B. **Product Components (CRITICAL - EXTRACT ALL DISTINCT PRODUCTS)**:
+        **IMPORTANT: Identify ALL distinct product types/services mentioned in this PO!**
+        Complex POs often bundle multiple products that need separate vendors.
+
+        - productComponents: Array of distinct products/services found. For EACH component extract:
+          - componentType: Category (e.g., "ENVELOPE", "MAGNET", "BROCHURE", "LETTER", "BOOKLET", "POSTCARD", "MAILING_SERVICE", "LIST_SERVICE", "DATA_PROCESSING", "FULFILLMENT", "OTHER")
+          - description: Full description from PO (e.g., "6x9 Outer Envelope", "#10 BRE", "3.5x2 Magnet")
+          - quantity: Quantity for this component
+          - specs: Any specs specific to this component (size, paper, colors, etc.)
+          - priceOnPO: Price shown for this component if separate
+
+        COMMON PRODUCT TYPES TO LOOK FOR:
+        - Envelopes: "Outer Envelope", "OE", "#10", "6x9", "9x12", "BRE", "Reply Envelope"
+        - Magnets: "Magnet", "Business Card Magnet", "3.5x2 Magnet"
+        - Letters: "Letter", "Personalized Letter", "Variable Letter"
+        - Brochures: "Brochure", "Bifold", "Trifold", "Self-Mailer"
+        - Booklets: "Booklet", "Catalog", "Newsletter"
+        - Postcards: "Postcard", "Reply Card", "BRC"
+        - Mailing: "Mailing Service", "Mail Processing", "Presort", "Inkjet"
+        - Data: "Data Processing", "List Services", "Merge/Purge"
+        - Fulfillment: "Inserting", "Hand Assembly", "Kit Assembly"
+
+        EXAMPLE OUTPUT:
+        "productComponents": [
+          {"componentType": "BOOKLET", "description": "16pg Self Cover Booklet 8.5x11", "quantity": 137436, "specs": {"pageCount": "16pg", "size": "8.5x11", "binding": "Saddle Stitch"}},
+          {"componentType": "ENVELOPE", "description": "6x9 White Wove Outer Envelope", "quantity": 137436, "specs": {"size": "6x9", "paper": "24# White Wove"}},
+          {"componentType": "MAGNET", "description": "3.5x2 Business Card Magnet", "quantity": 137436, "specs": {"size": "3.5x2"}},
+          {"componentType": "MAILING_SERVICE", "description": "Standard Mail Processing with Presort", "quantity": 137436, "specs": {"mailClass": "Standard", "presort": true}}
+        ]
+
     10. **Additional Fields**:
         - artworkInstructions: Instructions about artwork, files, etc.
         - packingInstructions: How to pack/box the job
@@ -475,6 +505,7 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
         pageCount, bindingStyle, coverType, bleed, proofType
       },
       items: [{ description, quantity, pricePerThousand, lineTotal }],
+      productComponents: [{ componentType, description, quantity, specs, priceOnPO }],
       artworkInstructions, packingInstructions, labelingInstructions,
       additionalNotes,
       versions: [{ versionName, pageCount, quantity, specs, languageBreakdown }],
@@ -645,6 +676,15 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
           markupPercent: 0 // Margin unknown initially
         };
       }) || [],
+
+      // Product Components - distinct products/services in this PO
+      productComponents: parsed.productComponents?.map((pc: any) => ({
+        componentType: pc.componentType || 'OTHER',
+        description: pc.description || '',
+        quantity: pc.quantity || 0,
+        specs: pc.specs || {},
+        priceOnPO: pc.priceOnPO || null,
+      })) || [],
 
       // Additional instructions (also stored separately for easy access)
       specialInstructions: parsed.specialInstructions || null,
