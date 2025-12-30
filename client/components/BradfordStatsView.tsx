@@ -3,7 +3,8 @@ import { toast } from 'sonner';
 import { JobDetailModal } from './JobDetailModal';
 import { pdfApi, jobsApi } from '../lib/api';
 import { BradfordStats, BradfordJob } from '../types/bradford';
-import { Search, FileDown, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown, Pencil, Check, X, CheckCircle, ChevronRight, ChevronDown } from 'lucide-react';
+import { PaymentStageDropdown } from './PaymentStageDropdown';
+import { Search, FileDown, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown, Pencil, Check, X, CheckCircle, ChevronRight, ChevronDown, Filter } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -21,6 +22,7 @@ interface BradfordStatsViewProps {
 type SortField = 'jobNo' | 'title' | 'bradfordRef' | 'status' | 'sizeName' | 'quantity' | 'paperPounds' | 'sellPrice' | 'totalCost' | 'spread' | 'paperCost' | 'paperMarkup' | 'bradfordShare' | 'marginPercent';
 type SortDirection = 'asc' | 'desc';
 type MainTab = 'action' | 'completed' | 'paper';
+type PaymentFilter = 'all' | 'not_invoiced' | 'invoiced' | 'customer_paid' | 'bradford_paid' | 'jd_paid';
 
 // Helper functions for job status
 const isJobCompleted = (job: any, fullJob: any) =>
@@ -57,6 +59,7 @@ export function BradfordStatsView({
   const [savingPO, setSavingPO] = useState(false);
   const [savingPaperType, setSavingPaperType] = useState<string | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('all');
 
   // Fetch Bradford stats from API
   useEffect(() => {
@@ -152,24 +155,53 @@ export function BradfordStatsView({
     };
   }, [stats?.jobs, stats?.paperByType, jobs, allJobs]);
 
-  // Filter jobs by main tab
+  // Filter jobs by main tab and payment status
   const tabFilteredJobs = useMemo(() => {
     if (!stats?.jobs) return [];
 
     return stats.jobs.filter(job => {
       const fullJob = jobs.find(j => j.id === job.id) || allJobs.find(j => j.id === job.id);
 
+      // First apply main tab filter
       if (mainTab === 'completed') {
-        return isJobCompleted(job, fullJob);
-      }
-      if (mainTab === 'paper') {
+        if (!isJobCompleted(job, fullJob)) return false;
+      } else if (mainTab === 'paper') {
         // Paper tab shows all Bradford jobs (they all use Bradford paper)
-        return true;
+        // No filter needed
+      } else {
+        // Action tab: not completed (show all jobs that need attention)
+        if (isJobCompleted(job, fullJob)) return false;
       }
-      // Action tab: not completed (show all jobs that need attention)
-      return !isJobCompleted(job, fullJob);
+
+      // Then apply payment status filter (only for action/completed tabs)
+      if (mainTab !== 'paper' && paymentFilter !== 'all') {
+        const invoiced = !!fullJob?.invoiceEmailedAt;
+        const customerPaid = !!fullJob?.customerPaymentDate;
+        const bradfordPaid = !!fullJob?.bradfordPaymentPaid;
+        const jdPaid = !!fullJob?.jdPaymentPaid;
+
+        switch (paymentFilter) {
+          case 'not_invoiced':
+            if (invoiced) return false;
+            break;
+          case 'invoiced':
+            if (!invoiced || customerPaid) return false;
+            break;
+          case 'customer_paid':
+            if (!customerPaid || bradfordPaid) return false;
+            break;
+          case 'bradford_paid':
+            if (!bradfordPaid || jdPaid) return false;
+            break;
+          case 'jd_paid':
+            if (!jdPaid) return false;
+            break;
+        }
+      }
+
+      return true;
     });
-  }, [stats?.jobs, mainTab, jobs, allJobs]);
+  }, [stats?.jobs, mainTab, paymentFilter, jobs, allJobs]);
 
   // Compute filtered stats based on current tab
   const filteredStats = useMemo(() => {
@@ -753,15 +785,40 @@ export function BradfordStatsView({
       {/* Search and Export Bar */}
       <div className="bg-white rounded-lg border border-zinc-200 p-4 mb-6">
         <div className="flex flex-col sm:flex-row justify-between gap-4">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-zinc-400" />
-            <input
-              type="text"
-              placeholder="Search by Job #, Title, Ref, or Customer..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 placeholder:text-zinc-400"
-            />
+          <div className="flex flex-1 gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-zinc-400" />
+              <input
+                type="text"
+                placeholder="Search by Job #, Title, Ref, or Customer..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 placeholder:text-zinc-400"
+              />
+            </div>
+            {/* Payment Status Filter */}
+            {mainTab !== 'paper' && (
+              <div className="relative">
+                <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" />
+                <select
+                  value={paymentFilter}
+                  onChange={(e) => setPaymentFilter(e.target.value as PaymentFilter)}
+                  className={`pl-9 pr-8 py-2 border rounded-lg text-sm appearance-none cursor-pointer transition-colors ${
+                    paymentFilter !== 'all'
+                      ? 'border-blue-300 bg-blue-50 text-blue-700'
+                      : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50'
+                  }`}
+                >
+                  <option value="all">All Stages</option>
+                  <option value="not_invoiced">Not Invoiced</option>
+                  <option value="invoiced">Invoiced (awaiting payment)</option>
+                  <option value="customer_paid">Customer Paid</option>
+                  <option value="bradford_paid">Bradford Paid</option>
+                  <option value="jd_paid">JD Paid (complete)</option>
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" />
+              </div>
+            )}
           </div>
           <div className="flex gap-2">
             <button
@@ -782,6 +839,7 @@ export function BradfordStatsView({
         </div>
         <p className="text-xs text-zinc-400 mt-2">
           Showing {filteredAndSortedJobs.length} of {stats.jobs.length} jobs
+          {paymentFilter !== 'all' && <span className="text-blue-600"> (filtered by payment stage)</span>}
         </p>
       </div>
 
@@ -985,7 +1043,7 @@ export function BradfordStatsView({
                   </div>
                 </th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-zinc-500">
-                  Action
+                  Payment
                 </th>
               </tr>
             </thead>
@@ -1100,39 +1158,21 @@ export function BradfordStatsView({
                         {formatCurrency(job.bradfordShare)}
                       </td>
 
-                      {/* Action */}
+                      {/* Payment Status */}
                       <td className="px-4 py-3 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
-                        {(() => {
-                          if (customerPaid && bradfordPaid && jdPaid) {
-                            return (
-                              <span className="inline-flex items-center gap-1 text-green-600 text-xs">
-                                <CheckCircle className="w-3.5 h-3.5" />
-                                Done
-                              </span>
-                            );
-                          }
-                          if (bradfordPaid && !jdPaid) {
-                            return (
-                              <button
-                                onClick={(e) => handleMarkJDPaid(e, job.id)}
-                                className="px-2 py-1 text-xs font-medium text-white bg-zinc-900 hover:bg-zinc-800 rounded"
-                              >
-                                JD Paid
-                              </button>
-                            );
-                          }
-                          if (customerPaid && !bradfordPaid) {
-                            return (
-                              <button
-                                onClick={(e) => handleMarkBradfordPaid(e, job.id)}
-                                className="px-2 py-1 text-xs font-medium text-white bg-zinc-900 hover:bg-zinc-800 rounded"
-                              >
-                                Pay
-                              </button>
-                            );
-                          }
-                          return <span className="text-xs text-zinc-400">Awaiting</span>;
-                        })()}
+                        <PaymentStageDropdown
+                          jobId={job.id}
+                          invoiceSent={!!fullJob?.invoiceEmailedAt}
+                          invoiceSentDate={fullJob?.invoiceEmailedAt}
+                          customerPaid={customerPaid}
+                          customerPaidDate={fullJob?.customerPaymentDate}
+                          bradfordPaid={bradfordPaid}
+                          bradfordPaidDate={fullJob?.bradfordPaymentDate}
+                          jdPaid={jdPaid}
+                          jdPaidDate={fullJob?.jdPaymentDate}
+                          bradfordShare={job.bradfordShare}
+                          onUpdate={onRefresh}
+                        />
                       </td>
                     </tr>
                   );
