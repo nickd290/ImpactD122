@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Plus, Search, Sparkles, Upload, FileText, Edit, Trash2, FileSpreadsheet, CheckSquare, Square, ChevronDown, ChevronRight, MoreVertical, DollarSign, Printer, Receipt, Building2, Copy, FileDown, Mail } from 'lucide-react';
+import { Plus, Search, Sparkles, Upload, FileText, Edit, Trash2, FileSpreadsheet, CheckSquare, Square, ChevronDown, ChevronRight, MoreVertical, DollarSign, Printer, Receipt, Building2, Copy, FileDown, Mail, List, LayoutGrid } from 'lucide-react';
+import { JobsWorkflowView } from './JobsWorkflowView';
 import { Button, Tabs } from './ui';
 import { Input } from './ui';
 import { Badge } from './ui';
@@ -80,6 +81,7 @@ export function JobsView({
 }: JobsViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'active' | 'completed' | 'paid'>('active');
+  const [viewMode, setViewMode] = useState<'list' | 'workflow'>('workflow'); // Default to workflow view
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
@@ -406,22 +408,70 @@ export function JobsView({
             {tabCounts.active} active, {tabCounts.completed} completed
           </p>
         </div>
-        <Button onClick={onCreateJob} size="sm" className="bg-zinc-900 hover:bg-zinc-800">
-          <Plus className="w-4 h-4 mr-1.5" />
-          New Job
-        </Button>
+        <div className="flex items-center gap-3">
+          {/* View Toggle */}
+          <div className="flex items-center bg-zinc-100 rounded-lg p-0.5">
+            <button
+              onClick={() => setViewMode('workflow')}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                viewMode === 'workflow'
+                  ? "bg-white text-zinc-900 shadow-sm"
+                  : "text-zinc-500 hover:text-zinc-700"
+              )}
+            >
+              <LayoutGrid className="w-4 h-4" />
+              Control Station
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                viewMode === 'list'
+                  ? "bg-white text-zinc-900 shadow-sm"
+                  : "text-zinc-500 hover:text-zinc-700"
+              )}
+            >
+              <List className="w-4 h-4" />
+              List
+            </button>
+          </div>
+          <Button onClick={onCreateJob} size="sm" className="bg-zinc-900 hover:bg-zinc-800">
+            <Plus className="w-4 h-4 mr-1.5" />
+            New Job
+          </Button>
+        </div>
       </div>
 
-      {/* Tabs */}
-      <Tabs
-        tabs={tabs}
-        activeTab={activeTab}
-        onTabChange={(tabId) => {
-          setActiveTab(tabId as 'active' | 'completed' | 'paid');
-          setSelectedJobIds(new Set());
-          setSelectedCustomerId(null);
-        }}
-      />
+      {/* Workflow View */}
+      {viewMode === 'workflow' && (
+        <div className="bg-white rounded-lg border border-zinc-200 overflow-hidden">
+          <JobsWorkflowView
+            onSelectJob={(jobId) => {
+              const job = jobs.find(j => j.id === jobId);
+              if (job) {
+                onSelectJob(job);
+                setIsDrawerOpen(true);
+              }
+            }}
+            onRefresh={onRefresh}
+          />
+        </div>
+      )}
+
+      {/* List View */}
+      {viewMode === 'list' && (
+        <>
+          {/* Tabs */}
+          <Tabs
+            tabs={tabs}
+            activeTab={activeTab}
+            onTabChange={(tabId) => {
+              setActiveTab(tabId as 'active' | 'completed' | 'paid');
+              setSelectedJobIds(new Set());
+              setSelectedCustomerId(null);
+            }}
+          />
 
       {/* Search and Table */}
       <div className="bg-white rounded-lg border border-zinc-200 overflow-hidden">
@@ -726,6 +776,9 @@ export function JobsView({
           </div>
         )}
       </div>
+
+        </>
+      )}
 
       {/* Job Detail Modal */}
       {selectedJob && (

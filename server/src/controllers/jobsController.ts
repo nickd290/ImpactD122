@@ -2945,3 +2945,6 @@ export const updateInvoiceStatus = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to update invoice status' });
   }
 };
+
+// Re-export workflow view from crud controller
+export { getJobsWorkflowView } from './jobs/jobsCrudController';

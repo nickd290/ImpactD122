@@ -28,6 +28,7 @@ export const jobsApi = {
     const query = tab ? `?tab=${tab}` : '';
     return apiFetch(`/jobs${query}`);
   },
+  getWorkflowView: () => apiFetch('/jobs/workflow-view'),
   getById: (id: string) => apiFetch(`/jobs/${id}`),
   create: (data: any) => apiFetch('/jobs', {
     method: 'POST',

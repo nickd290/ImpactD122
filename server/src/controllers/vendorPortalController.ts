@@ -296,6 +296,15 @@ export async function confirmPO(req: Request, res: Response) {
       },
     });
 
+    // Auto-advance workflow status: Vendor confirmed → Awaiting Proof
+    await prisma.job.update({
+      where: { id: portal.jobId },
+      data: {
+        workflowStatus: 'AWAITING_PROOF_FROM_VENDOR',
+        workflowUpdatedAt: new Date(),
+      },
+    });
+
     // Log activity
     await prisma.jobActivity.create({
       data: {
@@ -394,6 +403,25 @@ export async function updateVendorStatus(req: Request, res: Response) {
         trackingCarrier: status === 'SHIPPED' ? (trackingCarrier || null) : portal.trackingCarrier,
       },
     });
+
+    // Auto-advance workflow status based on vendor status
+    type JobWorkflowStatus = 'NEW_JOB' | 'AWAITING_PROOF_FROM_VENDOR' | 'PROOF_RECEIVED' | 'PROOF_SENT_TO_CUSTOMER' | 'AWAITING_CUSTOMER_RESPONSE' | 'APPROVED_PENDING_VENDOR' | 'IN_PRODUCTION' | 'COMPLETED' | 'INVOICED' | 'PAID' | 'CANCELLED';
+
+    const workflowStatusMap: Record<string, JobWorkflowStatus> = {
+      'IN_PRODUCTION': 'IN_PRODUCTION',
+      'PRINTING_COMPLETE': 'IN_PRODUCTION', // Still in production phase
+      'SHIPPED': 'COMPLETED',
+    };
+
+    if (workflowStatusMap[status]) {
+      await prisma.job.update({
+        where: { id: portal.jobId },
+        data: {
+          workflowStatus: workflowStatusMap[status],
+          workflowUpdatedAt: new Date(),
+        },
+      });
+    }
 
     // Log activity
     await prisma.jobActivity.create({

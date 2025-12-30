@@ -515,3 +515,130 @@ export const JOB_INCLUDE_FULL = {
     },
   },
 };
+
+/**
+ * Workflow view include - includes File counts and Proof status for QC indicators
+ */
+export const JOB_INCLUDE_WORKFLOW = {
+  Company: true,
+  Vendor: {
+    include: {
+      contacts: true,
+    },
+  },
+  JobPortal: true,
+  File: {
+    select: {
+      id: true,
+      kind: true,
+      fileName: true,
+      createdAt: true,
+    },
+  },
+  Proof: {
+    select: {
+      id: true,
+      status: true,
+      version: true,
+      createdAt: true,
+    },
+    orderBy: {
+      version: 'desc' as const,
+    },
+    take: 1,
+  },
+  PurchaseOrder: {
+    where: {
+      originCompanyId: 'impact-direct',
+      targetVendorId: { not: null },
+    },
+    select: {
+      id: true,
+      poNumber: true,
+      status: true,
+      issuedAt: true,
+    },
+    take: 1,
+  },
+};
+
+/**
+ * Transform job for workflow view - lightweight with QC indicators
+ */
+export function transformJobForWorkflow(job: any) {
+  // Count files by kind
+  const files = job.File || [];
+  const artworkFiles = files.filter((f: any) => f.kind === 'ARTWORK');
+  const dataFiles = files.filter((f: any) => f.kind === 'DATA_FILE');
+  const proofFiles = files.filter((f: any) => f.kind === 'PROOF' || f.kind === 'VENDOR_PROOF');
+
+  // Get latest proof status
+  const latestProof = job.Proof?.[0] || null;
+
+  // Get portal status
+  const portal = job.JobPortal;
+
+  // Get vendor PO status
+  const vendorPO = job.PurchaseOrder?.[0] || null;
+
+  // Determine QC indicators
+  const qcIndicators = {
+    // Artwork: sent, missing, partial
+    artwork: artworkFiles.length > 0 ? 'sent' : 'missing',
+    artworkCount: artworkFiles.length,
+
+    // Data files: sent, missing, n/a (if not direct mail)
+    data: dataFiles.length > 0 ? 'sent' :
+          (job.specs?.isDirectMail ? 'missing' : 'na'),
+    dataCount: dataFiles.length,
+
+    // Vendor confirmation via portal
+    vendorConfirmed: portal?.confirmedAt ? true : false,
+    vendorConfirmedAt: portal?.confirmedAt || null,
+    vendorConfirmedBy: portal?.confirmedByName || null,
+
+    // Vendor status from portal
+    vendorStatus: portal?.vendorStatus || null,
+
+    // Proof status
+    proofStatus: latestProof?.status || null,
+    proofVersion: latestProof?.version || 0,
+    hasProof: proofFiles.length > 0,
+
+    // Tracking
+    hasTracking: !!(portal?.trackingNumber),
+    trackingNumber: portal?.trackingNumber || null,
+    trackingCarrier: portal?.trackingCarrier || null,
+  };
+
+  return {
+    id: job.id,
+    jobNo: job.jobNo,
+    title: job.title || '',
+    workflowStatus: job.workflowStatus || 'NEW_JOB',
+    workflowUpdatedAt: job.workflowUpdatedAt,
+
+    // Key dates
+    deliveryDate: job.deliveryDate,
+    mailDate: job.mailDate,
+    inHomesDate: job.inHomesDate,
+    createdAt: job.createdAt,
+
+    // Quantity
+    quantity: job.quantity || 0,
+
+    // Customer/Vendor names
+    customerName: job.Company?.name || 'Unknown',
+    customerId: job.customerId,
+    vendorName: job.Vendor?.name || 'Unassigned',
+    vendorId: job.vendorId,
+
+    // PO info
+    hasPO: !!vendorPO,
+    poNumber: vendorPO?.poNumber || null,
+    poSentAt: vendorPO?.issuedAt || null,
+
+    // QC Indicators
+    qc: qcIndicators,
+  };
+}

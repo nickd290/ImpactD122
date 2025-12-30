@@ -33,9 +33,11 @@ import { COMPANY_IDS } from '../../constants';
 import {
   canCreateImpactPO,
   transformJob,
+  transformJobForWorkflow,
   logJobChange,
   JOB_INCLUDE,
   JOB_INCLUDE_FULL,
+  JOB_INCLUDE_WORKFLOW,
 } from './jobsHelpers';
 
 // ============================================================================
@@ -100,6 +102,94 @@ export const getAllJobs = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Get all jobs error:', error);
     res.status(500).json({ error: 'Failed to fetch jobs' });
+  }
+};
+
+/**
+ * Get jobs grouped by workflow status with QC indicators
+ * Returns lightweight job data optimized for the control station view
+ */
+export const getJobsWorkflowView = async (req: Request, res: Response) => {
+  try {
+    // Define workflow stage order for grouping
+    const workflowOrder = [
+      'NEW_JOB',
+      'AWAITING_PROOF_FROM_VENDOR',
+      'PROOF_RECEIVED',
+      'PROOF_SENT_TO_CUSTOMER',
+      'AWAITING_CUSTOMER_RESPONSE',
+      'APPROVED_PENDING_VENDOR',
+      'IN_PRODUCTION',
+      'COMPLETED',
+      'INVOICED',
+      'PAID',
+      'CANCELLED',
+    ];
+
+    // Friendly names for display
+    const workflowLabels: Record<string, string> = {
+      'NEW_JOB': 'Awaiting Vendor Confirmation',
+      'AWAITING_PROOF_FROM_VENDOR': 'Needs Files / Awaiting Proof',
+      'PROOF_RECEIVED': 'Proof Received',
+      'PROOF_SENT_TO_CUSTOMER': 'Sent to Customer',
+      'AWAITING_CUSTOMER_RESPONSE': 'Awaiting Customer Approval',
+      'APPROVED_PENDING_VENDOR': 'Approved - Confirm with Vendor',
+      'IN_PRODUCTION': 'In Production',
+      'COMPLETED': 'Completed',
+      'INVOICED': 'Invoiced',
+      'PAID': 'Paid',
+      'CANCELLED': 'Cancelled',
+    };
+
+    // Get all active (non-deleted, non-paid) jobs with workflow data
+    const jobs = await prisma.job.findMany({
+      where: {
+        deletedAt: null,
+        status: 'ACTIVE', // Only active jobs for control station
+      },
+      include: JOB_INCLUDE_WORKFLOW,
+      orderBy: [
+        { deliveryDate: 'asc' },
+        { createdAt: 'desc' },
+      ],
+    });
+
+    // Transform jobs for workflow view
+    const transformedJobs = jobs.map(transformJobForWorkflow);
+
+    // Group by workflow status
+    const groupedJobs: Record<string, any[]> = {};
+    workflowOrder.forEach(status => {
+      groupedJobs[status] = [];
+    });
+
+    transformedJobs.forEach(job => {
+      const status = job.workflowStatus || 'NEW_JOB';
+      if (groupedJobs[status]) {
+        groupedJobs[status].push(job);
+      } else {
+        groupedJobs['NEW_JOB'].push(job);
+      }
+    });
+
+    // Build response with counts per stage
+    const stages = workflowOrder
+      .filter(status => status !== 'CANCELLED' && status !== 'PAID') // Hide empty end states
+      .map(status => ({
+        status,
+        label: workflowLabels[status] || status,
+        count: groupedJobs[status].length,
+        jobs: groupedJobs[status],
+      }))
+      .filter(stage => stage.count > 0 || ['NEW_JOB', 'IN_PRODUCTION'].includes(stage.status)); // Always show key stages
+
+    res.json({
+      stages,
+      totalActive: transformedJobs.length,
+    });
+  } catch (error) {
+    console.error('Get jobs workflow view error:', error);
+    res.status(500).json({ error: 'Failed to fetch workflow view' });
   }
 };
 

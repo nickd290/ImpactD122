@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   getAllJobs,
   getJob,
+  getJobsWorkflowView,
   createJob,
   updateJob,
   deleteJob,
@@ -35,6 +36,7 @@ const router = Router();
 
 // Job CRUD
 router.get('/', getAllJobs);
+router.get('/workflow-view', getJobsWorkflowView); // Must be before /:id
 router.get('/:id', getJob);
 router.post('/', createJob);
 router.post('/import', importBatchJobs);
