@@ -3,7 +3,7 @@ import { Upload, FileText, Loader2, X } from 'lucide-react';
 import { aiApi } from '../lib/api';
 
 interface POUploaderProps {
-  onParsed: (data: any) => void;
+  onParsed: (data: any, originalFile: File) => void;
   onCancel: () => void;
   jobId?: string;
 }
@@ -56,7 +56,8 @@ export function POUploader({ onParsed, onCancel, jobId }: POUploaderProps) {
         return;
       }
 
-      onParsed(result);
+      // Pass both parsed data and original file for storage
+      onParsed(result, file);
     } catch (err: any) {
       setError(err.message || 'Failed to parse purchase order');
     } finally {

@@ -12,6 +12,7 @@ import { SendEmailModal } from './SendEmailModal';
 import { CommunicationThread } from './CommunicationThread';
 import { useQuery } from '@tanstack/react-query';
 import { WorkflowStatusBadge, getNextWorkflowStatuses } from './WorkflowStatusBadge';
+import { PDFPreviewModal } from './PDFPreviewModal';
 
 interface Job {
   id: string;
@@ -280,6 +281,9 @@ export function JobDetailModal({
   const [uploadError, setUploadError] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // PDF Preview state
+  const [previewFile, setPreviewFile] = useState<{ id: string; fileName: string } | null>(null);
 
   // Fetch vendors when edit mode is enabled OR when adding PO
   useEffect(() => {
@@ -1211,9 +1215,9 @@ export function JobDetailModal({
                 {poFiles.map((file: any) => (
                   <button
                     key={file.id}
-                    onClick={() => filesApi.downloadFile(file.id)}
+                    onClick={() => setPreviewFile({ id: file.id, fileName: file.fileName })}
                     className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline"
-                    title={file.fileName}
+                    title={`Preview: ${file.fileName}`}
                   >
                     <FileText className="w-3 h-3" />
                     <span className="truncate max-w-[100px]">{file.fileName}</span>
@@ -3317,6 +3321,15 @@ export function JobDetailModal({
             </div>
           </div>
         </div>
+      )}
+
+      {/* PDF Preview Modal */}
+      {previewFile && (
+        <PDFPreviewModal
+          fileId={previewFile.id}
+          fileName={previewFile.fileName}
+          onClose={() => setPreviewFile(null)}
+        />
       )}
     </>
   );

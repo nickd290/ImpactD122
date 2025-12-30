@@ -55,6 +55,7 @@ function App() {
   const [showNewJobChoiceModal, setShowNewJobChoiceModal] = useState(false);
   const [parsedJobData, setParsedJobData] = useState<any>(null);
   const [jobFormInitialData, setJobFormInitialData] = useState<any>(null);
+  const [originalPOFile, setOriginalPOFile] = useState<File | null>(null);
 
   // Excel Import Modals
   const [showExcelImporter, setShowExcelImporter] = useState(false);
@@ -174,6 +175,24 @@ function App() {
       } else {
         toast.success('Job created successfully');
       }
+
+      // Upload original PO file if this job was created from parsed PO
+      if (originalPOFile && jobData._originalPOFile) {
+        try {
+          const formData = new FormData();
+          formData.append('file', originalPOFile);
+          formData.append('kind', 'PO_PDF');
+          await fetch(`/api/jobs/${newJob.id}/files`, {
+            method: 'POST',
+            body: formData,
+          });
+          console.log('✅ Original PO file uploaded successfully');
+        } catch (error) {
+          console.error('Failed to upload original PO file:', error);
+        }
+        // Clear the original PO file reference
+        setOriginalPOFile(null);
+      }
     } catch (error) {
       console.error('Failed to create job:', error);
       toast.error('Failed to create job. Please try again.');
@@ -202,7 +221,9 @@ function App() {
     setShowJobFormModal(true);
   };
 
-  const handlePOParsed = (parsedData: any) => {
+  const handlePOParsed = (parsedData: any, originalFile: File) => {
+    // Store original PO file for upload after job creation
+    setOriginalPOFile(originalFile);
     // Transform parsed data to form format for JobFormModal
     const formData = transformParsedDataToFormData(parsedData);
     setJobFormInitialData(formData);
@@ -309,9 +330,16 @@ function App() {
             unitPrice: item.unitPrice || item.pricePerM || 0,
           }))
         : [{ description: '', quantity: 0, unitCost: 0, markupPercent: 20, unitPrice: 0 }],
-      notes: parsedData.notes || '',
+      // CRITICAL: Include ALL text from PO in notes for vendor PO
+      notes: [
+        parsedData.rawDescriptionText,  // Full PO text from AI extraction
+        parsedData.notes,
+        parsedData.specs?.specialInstructions,
+      ].filter(Boolean).join('\n\n---\n\n'),
       // Flag that this is from parsed data (for potential Bradford auto-detection)
       _isParsedData: true,
+      // Store original file reference for upload after job creation
+      _originalPOFile: true,
     };
   };
 
