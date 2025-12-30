@@ -129,14 +129,14 @@ export const getJobsWorkflowView = async (req: Request, res: Response) => {
 
     // Friendly names for display
     const workflowLabels: Record<string, string> = {
-      'NEW_JOB': 'Awaiting Vendor Confirmation',
-      'AWAITING_PROOF_FROM_VENDOR': 'Needs Files / Awaiting Proof',
-      'PROOF_RECEIVED': 'Proof Received',
+      'NEW_JOB': 'New Job',
+      'AWAITING_PROOF_FROM_VENDOR': 'Waiting on Proofs',
+      'PROOF_RECEIVED': 'Proofs Received',
       'PROOF_SENT_TO_CUSTOMER': 'Sent to Customer',
       'AWAITING_CUSTOMER_RESPONSE': 'Awaiting Customer Approval',
-      'APPROVED_PENDING_VENDOR': 'Approved - Confirm with Vendor',
+      'APPROVED_PENDING_VENDOR': 'Approved - Notify Vendor',
       'IN_PRODUCTION': 'In Production',
-      'COMPLETED': 'Completed',
+      'COMPLETED': 'Shipped',
       'INVOICED': 'Invoiced',
       'PAID': 'Paid',
       'CANCELLED': 'Cancelled',
@@ -1400,5 +1400,44 @@ export const updateQCOverrides = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Update QC overrides error:', error);
     res.status(500).json({ error: 'Failed to update QC overrides' });
+  }
+};
+
+// Update workflow status override
+export const updateWorkflowStatus = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status, clearOverride } = req.body;
+
+    const now = new Date();
+    const updatedBy = 'staff'; // TODO: Get from auth context
+
+    let updateData: any = { updatedAt: now };
+
+    if (clearOverride) {
+      // Clear the override, revert to auto-calculated
+      updateData.workflowStatusOverride = null;
+      updateData.workflowStatusOverrideAt = null;
+      updateData.workflowStatusOverrideBy = null;
+    } else if (status) {
+      // Set manual override
+      updateData.workflowStatusOverride = status;
+      updateData.workflowStatusOverrideAt = now;
+      updateData.workflowStatusOverrideBy = updatedBy;
+    }
+
+    const job = await prisma.job.update({
+      where: { id },
+      data: updateData,
+      include: JOB_INCLUDE,
+    });
+
+    // Log activity
+    await logJobChange(id, 'WORKFLOW_STATUS_OVERRIDE', 'workflowStatus', null, status || 'cleared');
+
+    res.json(transformJob(job));
+  } catch (error) {
+    console.error('Update workflow status error:', error);
+    res.status(500).json({ error: 'Failed to update workflow status' });
   }
 };

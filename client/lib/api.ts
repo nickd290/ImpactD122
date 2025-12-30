@@ -103,6 +103,12 @@ export const jobsApi = {
     method: 'PATCH',
     body: JSON.stringify(overrides),
   }),
+  // Workflow status override
+  updateWorkflowStatus: (id: string, status: string | null, clearOverride?: boolean) =>
+    apiFetch(`/jobs/${id}/workflow-status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, clearOverride }),
+    }),
 };
 
 // Entities API

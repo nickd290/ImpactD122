@@ -132,6 +132,9 @@ model Job {
   status                    JobStatus        @default(ACTIVE)
   workflowStatus            JobWorkflowStatus @default(NEW_JOB)
   workflowUpdatedAt         DateTime?
+  workflowStatusOverride    String?          // Manual override for workflow stage display
+  workflowStatusOverrideAt  DateTime?
+  workflowStatusOverrideBy  String?
   title                     String?
   description               String?
   notes                     String?

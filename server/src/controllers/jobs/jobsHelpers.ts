@@ -673,9 +673,14 @@ export function transformJobForWorkflow(job: any) {
 /**
  * Calculate workflow stage dynamically from actual job data
  * Overrides stored workflowStatus for accurate grouping in control station
- * Manual overrides take precedence over actual data
+ * Manual workflowStatusOverride takes precedence over everything
  */
 export function calculateWorkflowStage(job: any): string {
+  // Manual override takes precedence
+  if (job.workflowStatusOverride) {
+    return job.workflowStatusOverride;
+  }
+
   const portal = job.JobPortal;
   const files = job.File || [];
   const latestProof = job.Proof?.[0] || null;

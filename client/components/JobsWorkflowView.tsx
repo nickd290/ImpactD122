@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ChevronDown, ChevronRight, CheckCircle2, Clock, AlertCircle, Circle, FileText, Database, Package, Truck, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronRight, CheckCircle2, Clock, AlertCircle, Circle, FileText, Database, Package, Truck, RefreshCw, MessageSquare, X } from 'lucide-react';
 import { Button, Badge } from './ui';
 import { cn } from '../lib/utils';
-import { jobsApi } from '../lib/api';
+import { jobsApi, communicationsApi } from '../lib/api';
 
 interface QCIndicators {
   artwork: 'sent' | 'missing' | 'partial';
@@ -160,6 +160,12 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
   const [collapsedStages, setCollapsedStages] = useState<Set<string>>(new Set());
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
 
+  // Quick note state
+  const [quickNoteJobId, setQuickNoteJobId] = useState<string | null>(null);
+  const [quickNoteJobNo, setQuickNoteJobNo] = useState<string>('');
+  const [noteText, setNoteText] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+
   // Extract unique customers from all jobs
   const customers = useMemo(() => {
     const customerMap = new Map<string, { id: string; name: string; jobCount: number }>();
@@ -225,6 +231,30 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
       }
       return next;
     });
+  };
+
+  // Open quick note modal
+  const openQuickNote = (jobId: string, jobNo: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Don't trigger row click
+    setQuickNoteJobId(jobId);
+    setQuickNoteJobNo(jobNo);
+    setNoteText('');
+  };
+
+  // Save quick note
+  const handleSaveNote = async () => {
+    if (!quickNoteJobId || !noteText.trim()) return;
+    setSavingNote(true);
+    try {
+      await communicationsApi.addNote(quickNoteJobId, noteText.trim());
+      setQuickNoteJobId(null);
+      setNoteText('');
+      // Optionally refresh or show success
+    } catch (err) {
+      console.error('Failed to save note:', err);
+    } finally {
+      setSavingNote(false);
+    }
   };
 
   // Render QC indicators for a job
@@ -402,6 +432,7 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
                         <th className="px-3 py-2 text-right font-medium text-gray-600 w-16">Qty</th>
                         <th className="px-3 py-2 text-left font-medium text-gray-600 w-20">Due</th>
                         <th className="px-3 py-2 text-left font-medium text-gray-600">QC Status</th>
+                        <th className="px-3 py-2 text-center font-medium text-gray-600 w-12"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -460,6 +491,15 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
                             <td className="px-3 py-2">
                               {renderQCIndicators(job)}
                             </td>
+                            <td className="px-3 py-2 text-center">
+                              <button
+                                onClick={(e) => openQuickNote(job.id, job.jobNo, e)}
+                                className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                title="Add note"
+                              >
+                                <MessageSquare className="w-4 h-4" />
+                              </button>
+                            </td>
                           </tr>
                         );
                       })}
@@ -492,6 +532,43 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
               Show all customers
             </button>
           )}
+        </div>
+      )}
+
+      {/* Quick Note Modal */}
+      {quickNoteJobId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setQuickNoteJobId(null)}>
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b">
+              <h3 className="font-semibold text-gray-900">Add Note - Job {quickNoteJobNo}</h3>
+              <button
+                onClick={() => setQuickNoteJobId(null)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4">
+              <textarea
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                placeholder="Enter your note..."
+                className="w-full h-32 px-3 py-2 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                autoFocus
+              />
+            </div>
+            <div className="flex justify-end gap-2 px-4 py-3 border-t bg-gray-50">
+              <Button variant="outline" onClick={() => setQuickNoteJobId(null)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveNote}
+                disabled={!noteText.trim() || savingNote}
+              >
+                {savingNote ? 'Saving...' : 'Save Note'}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

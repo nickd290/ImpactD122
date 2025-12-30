@@ -32,6 +32,8 @@ import {
   updateInvoiceStatus,
   // QC overrides
   updateQCOverrides,
+  // Workflow status override
+  updateWorkflowStatus,
 } from '../controllers/jobsController';
 
 const router = Router();
@@ -51,6 +53,7 @@ router.patch('/:id/lock', toggleJobLock);
 router.patch('/:id/bradford-ref', updateBradfordRef);
 router.patch('/:id/bradford-payment', updateBradfordPayment);
 router.patch('/:id/qc-overrides', updateQCOverrides);
+router.patch('/:id/workflow-status', updateWorkflowStatus);
 
 // NEW: Payment tracking routes
 router.patch('/:id/payments', updatePayments);
