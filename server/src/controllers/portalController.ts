@@ -145,6 +145,7 @@ export const accessPortal = async (req: Request, res: Response) => {
         productType: specs?.productType || '',
         paperType: specs?.paperType || specs?.paper || '',
         paperWeight: specs?.paperWeight || '',
+        coverPaperType: specs?.coverPaperType || '',
         colors: specs?.colors || specs?.inkColors || '',
         coating: specs?.coating || '',
         finishing: specs?.finishing || specs?.bindery || '',
@@ -152,10 +153,69 @@ export const accessPortal = async (req: Request, res: Response) => {
         coverType: specs?.coverType || '',
         pageCount: specs?.pageCount || '',
         flatSize: specs?.flatSize || '',
+        finishedSize: specs?.finishedSize || '',
         folds: specs?.folds || '',
         perforations: specs?.perforations || '',
+        dieCut: specs?.dieCut || '',
+        bleed: specs?.bleed || '',
+        proofType: specs?.proofType || '',
         shipVia: specs?.shipVia || '',
       },
+      // All timeline dates
+      timeline: {
+        orderDate: specs?.orderDate || null,
+        filesDueDate: specs?.filesDueDate || null,
+        proofDueDate: specs?.proofDueDate || null,
+        approvalDueDate: specs?.approvalDueDate || null,
+        productionStartDate: specs?.productionStartDate || null,
+        uspsDeliveryDate: specs?.uspsDeliveryDate || null,
+      },
+      // Product components (for multi-product POs)
+      productComponents: specs?.productComponents || [],
+      // Line items with pricing
+      lineItems: specs?.lineItems || [],
+      // Mailing details (direct mail jobs)
+      mailing: specs?.isDirectMail ? {
+        isDirectMail: true,
+        mailClass: specs?.mailClass || '',
+        mailProcess: specs?.mailProcess || '',
+        dropLocation: specs?.dropLocation || '',
+        uspsRequirements: specs?.uspsRequirements || '',
+        mailDatRequired: specs?.mailDatRequired || false,
+        mailDatResponsibility: specs?.mailDatResponsibility || '',
+        presortType: specs?.presortType || '',
+      } : null,
+      // Special handling
+      specialHandling: {
+        handSortRequired: specs?.handSortRequired || false,
+        handSortItems: specs?.handSortItems || '',
+        handSortReason: specs?.handSortReason || '',
+        rushJob: specs?.rushJob || false,
+        fragile: specs?.fragile || false,
+        oversizedShipment: specs?.oversizedShipment || false,
+      },
+      // All instructions
+      instructions: {
+        artwork: specs?.artworkInstructions || '',
+        packing: specs?.packingInstructions || '',
+        labeling: specs?.labelingInstructions || '',
+        special: specs?.specialInstructions || job.vendorSpecialInstructions || '',
+      },
+      // Raw PO text (verbatim from original PO)
+      rawPOText: specs?.rawDescriptionText || '',
+      additionalNotes: specs?.additionalNotes || '',
+      // Versions/Language breakdowns
+      versions: specs?.versions || [],
+      languageBreakdown: specs?.languageBreakdown || [],
+      // Responsibility matrix
+      responsibilities: {
+        vendor: specs?.vendorTasks || [],
+        customer: specs?.customerTasks || [],
+      },
+      // Payment terms
+      paymentTerms: specs?.paymentTerms || '',
+      fob: specs?.fob || '',
+      accountNumber: specs?.accountNumber || '',
       // Files grouped by type
       files: {
         artwork: job.File.filter(f => f.kind === 'ARTWORK').map(f => ({

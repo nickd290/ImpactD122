@@ -54,6 +54,7 @@ interface PortalData {
     productType?: string;
     paperType?: string;
     paperWeight?: string;
+    coverPaperType?: string;
     colors?: string;
     coating?: string;
     finishing?: string;
@@ -61,10 +62,88 @@ interface PortalData {
     coverType?: string;
     pageCount?: string;
     flatSize?: string;
+    finishedSize?: string;
     folds?: string;
     perforations?: string;
+    dieCut?: string;
+    bleed?: string;
+    proofType?: string;
     shipVia?: string;
   };
+  // Timeline dates
+  timeline?: {
+    orderDate?: string;
+    filesDueDate?: string;
+    proofDueDate?: string;
+    approvalDueDate?: string;
+    productionStartDate?: string;
+    uspsDeliveryDate?: string;
+  };
+  // Product components
+  productComponents?: Array<{
+    componentType: string;
+    description: string;
+    quantity?: number;
+    specs?: string;
+    priceOnPO?: number;
+  }>;
+  // Line items
+  lineItems?: Array<{
+    description: string;
+    quantity?: number;
+    pricePerThousand?: number;
+    lineTotal?: number;
+    unitPrice?: number;
+  }>;
+  // Mailing details
+  mailing?: {
+    isDirectMail: boolean;
+    mailClass?: string;
+    mailProcess?: string;
+    dropLocation?: string;
+    uspsRequirements?: string;
+    mailDatRequired?: boolean;
+    mailDatResponsibility?: string;
+    presortType?: string;
+  } | null;
+  // Special handling
+  specialHandling?: {
+    handSortRequired?: boolean;
+    handSortItems?: string;
+    handSortReason?: string;
+    rushJob?: boolean;
+    fragile?: boolean;
+    oversizedShipment?: boolean;
+  };
+  // Instructions
+  instructions?: {
+    artwork?: string;
+    packing?: string;
+    labeling?: string;
+    special?: string;
+  };
+  // Raw PO text
+  rawPOText?: string;
+  additionalNotes?: string;
+  // Versions/breakdowns
+  versions?: Array<{
+    versionName: string;
+    pageCount?: string;
+    quantity?: number;
+    specs?: string;
+    languageBreakdown?: Array<{ language: string; quantity: number }>;
+  }>;
+  languageBreakdown?: Array<{ language: string; quantity: number; handSort?: boolean }>;
+  // Responsibilities
+  responsibilities?: {
+    vendor?: Array<{ task: string; deadline?: string }>;
+    customer?: Array<{ task: string; deadline?: string }>;
+  };
+  // Payment
+  paymentTerms?: string;
+  fob?: string;
+  accountNumber?: string;
+  // Files
   files: {
     artwork: Array<{ id: string; name: string; size: number; uploadedAt: string }>;
     dataFiles: Array<{ id: string; name: string; size: number; uploadedAt: string }>;
@@ -598,6 +677,416 @@ export function VendorPortalView({ token }: { token: string }) {
                   </div>
                 </div>
               </div>
+            )}
+
+            {/* Extended Timeline */}
+            {data.timeline && Object.values(data.timeline).some(v => v) && (
+              <div className="bg-indigo-50 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-indigo-900 mb-3 flex items-center gap-2">
+                  <Calendar className="h-4 w-4" />
+                  Production Timeline
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                  {data.timeline.orderDate && (
+                    <div>
+                      <p className="text-indigo-600 text-xs uppercase">Order Date</p>
+                      <p className="font-medium text-indigo-900">{formatDate(data.timeline.orderDate)}</p>
+                    </div>
+                  )}
+                  {data.timeline.filesDueDate && (
+                    <div>
+                      <p className="text-indigo-600 text-xs uppercase">Files Due</p>
+                      <p className="font-medium text-indigo-900">{formatDate(data.timeline.filesDueDate)}</p>
+                    </div>
+                  )}
+                  {data.timeline.proofDueDate && (
+                    <div>
+                      <p className="text-indigo-600 text-xs uppercase">Proof Due</p>
+                      <p className="font-medium text-indigo-900">{formatDate(data.timeline.proofDueDate)}</p>
+                    </div>
+                  )}
+                  {data.timeline.approvalDueDate && (
+                    <div>
+                      <p className="text-indigo-600 text-xs uppercase">Approval Due</p>
+                      <p className="font-medium text-indigo-900">{formatDate(data.timeline.approvalDueDate)}</p>
+                    </div>
+                  )}
+                  {data.timeline.productionStartDate && (
+                    <div>
+                      <p className="text-indigo-600 text-xs uppercase">Production Start</p>
+                      <p className="font-medium text-indigo-900">{formatDate(data.timeline.productionStartDate)}</p>
+                    </div>
+                  )}
+                  {data.timeline.uspsDeliveryDate && (
+                    <div>
+                      <p className="text-indigo-600 text-xs uppercase">USPS Delivery</p>
+                      <p className="font-medium text-indigo-900">{formatDate(data.timeline.uspsDeliveryDate)}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Product Components */}
+            {data.productComponents && data.productComponents.length > 0 && (
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3 pb-2 border-b border-orange-500">
+                  Product Components
+                </h3>
+                <div className="grid gap-3">
+                  {data.productComponents.map((comp, idx) => (
+                    <div key={idx} className="bg-orange-50 rounded-lg p-4 border border-orange-100">
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="bg-orange-200 text-orange-800 px-2 py-0.5 rounded text-xs font-semibold uppercase">
+                          {comp.componentType}
+                        </span>
+                        {comp.quantity && (
+                          <span className="text-orange-700 font-medium">
+                            Qty: {comp.quantity.toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                      {comp.description && (
+                        <p className="text-orange-900 font-medium">{comp.description}</p>
+                      )}
+                      {comp.specs && (
+                        <p className="text-orange-700 text-sm mt-1">{comp.specs}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Line Items */}
+            {data.lineItems && data.lineItems.length > 0 && (
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3 pb-2 border-b border-teal-500">
+                  Line Items
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-teal-50">
+                      <tr>
+                        <th className="text-left px-3 py-2 text-teal-700">Description</th>
+                        <th className="text-right px-3 py-2 text-teal-700">Quantity</th>
+                        {data.lineItems.some(li => li.pricePerThousand) && (
+                          <th className="text-right px-3 py-2 text-teal-700">Per 1000</th>
+                        )}
+                        {data.lineItems.some(li => li.unitPrice) && (
+                          <th className="text-right px-3 py-2 text-teal-700">Unit Price</th>
+                        )}
+                        {data.lineItems.some(li => li.lineTotal) && (
+                          <th className="text-right px-3 py-2 text-teal-700">Total</th>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.lineItems.map((item, idx) => (
+                        <tr key={idx} className="border-b border-teal-100">
+                          <td className="px-3 py-2">{item.description}</td>
+                          <td className="text-right px-3 py-2">{item.quantity?.toLocaleString()}</td>
+                          {data.lineItems.some(li => li.pricePerThousand) && (
+                            <td className="text-right px-3 py-2">
+                              {item.pricePerThousand ? `$${item.pricePerThousand.toFixed(2)}` : '-'}
+                            </td>
+                          )}
+                          {data.lineItems.some(li => li.unitPrice) && (
+                            <td className="text-right px-3 py-2">
+                              {item.unitPrice ? `$${item.unitPrice.toFixed(4)}` : '-'}
+                            </td>
+                          )}
+                          {data.lineItems.some(li => li.lineTotal) && (
+                            <td className="text-right px-3 py-2 font-medium">
+                              {item.lineTotal ? `$${item.lineTotal.toFixed(2)}` : '-'}
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Mailing Details */}
+            {data.mailing && data.mailing.isDirectMail && (
+              <div className="bg-cyan-50 rounded-lg p-4 border border-cyan-200">
+                <h3 className="text-sm font-semibold text-cyan-900 mb-3 flex items-center gap-2">
+                  <Truck className="h-4 w-4" />
+                  Direct Mail Details
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                  {data.mailing.mailClass && (
+                    <div>
+                      <p className="text-cyan-600 text-xs uppercase">Mail Class</p>
+                      <p className="font-medium text-cyan-900">{data.mailing.mailClass}</p>
+                    </div>
+                  )}
+                  {data.mailing.mailProcess && (
+                    <div>
+                      <p className="text-cyan-600 text-xs uppercase">Process</p>
+                      <p className="font-medium text-cyan-900">{data.mailing.mailProcess}</p>
+                    </div>
+                  )}
+                  {data.mailing.dropLocation && (
+                    <div>
+                      <p className="text-cyan-600 text-xs uppercase">Drop Location</p>
+                      <p className="font-medium text-cyan-900">{data.mailing.dropLocation}</p>
+                    </div>
+                  )}
+                  {data.mailing.presortType && (
+                    <div>
+                      <p className="text-cyan-600 text-xs uppercase">Presort Type</p>
+                      <p className="font-medium text-cyan-900">{data.mailing.presortType}</p>
+                    </div>
+                  )}
+                  {data.mailing.mailDatResponsibility && (
+                    <div>
+                      <p className="text-cyan-600 text-xs uppercase">Mail.dat Responsibility</p>
+                      <p className="font-medium text-cyan-900">{data.mailing.mailDatResponsibility}</p>
+                    </div>
+                  )}
+                </div>
+                {data.mailing.uspsRequirements && (
+                  <div className="mt-3 pt-3 border-t border-cyan-200">
+                    <p className="text-cyan-600 text-xs uppercase mb-1">USPS Requirements</p>
+                    <p className="text-cyan-800 whitespace-pre-wrap">{data.mailing.uspsRequirements}</p>
+                  </div>
+                )}
+                {data.mailing.mailDatRequired && (
+                  <div className="mt-2">
+                    <span className="bg-cyan-200 text-cyan-800 px-2 py-0.5 rounded text-xs font-medium">
+                      Mail.dat Required
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Special Handling */}
+            {data.specialHandling && (
+              data.specialHandling.rushJob ||
+              data.specialHandling.fragile ||
+              data.specialHandling.oversizedShipment ||
+              data.specialHandling.handSortRequired
+            ) && (
+              <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+                <h3 className="text-sm font-semibold text-red-900 mb-3 flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  Special Handling
+                </h3>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {data.specialHandling.rushJob && (
+                    <span className="bg-red-200 text-red-800 px-3 py-1 rounded-full text-xs font-semibold uppercase">
+                      RUSH JOB
+                    </span>
+                  )}
+                  {data.specialHandling.fragile && (
+                    <span className="bg-red-200 text-red-800 px-3 py-1 rounded-full text-xs font-semibold uppercase">
+                      FRAGILE
+                    </span>
+                  )}
+                  {data.specialHandling.oversizedShipment && (
+                    <span className="bg-red-200 text-red-800 px-3 py-1 rounded-full text-xs font-semibold uppercase">
+                      OVERSIZED
+                    </span>
+                  )}
+                  {data.specialHandling.handSortRequired && (
+                    <span className="bg-red-200 text-red-800 px-3 py-1 rounded-full text-xs font-semibold uppercase">
+                      HAND SORT REQUIRED
+                    </span>
+                  )}
+                </div>
+                {data.specialHandling.handSortItems && (
+                  <div className="mt-2">
+                    <p className="text-red-600 text-xs uppercase mb-1">Hand Sort Items</p>
+                    <p className="text-red-800">{data.specialHandling.handSortItems}</p>
+                  </div>
+                )}
+                {data.specialHandling.handSortReason && (
+                  <div className="mt-2">
+                    <p className="text-red-600 text-xs uppercase mb-1">Reason</p>
+                    <p className="text-red-800">{data.specialHandling.handSortReason}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* All Instructions */}
+            {data.instructions && (
+              data.instructions.artwork ||
+              data.instructions.packing ||
+              data.instructions.labeling
+            ) && (
+              <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
+                <h3 className="text-sm font-semibold text-yellow-900 mb-3 flex items-center gap-2">
+                  <ClipboardList className="h-4 w-4" />
+                  Production Instructions
+                </h3>
+                <div className="space-y-3">
+                  {data.instructions.artwork && (
+                    <div>
+                      <p className="text-yellow-700 text-xs uppercase font-medium mb-1">Artwork Instructions</p>
+                      <p className="text-yellow-900 whitespace-pre-wrap">{data.instructions.artwork}</p>
+                    </div>
+                  )}
+                  {data.instructions.packing && (
+                    <div>
+                      <p className="text-yellow-700 text-xs uppercase font-medium mb-1">Packing Instructions</p>
+                      <p className="text-yellow-900 whitespace-pre-wrap">{data.instructions.packing}</p>
+                    </div>
+                  )}
+                  {data.instructions.labeling && (
+                    <div>
+                      <p className="text-yellow-700 text-xs uppercase font-medium mb-1">Labeling Instructions</p>
+                      <p className="text-yellow-900 whitespace-pre-wrap">{data.instructions.labeling}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Versions / Language Breakdown */}
+            {((data.versions && data.versions.length > 0) || (data.languageBreakdown && data.languageBreakdown.length > 0)) && (
+              <div className="bg-violet-50 rounded-lg p-4 border border-violet-200">
+                <h3 className="text-sm font-semibold text-violet-900 mb-3">
+                  Versions & Language Breakdown
+                </h3>
+                {data.versions && data.versions.length > 0 && (
+                  <div className="mb-3">
+                    <p className="text-violet-700 text-xs uppercase font-medium mb-2">Versions</p>
+                    <div className="space-y-2">
+                      {data.versions.map((ver, idx) => (
+                        <div key={idx} className="bg-white rounded p-3 border border-violet-100">
+                          <div className="flex justify-between items-start">
+                            <span className="font-medium text-violet-900">{ver.versionName}</span>
+                            {ver.quantity && (
+                              <span className="text-violet-700 text-sm">Qty: {ver.quantity.toLocaleString()}</span>
+                            )}
+                          </div>
+                          {ver.pageCount && <p className="text-violet-600 text-sm">Pages: {ver.pageCount}</p>}
+                          {ver.specs && <p className="text-violet-600 text-sm mt-1">{ver.specs}</p>}
+                          {ver.languageBreakdown && ver.languageBreakdown.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {ver.languageBreakdown.map((lb, lbIdx) => (
+                                <span key={lbIdx} className="bg-violet-100 text-violet-700 px-2 py-0.5 rounded text-xs">
+                                  {lb.language}: {lb.quantity.toLocaleString()}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {data.languageBreakdown && data.languageBreakdown.length > 0 && (
+                  <div>
+                    <p className="text-violet-700 text-xs uppercase font-medium mb-2">Language Breakdown</p>
+                    <div className="flex flex-wrap gap-2">
+                      {data.languageBreakdown.map((lb, idx) => (
+                        <span key={idx} className={`px-3 py-1 rounded text-sm ${lb.handSort ? 'bg-red-100 text-red-700' : 'bg-violet-100 text-violet-700'}`}>
+                          {lb.language}: {lb.quantity.toLocaleString()}
+                          {lb.handSort && ' (Hand Sort)'}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Responsibilities */}
+            {data.responsibilities && (
+              (data.responsibilities.vendor && data.responsibilities.vendor.length > 0) ||
+              (data.responsibilities.customer && data.responsibilities.customer.length > 0)
+            ) && (
+              <div className="grid md:grid-cols-2 gap-4">
+                {data.responsibilities.vendor && data.responsibilities.vendor.length > 0 && (
+                  <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-200">
+                    <h3 className="text-sm font-semibold text-emerald-900 mb-3">Vendor Tasks</h3>
+                    <ul className="space-y-2">
+                      {data.responsibilities.vendor.map((task, idx) => (
+                        <li key={idx} className="flex items-start gap-2">
+                          <CheckCircle className="h-4 w-4 text-emerald-600 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <p className="text-emerald-800">{task.task}</p>
+                            {task.deadline && (
+                              <p className="text-emerald-600 text-xs">Due: {task.deadline}</p>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {data.responsibilities.customer && data.responsibilities.customer.length > 0 && (
+                  <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                    <h3 className="text-sm font-semibold text-slate-900 mb-3">Customer Tasks</h3>
+                    <ul className="space-y-2">
+                      {data.responsibilities.customer.map((task, idx) => (
+                        <li key={idx} className="flex items-start gap-2">
+                          <Clock className="h-4 w-4 text-slate-600 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <p className="text-slate-800">{task.task}</p>
+                            {task.deadline && (
+                              <p className="text-slate-600 text-xs">Due: {task.deadline}</p>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Payment Terms */}
+            {(data.paymentTerms || data.fob || data.accountNumber) && (
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Payment & Terms</h3>
+                <div className="grid grid-cols-3 gap-4 text-sm">
+                  {data.paymentTerms && (
+                    <div>
+                      <p className="text-gray-500 text-xs uppercase">Payment Terms</p>
+                      <p className="font-medium text-gray-900">{data.paymentTerms}</p>
+                    </div>
+                  )}
+                  {data.fob && (
+                    <div>
+                      <p className="text-gray-500 text-xs uppercase">FOB</p>
+                      <p className="font-medium text-gray-900">{data.fob}</p>
+                    </div>
+                  )}
+                  {data.accountNumber && (
+                    <div>
+                      <p className="text-gray-500 text-xs uppercase">Account #</p>
+                      <p className="font-medium text-gray-900">{data.accountNumber}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Additional Notes */}
+            {data.additionalNotes && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-amber-800 mb-2">Additional Notes</h3>
+                <p className="text-amber-700 whitespace-pre-wrap">{data.additionalNotes}</p>
+              </div>
+            )}
+
+            {/* Raw PO Text (Expandable) */}
+            {data.rawPOText && (
+              <details className="bg-gray-100 rounded-lg border border-gray-300">
+                <summary className="px-4 py-3 cursor-pointer font-semibold text-gray-700 hover:bg-gray-200 rounded-lg">
+                  Original PO Description (click to expand)
+                </summary>
+                <div className="px-4 py-3 border-t border-gray-300 bg-white rounded-b-lg">
+                  <pre className="whitespace-pre-wrap text-sm text-gray-800 font-mono">{data.rawPOText}</pre>
+                </div>
+              </details>
             )}
           </div>
         </div>
