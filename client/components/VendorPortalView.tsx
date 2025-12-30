@@ -14,6 +14,10 @@ import {
   Loader2,
   X,
   ChevronDown,
+  MapPin,
+  Phone,
+  Calendar,
+  ClipboardList,
 } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
@@ -28,14 +32,38 @@ interface PortalData {
   sizeName: string;
   dueDate: string;
   mailDate: string;
+  inHomesDate: string | null;
   specialInstructions: string;
+  // Customer references
+  customerPONumber: string;
+  customerJobNumber: string;
+  // Job notes
+  description: string;
+  notes: string;
+  packingSlipNotes: string;
+  // Vendor shipping
+  vendorShipping: {
+    name: string;
+    address: string;
+    city: string;
+    state: string;
+    zip: string;
+    phone: string;
+  };
   specs: {
+    productType?: string;
     paperType?: string;
+    paperWeight?: string;
     colors?: string;
     coating?: string;
     finishing?: string;
+    bindingStyle?: string;
+    coverType?: string;
+    pageCount?: string;
+    flatSize?: string;
     folds?: string;
     perforations?: string;
+    shipVia?: string;
   };
   files: {
     artwork: Array<{ id: string; name: string; size: number; uploadedAt: string }>;
@@ -349,11 +377,17 @@ export function VendorPortalView({ token }: { token: string }) {
                 <p className="text-gray-600 mt-1">{data.jobTitle}</p>
               )}
             </div>
-            {data.poNumber && (
-              <div className="text-right">
+            <div className="text-right space-y-1">
+              {data.poNumber && (
                 <p className="text-sm text-gray-500">PO #{data.poNumber}</p>
-              </div>
-            )}
+              )}
+              {data.customerPONumber && (
+                <p className="text-xs text-gray-400">Customer PO: {data.customerPONumber}</p>
+              )}
+              {data.customerJobNumber && (
+                <p className="text-xs text-gray-400">Customer Job #: {data.customerJobNumber}</p>
+              )}
+            </div>
           </div>
 
           <div className="p-6 space-y-6">
@@ -369,6 +403,36 @@ export function VendorPortalView({ token }: { token: string }) {
               </div>
             </div>
 
+            {/* Key Dates */}
+            <div className="bg-blue-50 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-blue-900 mb-3 flex items-center gap-2">
+                <Calendar className="h-4 w-4" />
+                Key Dates
+              </h3>
+              <div className="grid grid-cols-3 gap-4 text-sm">
+                <div>
+                  <p className="text-blue-600 text-xs uppercase">Due Date</p>
+                  <p className="font-bold text-blue-900">{formatDate(data.dueDate)}</p>
+                </div>
+                <div>
+                  <p className="text-blue-600 text-xs uppercase">Mail Date</p>
+                  <p className="font-bold text-blue-900">{formatDate(data.mailDate)}</p>
+                </div>
+                <div>
+                  <p className="text-blue-600 text-xs uppercase">In-Homes</p>
+                  <p className="font-bold text-blue-900">{formatDate(data.inHomesDate)}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Job Description */}
+            {data.description && (
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Job Description</h3>
+                <p className="text-gray-600 whitespace-pre-wrap">{data.description}</p>
+              </div>
+            )}
+
             {/* Job Specs */}
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-3 pb-2 border-b border-green-500">
@@ -381,16 +445,34 @@ export function VendorPortalView({ token }: { token: string }) {
                     <span className="font-medium">{data.quantity.toLocaleString()}</span>
                   </div>
                 )}
+                {data.specs.productType && (
+                  <div className="flex justify-between py-2 border-b border-gray-100">
+                    <span className="text-gray-500">Product Type</span>
+                    <span className="font-medium">{data.specs.productType}</span>
+                  </div>
+                )}
                 {data.sizeName && (
                   <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-gray-500">Size</span>
+                    <span className="text-gray-500">Finished Size</span>
                     <span className="font-medium">{data.sizeName}</span>
+                  </div>
+                )}
+                {data.specs.flatSize && (
+                  <div className="flex justify-between py-2 border-b border-gray-100">
+                    <span className="text-gray-500">Flat Size</span>
+                    <span className="font-medium">{data.specs.flatSize}</span>
                   </div>
                 )}
                 {data.specs.paperType && (
                   <div className="flex justify-between py-2 border-b border-gray-100">
                     <span className="text-gray-500">Paper</span>
                     <span className="font-medium">{data.specs.paperType}</span>
+                  </div>
+                )}
+                {data.specs.paperWeight && (
+                  <div className="flex justify-between py-2 border-b border-gray-100">
+                    <span className="text-gray-500">Paper Weight</span>
+                    <span className="font-medium">{data.specs.paperWeight}</span>
                   </div>
                 )}
                 {data.specs.colors && (
@@ -411,16 +493,99 @@ export function VendorPortalView({ token }: { token: string }) {
                     <span className="font-medium">{data.specs.finishing}</span>
                   </div>
                 )}
-                <div className="flex justify-between py-2 border-b border-gray-100">
-                  <span className="text-gray-500">Due Date</span>
-                  <span className="font-medium">{formatDate(data.dueDate)}</span>
-                </div>
-                <div className="flex justify-between py-2 border-b border-gray-100">
-                  <span className="text-gray-500">Mail Date</span>
-                  <span className="font-medium">{formatDate(data.mailDate)}</span>
-                </div>
+                {data.specs.bindingStyle && (
+                  <div className="flex justify-between py-2 border-b border-gray-100">
+                    <span className="text-gray-500">Binding</span>
+                    <span className="font-medium">{data.specs.bindingStyle}</span>
+                  </div>
+                )}
+                {data.specs.coverType && (
+                  <div className="flex justify-between py-2 border-b border-gray-100">
+                    <span className="text-gray-500">Cover Type</span>
+                    <span className="font-medium">{data.specs.coverType}</span>
+                  </div>
+                )}
+                {data.specs.pageCount && (
+                  <div className="flex justify-between py-2 border-b border-gray-100">
+                    <span className="text-gray-500">Page Count</span>
+                    <span className="font-medium">{data.specs.pageCount}</span>
+                  </div>
+                )}
+                {data.specs.folds && (
+                  <div className="flex justify-between py-2 border-b border-gray-100">
+                    <span className="text-gray-500">Folds</span>
+                    <span className="font-medium">{data.specs.folds}</span>
+                  </div>
+                )}
+                {data.specs.perforations && (
+                  <div className="flex justify-between py-2 border-b border-gray-100">
+                    <span className="text-gray-500">Perforations</span>
+                    <span className="font-medium">{data.specs.perforations}</span>
+                  </div>
+                )}
               </div>
             </div>
+
+            {/* Shipping Info */}
+            {(data.vendorShipping?.name || data.vendorShipping?.address || data.specs.shipVia) && (
+              <div className="bg-green-50 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-green-900 mb-3 flex items-center gap-2">
+                  <MapPin className="h-4 w-4" />
+                  Shipping Information
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  {(data.vendorShipping?.name || data.vendorShipping?.address) && (
+                    <div>
+                      <p className="text-xs text-green-600 uppercase font-medium mb-1">Ship To</p>
+                      {data.vendorShipping.name && (
+                        <p className="font-medium text-green-900">{data.vendorShipping.name}</p>
+                      )}
+                      {data.vendorShipping.address && (
+                        <p className="text-green-800">{data.vendorShipping.address}</p>
+                      )}
+                      {(data.vendorShipping.city || data.vendorShipping.state || data.vendorShipping.zip) && (
+                        <p className="text-green-800">
+                          {[data.vendorShipping.city, data.vendorShipping.state, data.vendorShipping.zip].filter(Boolean).join(', ')}
+                        </p>
+                      )}
+                      {data.vendorShipping.phone && (
+                        <p className="text-green-700 text-sm mt-1 flex items-center gap-1">
+                          <Phone className="h-3 w-3" /> {data.vendorShipping.phone}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {data.specs.shipVia && (
+                    <div>
+                      <p className="text-xs text-green-600 uppercase font-medium mb-1">Ship Via</p>
+                      <p className="font-medium text-green-900">{data.specs.shipVia}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Notes Section */}
+            {(data.notes || data.packingSlipNotes) && (
+              <div className="bg-purple-50 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-purple-900 mb-3 flex items-center gap-2">
+                  <ClipboardList className="h-4 w-4" />
+                  Notes
+                </h3>
+                {data.notes && (
+                  <div className="mb-3">
+                    <p className="text-xs text-purple-600 uppercase font-medium mb-1">Job Notes</p>
+                    <p className="text-purple-800 whitespace-pre-wrap">{data.notes}</p>
+                  </div>
+                )}
+                {data.packingSlipNotes && (
+                  <div>
+                    <p className="text-xs text-purple-600 uppercase font-medium mb-1">Packing Slip Notes</p>
+                    <p className="text-purple-800 whitespace-pre-wrap">{data.packingSlipNotes}</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Special Instructions */}
             {data.specialInstructions && (

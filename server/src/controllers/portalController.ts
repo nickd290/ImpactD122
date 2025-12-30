@@ -122,15 +122,39 @@ export const accessPortal = async (req: Request, res: Response) => {
       sizeName: job.sizeName || specs?.finishedSize || '',
       dueDate: job.deliveryDate,
       mailDate: job.mailDate,
+      inHomesDate: job.inHomesDate,
       specialInstructions: job.vendorSpecialInstructions || specs?.specialInstructions || '',
+      // Customer references
+      customerPONumber: job.customerPONumber || '',
+      customerJobNumber: job.customerJobNumber || '',
+      // Job notes
+      description: job.description || '',
+      notes: job.notes || '',
+      packingSlipNotes: job.packingSlipNotes || '',
+      // Vendor shipping address
+      vendorShipping: {
+        name: job.vendorShipToName || specs?.shipToName || '',
+        address: job.vendorShipToAddress || specs?.shipToAddress || '',
+        city: job.vendorShipToCity || '',
+        state: job.vendorShipToState || '',
+        zip: job.vendorShipToZip || '',
+        phone: job.vendorShipToPhone || '',
+      },
       // Full specs for vendor reference
       specs: {
+        productType: specs?.productType || '',
         paperType: specs?.paperType || specs?.paper || '',
+        paperWeight: specs?.paperWeight || '',
         colors: specs?.colors || specs?.inkColors || '',
         coating: specs?.coating || '',
         finishing: specs?.finishing || specs?.bindery || '',
+        bindingStyle: specs?.bindingStyle || '',
+        coverType: specs?.coverType || '',
+        pageCount: specs?.pageCount || '',
+        flatSize: specs?.flatSize || '',
         folds: specs?.folds || '',
         perforations: specs?.perforations || '',
+        shipVia: specs?.shipVia || '',
       },
       // Files grouped by type
       files: {
