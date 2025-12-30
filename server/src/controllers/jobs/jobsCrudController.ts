@@ -34,6 +34,7 @@ import {
   canCreateImpactPO,
   transformJob,
   transformJobForWorkflow,
+  calculateWorkflowStage,
   logJobChange,
   JOB_INCLUDE,
   JOB_INCLUDE_FULL,
@@ -154,8 +155,13 @@ export const getJobsWorkflowView = async (req: Request, res: Response) => {
       ],
     });
 
-    // Transform jobs for workflow view
-    const transformedJobs = jobs.map(transformJobForWorkflow);
+    // Transform jobs for workflow view with CALCULATED stage
+    const transformedJobs = jobs.map(job => {
+      const transformed = transformJobForWorkflow(job);
+      // Override stored workflowStatus with calculated stage from actual data
+      transformed.workflowStatus = calculateWorkflowStage(job);
+      return transformed;
+    });
 
     // Group by workflow status
     const groupedJobs: Record<string, any[]> = {};

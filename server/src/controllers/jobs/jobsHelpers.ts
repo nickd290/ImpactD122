@@ -642,3 +642,32 @@ export function transformJobForWorkflow(job: any) {
     qc: qcIndicators,
   };
 }
+
+/**
+ * Calculate workflow stage dynamically from actual job data
+ * Overrides stored workflowStatus for accurate grouping in control station
+ */
+export function calculateWorkflowStage(job: any): string {
+  const portal = job.JobPortal;
+  const files = job.File || [];
+  const latestProof = job.Proof?.[0] || null;
+  const hasVendorProof = files.some((f: any) => f.kind === 'VENDOR_PROOF');
+
+  // Priority order (most progressed → least)
+  if (portal?.vendorStatus === 'SHIPPED' || portal?.trackingNumber) {
+    return 'COMPLETED';
+  }
+  if (portal?.vendorStatus === 'IN_PRODUCTION' || portal?.vendorStatus === 'PRINTING_COMPLETE') {
+    return 'IN_PRODUCTION';
+  }
+  if (latestProof?.status === 'APPROVED') {
+    return 'APPROVED_PENDING_VENDOR';
+  }
+  if (hasVendorProof || latestProof) {
+    return 'AWAITING_CUSTOMER_RESPONSE';
+  }
+  if (portal?.confirmedAt) {
+    return 'AWAITING_PROOF_FROM_VENDOR';
+  }
+  return 'NEW_JOB';
+}
