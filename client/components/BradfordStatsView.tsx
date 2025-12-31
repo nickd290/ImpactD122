@@ -430,10 +430,12 @@ export function BradfordStatsView({
         setEditingJobId(null);
         setEditingPOValue('');
       } else {
-        console.error('Failed to update Bradford PO');
+        const errorData = await response.json().catch(() => ({}));
+        toast.error(errorData.error || 'Failed to update Bradford PO');
       }
     } catch (error) {
       console.error('Error updating Bradford PO:', error);
+      toast.error('Failed to update Bradford PO');
     } finally {
       setSavingPO(false);
     }

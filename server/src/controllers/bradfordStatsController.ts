@@ -324,7 +324,7 @@ export const getBradfordStats = async (req: Request, res: Response) => {
         id: job.id,
         jobNo: job.jobNo,
         title: job.title || '',
-        bradfordRef: bradfordJDPO?.poNumber || '',
+        bradfordRef: bradfordJDPO?.poNumber || job.partnerPONumber || '',
         status: job.status,
         sizeName: finishedSize || '',
         quantity: job.quantity || 0,
@@ -480,6 +480,12 @@ export const updateBradfordPO = async (req: Request, res: Response) => {
         originCompanyId: 'bradford',
         targetCompanyId: 'jd-graphic',
       },
+    });
+
+    // Also update Job.partnerPONumber for consistency
+    await prisma.job.update({
+      where: { id: jobId },
+      data: { partnerPONumber: poNumber || '' },
     });
 
     if (existingPO) {
