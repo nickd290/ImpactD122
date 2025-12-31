@@ -1326,6 +1326,8 @@ function getVendorPOWithPortalEmailBody(
 ): string {
   const poNumber = po.poNumber || po.id;
   const jobNo = job.jobNo || job.id;
+  const jobTitle = job.title || '';
+  const quantity = job.quantity ? Number(job.quantity).toLocaleString() : '';
   const buyCost = po.buyCost ? `$${Number(po.buyCost).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '';
   const dueDate = job.deliveryDate
     ? new Date(job.deliveryDate).toLocaleDateString('en-US', {
@@ -1345,52 +1347,76 @@ function getVendorPOWithPortalEmailBody(
 
   return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
-      <div style="padding: 25px; border: 1px solid #e5e7eb; border-radius: 8px;">
-        <h2 style="margin: 0 0 5px 0; color: #1f2937;">Purchase Order #${poNumber}</h2>
-        <p style="margin: 0 0 20px 0; color: #6b7280;">Job #${jobNo}</p>
+      <div style="background: #1A1A1A; padding: 20px 25px; border-radius: 8px 8px 0 0;">
+        <h1 style="color: white; margin: 0; font-size: 20px; font-weight: 600;">IMPACT DIRECT PRINTING</h1>
+        <p style="color: #9CA3AF; margin: 5px 0 0 0; font-size: 13px;">Purchase Order Notification</p>
+      </div>
 
-        <p>${vendorName},</p>
+      <div style="padding: 25px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+        <h2 style="margin: 0 0 5px 0; color: #1f2937; font-size: 18px;">PO #${poNumber}</h2>
+        ${jobTitle ? `<p style="margin: 0 0 20px 0; color: #374151; font-weight: 500;">${jobTitle}</p>` : `<p style="margin: 0 0 20px 0; color: #6b7280;">Job #${jobNo}</p>`}
 
-        <p>Please find your purchase order details below.</p>
+        <p style="margin: 0 0 15px 0;">Hi ${vendorName},</p>
 
-        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+        <p style="margin: 0 0 20px 0;">We have a new order for you. Please review the details below and access your artwork files through the secure portal link.</p>
+
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0; background: #f9fafb; border-radius: 6px;">
           <tr>
-            <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #e5e7eb;">PO #:</td>
-            <td style="padding: 8px 0; font-weight: 600; border-bottom: 1px solid #e5e7eb;">${poNumber}</td>
+            <td style="padding: 12px 15px; color: #6b7280; border-bottom: 1px solid #e5e7eb; width: 40%;">PO Number:</td>
+            <td style="padding: 12px 15px; font-weight: 600; border-bottom: 1px solid #e5e7eb;">${poNumber}</td>
           </tr>
           <tr>
-            <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #e5e7eb;">Job #:</td>
-            <td style="padding: 8px 0; font-weight: 600; border-bottom: 1px solid #e5e7eb;">${jobNo}</td>
+            <td style="padding: 12px 15px; color: #6b7280; border-bottom: 1px solid #e5e7eb;">Job Number:</td>
+            <td style="padding: 12px 15px; font-weight: 600; border-bottom: 1px solid #e5e7eb;">${jobNo}</td>
           </tr>
+          ${quantity ? `
           <tr>
-            <td style="padding: 8px 0; color: #6b7280; border-bottom: 1px solid #e5e7eb;">Due Date:</td>
-            <td style="padding: 8px 0; font-weight: 600; border-bottom: 1px solid #e5e7eb;">${dueDate}</td>
+            <td style="padding: 12px 15px; color: #6b7280; border-bottom: 1px solid #e5e7eb;">Quantity:</td>
+            <td style="padding: 12px 15px; font-weight: 600; border-bottom: 1px solid #e5e7eb;">${quantity}</td>
+          </tr>
+          ` : ''}
+          <tr>
+            <td style="padding: 12px 15px; color: #6b7280; border-bottom: 1px solid #e5e7eb;">Due Date:</td>
+            <td style="padding: 12px 15px; font-weight: 600; color: #dc2626; border-bottom: 1px solid #e5e7eb;">${dueDate}</td>
           </tr>
           ${buyCost ? `
           <tr>
-            <td style="padding: 8px 0; color: #6b7280;">PO Amount:</td>
-            <td style="padding: 8px 0; font-weight: 600;">${buyCost}</td>
+            <td style="padding: 12px 15px; color: #6b7280;">PO Amount:</td>
+            <td style="padding: 12px 15px; font-weight: 600;">${buyCost}</td>
           </tr>
           ` : ''}
         </table>
 
-        <div style="background: #eff6ff; border: 1px solid #3b82f6; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
-          <h4 style="margin: 0 0 10px 0; color: #1e40af;">ACCESS FILES</h4>
-          <p style="margin: 0 0 15px 0; color: #6b7280;">Click below to view PO PDF and artwork files</p>
-          <a href="${portalUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600;">View Files</a>
+        <div style="background: #eff6ff; border: 1px solid #3b82f6; border-radius: 8px; padding: 25px; margin: 25px 0; text-align: center;">
+          <h4 style="margin: 0 0 8px 0; color: #1e40af; font-size: 16px;">Access Your Order Portal</h4>
+          <p style="margin: 0 0 18px 0; color: #4b5563; font-size: 14px;">View PO details, download artwork files, and confirm receipt</p>
+          <a href="${portalUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px;">Open Vendor Portal</a>
         </div>
 
         ${instructionsSection}
 
-        <p>Questions? Reply to this email.</p>
+        <p style="margin: 20px 0 10px 0; color: #374151;"><strong>What to do next:</strong></p>
+        <ol style="margin: 0 0 20px 0; padding-left: 20px; color: #4b5563;">
+          <li style="margin-bottom: 6px;">Click the button above to access the vendor portal</li>
+          <li style="margin-bottom: 6px;">Review the PO details and download artwork files</li>
+          <li style="margin-bottom: 6px;">Confirm receipt of this order in the portal</li>
+        </ol>
+
+        <p style="margin: 20px 0 0 0; color: #4b5563;">Questions or concerns? Reply directly to this email and we'll get back to you promptly.</p>
 
         <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 25px 0;" />
 
-        <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-          Impact Direct Printing<br />
-          (330) 963-0970<br />
-          brandon@impactdirectprinting.com
-        </p>
+        <table style="width: 100%;">
+          <tr>
+            <td style="vertical-align: top;">
+              <p style="color: #374151; font-weight: 600; margin: 0 0 5px 0;">Impact Direct Printing</p>
+              <p style="color: #6b7280; font-size: 13px; margin: 0; line-height: 1.5;">
+                Phone: (330) 963-0970<br />
+                Email: brandon@impactdirectprinting.com
+              </p>
+            </td>
+          </tr>
+        </table>
       </div>
     </div>
   `;
@@ -1409,7 +1435,7 @@ export async function sendVendorPOWithPortalEmail(
   try {
     const jobNo = job.jobNo || job.id;
     const poNumber = po.poNumber || po.id;
-    const subject = `Purchase Order #${poNumber} - ${job.title || 'Job #' + jobNo}`;
+    const subject = `Action Required: PO #${poNumber} | ${job.title || 'Job #' + jobNo} - Impact Direct Printing`;
     const body = getVendorPOWithPortalEmailBody(po, vendorName, job, portalUrl, options);
     const replyTo = getJobEmailAddress(jobNo);
 
