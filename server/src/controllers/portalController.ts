@@ -245,6 +245,8 @@ export const accessPortal = async (req: Request, res: Response) => {
         })),
       },
       hasVendorPO: !!vendorPO,
+      // External artwork link (ShareFile, Dropbox, etc.)
+      artworkFilesLink: vendorPO?.artworkFilesLink || specs?.artworkUrl || null,
       // Vendor portal status
       portal: {
         confirmedAt: portal.confirmedAt,

@@ -18,6 +18,7 @@ import {
   Phone,
   Calendar,
   ClipboardList,
+  ExternalLink,
 } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
@@ -151,6 +152,7 @@ interface PortalData {
     other: Array<{ id: string; name: string; size: number; uploadedAt: string }>;
   };
   hasVendorPO: boolean;
+  artworkFilesLink: string | null;
   portal: {
     confirmedAt: string | null;
     confirmedByName: string | null;
@@ -1123,6 +1125,26 @@ export function VendorPortalView({ token }: { token: string }) {
               </div>
             )}
 
+            {/* External Artwork Link (ShareFile, Dropbox, etc.) */}
+            {data.artworkFilesLink && (
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <ExternalLink className="h-5 w-5 text-blue-600 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="font-medium text-blue-900">Artwork Files</p>
+                    <a
+                      href={data.artworkFilesLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline text-sm break-all"
+                    >
+                      {data.artworkFilesLink}
+                    </a>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* File Categories */}
             {['artwork', 'dataFiles', 'proofs', 'other'].map((category) => {
               const files = data.files[category as keyof typeof data.files];
@@ -1169,7 +1191,7 @@ export function VendorPortalView({ token }: { token: string }) {
               );
             })}
 
-            {totalFiles === 0 && (
+            {totalFiles === 0 && !data.artworkFilesLink && (
               <p className="text-center text-gray-500 py-4">No files available yet</p>
             )}
           </div>
