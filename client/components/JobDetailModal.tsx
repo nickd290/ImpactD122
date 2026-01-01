@@ -219,7 +219,7 @@ interface JobDetailModalProps {
   onRefresh?: () => void;
 }
 
-type TabType = 'details' | 'vendors-costs' | 'financials' | 'communications';
+type TabType = 'details' | 'financials';
 
 export function JobDetailModal({
   job,
@@ -3151,10 +3151,8 @@ export function JobDetailModal({
   };
 
   const tabs: { id: TabType; label: string; badge?: number }[] = [
-    { id: 'details', label: 'Details' },
-    { id: 'vendors-costs', label: 'Vendors & Costs' },
-    { id: 'financials', label: 'Financials' },
-    { id: 'communications', label: 'Communications', badge: pendingCommCount },
+    { id: 'details', label: 'Job Details' },
+    { id: 'financials', label: 'Financials & Comms', badge: pendingCommCount },
   ];
 
   return (
@@ -3433,13 +3431,8 @@ export function JobDetailModal({
                       : 'text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
-                  {tab.id === 'communications' && <MessageSquare className="h-4 w-4" />}
+                  {tab.id === 'financials' && <DollarSign className="h-4 w-4" />}
                   {tab.label}
-                  {tab.id === 'purchase-orders' && job.purchaseOrders && job.purchaseOrders.length > 0 && (
-                    <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
-                      {job.purchaseOrders.length}
-                    </span>
-                  )}
                   {tab.badge && tab.badge > 0 && (
                     <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-xs rounded-full font-semibold">
                       {tab.badge}
@@ -3638,42 +3631,51 @@ export function JobDetailModal({
                 )}
               </>
             )}
-            {activeTab === 'vendors-costs' && (
-              <div className="space-y-6">
-                {/* Visual Vendor Cards - At a glance vendor/cost overview */}
-                {VendorCardsSection()}
-
-                {/* Detailed Cost Breakdown */}
-                <div className="pt-4 border-t border-gray-200">
-                  <details className="group">
-                    <summary className="flex items-center justify-between cursor-pointer text-sm font-medium text-gray-600 hover:text-gray-900 py-2">
-                      <span>Detailed Cost Breakdown</span>
-                      <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
-                    </summary>
-                    <div className="pt-4">
-                      {PricingTab()}
-                    </div>
-                  </details>
-                </div>
-
-                {/* Purchase Orders Management */}
-                <div className="pt-4 border-t border-gray-200">
-                  {PurchaseOrdersTab()}
-                </div>
-              </div>
-            )}
-            {activeTab === 'communications' && job && (
-              <CommunicationThread
-                jobId={job.id}
-                jobNo={job.jobNo || job.number || ''}
-                customerName={job.customer?.name}
-                customerEmail={job.customer?.email}
-                vendorName={job.vendor?.name}
-                vendorEmail={job.vendor?.email}
-              />
-            )}
             {activeTab === 'financials' && job && (
-              <FinancialsTab job={job} onRefresh={onRefresh} />
+              <div className="space-y-6">
+                {/* Financial Summary (primary source of truth) */}
+                <FinancialsTab job={job} onRefresh={onRefresh} />
+
+                {/* Vendor Cards & Costs */}
+                <details className="group border-t border-gray-200 pt-4">
+                  <summary className="flex items-center justify-between cursor-pointer text-sm font-semibold text-gray-700 hover:text-gray-900 py-2">
+                    <span>Vendor Costs & POs</span>
+                    <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
+                  </summary>
+                  <div className="pt-4 space-y-4">
+                    {VendorCardsSection()}
+                    <div className="pt-4">
+                      {PurchaseOrdersTab()}
+                    </div>
+                  </div>
+                </details>
+
+                {/* Communications */}
+                <details className="group border-t border-gray-200 pt-4">
+                  <summary className="flex items-center justify-between cursor-pointer text-sm font-semibold text-gray-700 hover:text-gray-900 py-2">
+                    <span className="flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4" />
+                      Communications
+                      {pendingCommCount > 0 && (
+                        <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-xs rounded-full font-semibold">
+                          {pendingCommCount}
+                        </span>
+                      )}
+                    </span>
+                    <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
+                  </summary>
+                  <div className="pt-4">
+                    <CommunicationThread
+                      jobId={job.id}
+                      jobNo={job.jobNo || job.number || ''}
+                      customerName={job.customer?.name}
+                      customerEmail={job.customer?.email}
+                      vendorName={job.vendor?.name}
+                      vendorEmail={job.vendor?.email}
+                    />
+                  </div>
+                </details>
+              </div>
             )}
           </div>
         </div>

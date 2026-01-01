@@ -278,62 +278,65 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
     }
   };
 
-  // Render QC indicators for a job
-  const renderQCIndicators = (job: WorkflowJob) => {
+  // Get QC status as clear text
+  const getQCStatusText = (qc: QCIndicators): { text: string; color: 'green' | 'red' | 'yellow' | 'blue' | 'orange' } => {
+    // Check for tracking first (shipped)
+    if (qc.hasTracking) {
+      return { text: 'Shipped', color: 'blue' };
+    }
+
+    // Build list of missing items
+    const missing: string[] = [];
+    if (qc.artwork === 'missing') missing.push('Art');
+    if (qc.data === 'missing') missing.push('Data');
+    if (!qc.vendorConfirmed) missing.push('Vendor');
+
+    // If nothing missing, check proof status
+    if (missing.length === 0) {
+      if (qc.proofStatus === 'CHANGES_REQUESTED') {
+        return { text: 'Changes Requested', color: 'orange' };
+      }
+      if (qc.proofStatus === 'PENDING' || (qc.hasProof && qc.proofStatus !== 'APPROVED')) {
+        return { text: 'Proof Pending', color: 'yellow' };
+      }
+      if (qc.proofStatus === 'APPROVED') {
+        return { text: 'Ready', color: 'green' };
+      }
+      // All items received, no proof yet
+      return { text: 'Files Ready', color: 'green' };
+    }
+
+    // Return what's missing
+    return { text: `Need ${missing.join(', ')}`, color: 'red' };
+  };
+
+  // Render QC status text
+  const renderQCStatus = (job: WorkflowJob) => {
     const qc = job.qc;
+    const status = getQCStatusText(qc);
+
+    const colorClasses = {
+      green: 'bg-green-100 text-green-800',
+      red: 'bg-red-100 text-red-800',
+      yellow: 'bg-yellow-100 text-yellow-800',
+      blue: 'bg-blue-100 text-blue-800',
+      orange: 'bg-orange-100 text-orange-800',
+    };
+
+    // Check for any overrides
+    const hasOverride = qc.artworkIsOverride || qc.dataIsOverride || qc.vendorIsOverride || qc.proofIsOverride;
 
     return (
-      <div className="flex items-center gap-2 flex-wrap">
-        {/* Artwork */}
-        <QCBadge
-          status={qc.artwork}
-          label="Art"
-          count={qc.artworkCount}
-          isOverride={qc.artworkIsOverride}
-        />
-
-        {/* Data Files */}
-        <QCBadge
-          status={qc.data}
-          label="Data"
-          count={qc.data !== 'na' ? qc.dataCount : undefined}
-          isOverride={qc.dataIsOverride}
-        />
-
-        {/* Vendor Confirmation */}
-        <QCBadge
-          status={qc.vendorConfirmed ? 'confirmed' : 'waiting'}
-          label="Vendor"
-          isOverride={qc.vendorIsOverride}
-        />
-
-        {/* Proof Status */}
-        {(qc.hasProof || qc.proofIsOverride) && (
-          <QCBadge
-            status={
-              qc.proofStatus === 'APPROVED' ? 'approved' :
-              qc.proofStatus === 'CHANGES_REQUESTED' ? 'changes' :
-              'pending'
-            }
-            label={`Proof${qc.proofVersion > 0 ? ` v${qc.proofVersion}` : ''}`}
-            isOverride={qc.proofIsOverride}
-          />
+      <span
+        className={cn(
+          'inline-flex items-center px-2 py-1 rounded text-xs font-medium',
+          colorClasses[status.color],
+          hasOverride && 'ring-2 ring-orange-400 ring-offset-1'
         )}
-
-        {/* Tracking */}
-        {qc.hasTracking && (
-          <span
-            className={cn(
-              'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200',
-              qc.trackingIsOverride && 'ring-2 ring-orange-400 ring-offset-1'
-            )}
-            title={qc.trackingIsOverride ? 'Manually set' : undefined}
-          >
-            <Truck className="w-3 h-3" />
-            Shipped
-          </span>
-        )}
-      </div>
+        title={hasOverride ? 'Has manual overrides' : undefined}
+      >
+        {status.text}
+      </span>
     );
   };
 
@@ -522,7 +525,7 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
                               </span>
                             </td>
                             <td className="px-3 py-2">
-                              {renderQCIndicators(job)}
+                              {renderQCStatus(job)}
                             </td>
                             <td className="px-3 py-2">
                               <div className="flex items-center gap-1">
