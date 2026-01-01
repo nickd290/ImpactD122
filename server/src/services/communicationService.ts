@@ -2,6 +2,7 @@ import sgMail from '@sendgrid/mail';
 import { prisma } from '../utils/prisma';
 import { CommunicationDirection, SenderType, CommunicationStatus } from '@prisma/client';
 import { getJobEmailAddress, getRfqEmailAddress } from './emailService';
+import { canSendEmail, logEmailSend, logEmailSkipped } from './emailGuard';
 
 // Initialize SendGrid
 const apiKey = process.env.SENDGRID_API_KEY;
@@ -1143,7 +1144,7 @@ function getVendorJobEmailHtml(job: any, jobEmailAddress: string, options?: Thre
 export async function initiateCustomerThread(
   jobId: string,
   options?: ThreadInitOptions
-): Promise<ForwardResult> {
+): Promise<ForwardResult & { skipped?: boolean }> {
   try {
     const job = await prisma.job.findUnique({
       where: { id: jobId },
@@ -1158,6 +1159,14 @@ export async function initiateCustomerThread(
 
     if (!job.Company?.email) {
       return { success: false, error: 'No customer email configured for this job' };
+    }
+
+    // GUARD: Check for duplicate thread initiation
+    const guardCheck = await canSendEmail(jobId, 'THREAD_INIT_CUSTOMER', job.Company.email);
+    if (!guardCheck.canSend) {
+      console.log(`⏭️ Skipping customer thread init for job ${job.jobNo}: ${guardCheck.reason}`);
+      await logEmailSkipped(jobId, 'THREAD_INIT_CUSTOMER', job.Company.email, guardCheck.reason || 'Duplicate');
+      return { success: true, skipped: true };
     }
 
     const jobEmailAddress = getJobEmailAddress(job.jobNo);
@@ -1197,6 +1206,14 @@ export async function initiateCustomerThread(
 
     await sgMail.send(msg);
 
+    // Log successful send for dedup tracking
+    await logEmailSend({
+      jobId,
+      emailType: 'THREAD_INIT_CUSTOMER',
+      sentTo: job.Company.email,
+      success: true,
+    });
+
     // Update status to forwarded (sent)
     await prisma.jobCommunication.update({
       where: { id: communication.id },
@@ -1228,7 +1245,7 @@ export async function initiateCustomerThread(
 export async function initiateVendorThread(
   jobId: string,
   options?: ThreadInitOptions
-): Promise<ForwardResult> {
+): Promise<ForwardResult & { skipped?: boolean }> {
   try {
     const job = await prisma.job.findUnique({
       where: { id: jobId },
@@ -1261,6 +1278,14 @@ export async function initiateVendorThread(
 
     if (!vendorEmail) {
       return { success: false, error: 'No vendor email configured for this job' };
+    }
+
+    // GUARD: Check for duplicate thread initiation
+    const guardCheck = await canSendEmail(jobId, 'THREAD_INIT_VENDOR', vendorEmail);
+    if (!guardCheck.canSend) {
+      console.log(`⏭️ Skipping vendor thread init for job ${job.jobNo}: ${guardCheck.reason}`);
+      await logEmailSkipped(jobId, 'THREAD_INIT_VENDOR', vendorEmail, guardCheck.reason || 'Duplicate');
+      return { success: true, skipped: true };
     }
 
     const jobEmailAddress = getJobEmailAddress(job.jobNo);
@@ -1299,6 +1324,14 @@ export async function initiateVendorThread(
     };
 
     await sgMail.send(msg);
+
+    // Log successful send for dedup tracking
+    await logEmailSend({
+      jobId,
+      emailType: 'THREAD_INIT_VENDOR',
+      sentTo: vendorEmail,
+      success: true,
+    });
 
     // Update status to forwarded (sent)
     await prisma.jobCommunication.update({

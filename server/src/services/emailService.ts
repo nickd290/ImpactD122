@@ -1,6 +1,7 @@
 import sgMail from '@sendgrid/mail';
 import { generateInvoicePDF, generateVendorPOPDF, generateJDToBradfordInvoicePDF } from './pdfService';
 import { getVendorPoCcEmail, getArtworkCcEmails } from '../constants/emails';
+import { canSendEmail, logEmailSend, logEmailSkipped, EmailType } from './emailGuard';
 
 // Initialize SendGrid
 const apiKey = process.env.SENDGRID_API_KEY;
@@ -1431,9 +1432,19 @@ export async function sendVendorPOWithPortalEmail(
   options?: {
     specialInstructions?: string;
   }
-): Promise<EmailResult> {
+): Promise<EmailResult & { skipped?: boolean }> {
+  const jobId = job.id;
+  const jobNo = job.jobNo || job.id;
+
+  // GUARD: Check for duplicate send
+  const guardCheck = await canSendEmail(jobId, 'VENDOR_PO', recipientEmail);
+  if (!guardCheck.canSend) {
+    console.log(`⏭️ Skipping VENDOR_PO email for job ${jobNo}: ${guardCheck.reason}`);
+    await logEmailSkipped(jobId, 'VENDOR_PO', recipientEmail, guardCheck.reason || 'Duplicate');
+    return { success: true, skipped: true };
+  }
+
   try {
-    const jobNo = job.jobNo || job.id;
     const poNumber = po.poNumber || po.id;
     const subject = `Action Required: PO #${poNumber} | ${job.title || 'Job #' + jobNo} - Impact Direct Printing`;
     const body = getVendorPOWithPortalEmailBody(po, vendorName, job, portalUrl, options);
@@ -1444,15 +1455,33 @@ export async function sendVendorPOWithPortalEmail(
       ? undefined
       : VENDOR_PO_CC_EMAIL;
 
-    return await sendEmail({
+    const result = await sendEmail({
       to: recipientEmail,
       cc: ccEmail,
       subject,
       body,
       replyTo,
     });
+
+    // Log the send
+    await logEmailSend({
+      jobId,
+      emailType: 'VENDOR_PO',
+      sentTo: recipientEmail,
+      success: result.success,
+      error: result.error,
+    });
+
+    return result;
   } catch (error: any) {
     console.error('Error sending vendor PO with portal email:', error);
+    await logEmailSend({
+      jobId,
+      emailType: 'VENDOR_PO',
+      sentTo: recipientEmail,
+      success: false,
+      error: error.message,
+    });
     return { success: false, error: error.message || 'Failed to send PO email' };
   }
 }

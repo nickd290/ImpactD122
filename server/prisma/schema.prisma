@@ -291,6 +291,7 @@ model Job {
   ProfitSplit               ProfitSplit?     // Calculated profit split for this job
   VendorRFQs                VendorRFQ[]      // RFQs linked to this job
   JobPortal                 JobPortal?       // Shareable portal for vendor access
+  EmailLog                  EmailLog[]       // Email send history for deduplication
 
   @@index([customerId])
   @@index([paperSource])
@@ -995,6 +996,27 @@ enum VendorQuoteStatus {
   PENDING
   RECEIVED
   DECLINED
+}
+
+// ========================================
+// EMAIL LOG - Deduplication tracking
+// ========================================
+model EmailLog {
+  id          String   @id @default(cuid())
+  jobId       String
+  emailType   String   // VENDOR_PO, PROOF_REQUEST, CUSTOMER_CONFIRM, THREAD_INIT, etc.
+  sentTo      String
+  sentAt      DateTime @default(now())
+  success     Boolean
+  messageId   String?  // SendGrid message ID for tracking
+  skipped     Boolean  @default(false) // True if dedup prevented send
+  error       String?  // Error message if failed
+
+  job         Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, emailType])
+  @@index([sentAt])
+  @@index([jobId, emailType, sentAt]) // For cooldown queries
 }
 
 // ========================================
