@@ -257,6 +257,7 @@ export const createJob = async (req: Request, res: Response) => {
       jdSuppliesPaper,
       bradfordRefNumber,
       bradfordPaperLbs,
+      dataIncludedWithArtwork,
       ...rest
     } = req.body;
 
@@ -399,6 +400,7 @@ export const createJob = async (req: Request, res: Response) => {
         deliveryDate: dueDate ? new Date(dueDate) : null,
         mailDate: mailDate ? new Date(mailDate) : null,
         inHomesDate: inHomesDate ? new Date(inHomesDate) : null,
+        dataIncludedWithArtwork: dataIncludedWithArtwork === true,
         updatedAt: new Date(),
       },
       include: JOB_INCLUDE,
@@ -521,6 +523,9 @@ export const updateJob = async (req: Request, res: Response) => {
       paperSource: inputPaperSource,
       bradfordRefNumber,
       bradfordPaperLbs: inputBradfordPaperLbs,
+      dataIncludedWithArtwork,
+      mailDate,
+      inHomesDate,
       ...rest
     } = req.body;
 
@@ -586,9 +591,12 @@ export const updateJob = async (req: Request, res: Response) => {
     if (customerPONumber !== undefined) updateData.customerPONumber = customerPONumber;
     if (bradfordRefNumber !== undefined) updateData.partnerPONumber = bradfordRefNumber;
     if (dueDate !== undefined) updateData.deliveryDate = dueDate ? new Date(dueDate) : null;
+    if (mailDate !== undefined) updateData.mailDate = mailDate ? new Date(mailDate) : null;
+    if (inHomesDate !== undefined) updateData.inHomesDate = inHomesDate ? new Date(inHomesDate) : null;
     if (customerId !== undefined) updateData.customerId = customerId;
     if (vendorId !== undefined) updateData.vendorId = vendorId;
     if (notes !== undefined) updateData.notes = notes;
+    if (dataIncludedWithArtwork !== undefined) updateData.dataIncludedWithArtwork = dataIncludedWithArtwork === true;
 
     // Handle specs - merge lineItems into specs if either changed
     if (specs !== undefined || lineItems !== undefined) {

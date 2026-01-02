@@ -56,6 +56,7 @@ const getInitialFormData = (data: any): JobFormData => ({
   paperInventoryId: data?.paperInventoryId || '',
   routingType: data?.routingType || 'BRADFORD_JD',
   jobType: data?.jobType || 'single',
+  dataIncludedWithArtwork: data?.dataIncludedWithArtwork || false,
 });
 
 const getInitialSpecs = (data: any): Specs => ({

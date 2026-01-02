@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, CheckCircle2, Clock, AlertCircle, Circle, Fi
 import { Button, Badge } from './ui';
 import { cn } from '../lib/utils';
 import { jobsApi, communicationsApi } from '../lib/api';
+import { WORKFLOW_STAGES, getNextWorkflowStatuses } from './WorkflowStatusBadge';
 
 interface QCIndicators {
   artwork: 'sent' | 'missing' | 'partial';
@@ -170,6 +171,23 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
   const [taskText, setTaskText] = useState('');
   const [savingTask, setSavingTask] = useState(false);
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
+
+  // Status update state
+  const [updatingStatusJobId, setUpdatingStatusJobId] = useState<string | null>(null);
+
+  // Handle workflow status change
+  const handleStatusChange = async (jobId: string, newStatus: string, e: React.MouseEvent | React.ChangeEvent) => {
+    e.stopPropagation(); // Don't trigger row click
+    setUpdatingStatusJobId(jobId);
+    try {
+      await jobsApi.updateWorkflowStatus(jobId, newStatus);
+      fetchWorkflowData(); // Refresh the list
+    } catch (err) {
+      console.error('Failed to update status:', err);
+    } finally {
+      setUpdatingStatusJobId(null);
+    }
+  };
 
   // Extract unique customers from all jobs
   const customers = useMemo(() => {
@@ -448,14 +466,13 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
                     <thead className="bg-gray-50 border-b">
                       <tr>
                         <th className="px-3 py-2 text-left font-medium text-gray-600 w-20">Job #</th>
-                        <th className="px-3 py-2 text-left font-medium text-gray-600 w-24">Cust PO</th>
                         <th className="px-3 py-2 text-left font-medium text-gray-600">Customer</th>
-                        <th className="px-3 py-2 text-left font-medium text-gray-600">Vendor</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-600 w-24">Vendor</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-600 w-36">Status</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-600 w-20">Due</th>
                         <th className="px-3 py-2 text-right font-medium text-gray-600 w-20">Price</th>
                         <th className="px-3 py-2 text-right font-medium text-gray-600 w-20">Spread</th>
-                        <th className="px-3 py-2 text-right font-medium text-gray-600 w-16">Qty</th>
-                        <th className="px-3 py-2 text-left font-medium text-gray-600 w-20">Due</th>
-                        <th className="px-3 py-2 text-left font-medium text-gray-600">QC Status</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-600 w-28">QC</th>
                         <th className="px-3 py-2 text-center font-medium text-gray-600 w-12"></th>
                       </tr>
                     </thead>
@@ -475,47 +492,70 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
                                 : "hover:bg-blue-50"
                             )}
                           >
+                            {/* Job # with PO in tooltip */}
                             <td className="px-3 py-2">
-                              <span className="font-mono text-blue-600 font-medium text-xs">
+                              <span
+                                className="font-mono text-blue-600 font-medium text-xs cursor-help"
+                                title={job.customerPONumber ? `PO: ${job.customerPONumber}` : undefined}
+                              >
                                 {job.jobNo}
                               </span>
                             </td>
-                            <td className="px-3 py-2">
-                              <span className="font-mono text-gray-600 text-xs truncate block max-w-[80px]">
-                                {job.customerPONumber || '-'}
-                              </span>
-                            </td>
+                            {/* Customer + Title + Task */}
                             <td className="px-3 py-2">
                               <div className="font-medium text-gray-900">
                                 {job.customerName}
                               </div>
                               {job.title && (
-                                <div className="text-xs text-gray-500">
+                                <div className="text-xs text-gray-500 truncate max-w-[180px]">
                                   {job.title}
                                 </div>
                               )}
-                              {/* Show active task below title */}
                               {hasTask && (
-                                <div className="text-xs text-amber-700 font-medium mt-1 truncate max-w-[200px]" title={job.activeTask || ''}>
+                                <div className="text-xs text-amber-700 font-medium mt-1 truncate max-w-[180px]" title={job.activeTask || ''}>
                                   📋 {job.activeTask}
                                 </div>
                               )}
                             </td>
-                            <td className="px-3 py-2 text-gray-700 truncate max-w-[120px]">
+                            {/* Vendor */}
+                            <td className="px-3 py-2 text-gray-700 text-xs truncate max-w-[100px]">
                               {job.vendorName}
                             </td>
-                            <td className="px-3 py-2 text-right font-medium text-gray-900">
-                              ${job.sellPrice?.toLocaleString() || '0'}
+                            {/* Status Dropdown */}
+                            <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                              {(() => {
+                                const currentStage = WORKFLOW_STAGES.find(s => s.status === job.workflowStatus);
+                                const nextStages = getNextWorkflowStatuses(job.workflowStatus);
+                                const isUpdating = updatingStatusJobId === job.id;
+
+                                return (
+                                  <select
+                                    value={job.workflowStatus}
+                                    onChange={(e) => handleStatusChange(job.id, e.target.value, e)}
+                                    disabled={isUpdating}
+                                    className={cn(
+                                      'text-xs px-2 py-1 rounded border cursor-pointer w-full',
+                                      'bg-white hover:bg-gray-50 focus:ring-2 focus:ring-blue-500',
+                                      isUpdating && 'opacity-50 cursor-wait'
+                                    )}
+                                  >
+                                    <option value={job.workflowStatus}>
+                                      {currentStage?.label || job.workflowStatus}
+                                    </option>
+                                    {nextStages.length > 0 && (
+                                      <optgroup label="Move to...">
+                                        {nextStages.map(stage => (
+                                          <option key={stage.status} value={stage.status}>
+                                            → {stage.label}
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                    )}
+                                  </select>
+                                );
+                              })()}
                             </td>
-                            <td className={cn(
-                              "px-3 py-2 text-right font-medium",
-                              job.spread >= 0 ? 'text-green-600' : 'text-red-600'
-                            )}>
-                              ${job.spread?.toLocaleString() || '0'}
-                            </td>
-                            <td className="px-3 py-2 text-right text-gray-700">
-                              {job.quantity?.toLocaleString() || '-'}
-                            </td>
+                            {/* Due */}
                             <td className="px-3 py-2">
                               <span className={cn(
                                 'font-medium text-xs',
@@ -524,6 +564,18 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
                                 {dueInfo.text}
                               </span>
                             </td>
+                            {/* Price */}
+                            <td className="px-3 py-2 text-right font-medium text-gray-900 text-xs">
+                              ${job.sellPrice?.toLocaleString() || '0'}
+                            </td>
+                            {/* Spread */}
+                            <td className={cn(
+                              "px-3 py-2 text-right font-medium text-xs",
+                              job.spread >= 0 ? 'text-green-600' : 'text-red-600'
+                            )}>
+                              ${job.spread?.toLocaleString() || '0'}
+                            </td>
+                            {/* QC Status */}
                             <td className="px-3 py-2">
                               {renderQCStatus(job)}
                             </td>

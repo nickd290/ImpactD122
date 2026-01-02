@@ -16,6 +16,7 @@ export interface JobFormData {
   paperInventoryId: string;
   routingType: RoutingType;
   jobType: JobType;
+  dataIncludedWithArtwork: boolean;
 }
 
 export interface Specs {

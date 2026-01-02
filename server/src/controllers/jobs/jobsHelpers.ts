@@ -601,19 +601,26 @@ export function transformJobForWorkflow(job: any) {
     spread = (Number(job.sellPrice) || 0) - totalCost;
   }
 
+  // Check for artwork links (Dropbox, ShareFile, etc.)
+  const specs = job.specs as Record<string, unknown> | null;
+  const hasArtworkLink = !!(specs?.artworkUrl || specs?.artworkFilesLink);
+
   // Determine QC indicators (overrides take precedence)
   const qcIndicators = {
-    // Artwork: sent, missing, partial - override takes precedence
-    artwork: job.artOverride ? 'sent' : (artworkFiles.length > 0 ? 'sent' : 'missing'),
+    // Artwork: sent, missing, partial - override takes precedence, links count as sent
+    artwork: job.artOverride ? 'sent' : (artworkFiles.length > 0 || hasArtworkLink ? 'sent' : 'missing'),
     artworkCount: artworkFiles.length,
     artworkIsOverride: job.artOverride || false,
+    artworkHasLink: hasArtworkLink,
 
-    // Data files: sent, missing, n/a - override takes precedence
+    // Data files: sent, missing, n/a - override takes precedence, dataIncludedWithArtwork counts as sent
     data: job.dataOverride === 'SENT' ? 'sent' :
           job.dataOverride === 'NA' ? 'na' :
-          (dataFiles.length > 0 ? 'sent' : (job.specs?.isDirectMail ? 'missing' : 'na')),
+          job.dataIncludedWithArtwork ? 'sent' :
+          (dataFiles.length > 0 ? 'sent' : (specs?.isDirectMail ? 'missing' : 'na')),
     dataCount: dataFiles.length,
     dataIsOverride: !!job.dataOverride,
+    dataIncludedWithArtwork: job.dataIncludedWithArtwork || false,
 
     // Vendor confirmation - override takes precedence
     vendorConfirmed: job.vendorConfirmOverride || (portal?.confirmedAt ? true : false),
@@ -721,4 +728,101 @@ export function calculateWorkflowStage(job: any): string {
     return 'AWAITING_PROOF_FROM_VENDOR';
   }
   return 'NEW_JOB';
+}
+
+// ============================================================================
+// WORKFLOW AUTO-ADVANCE
+// ============================================================================
+
+/**
+ * Check if job meets conditions to auto-advance workflow status.
+ * Called after PO email is sent.
+ *
+ * Conditions for auto-advance to AWAITING_PROOF_FROM_VENDOR:
+ * 1. Job is currently NEW_JOB status
+ * 2. Artwork is provided (files uploaded OR link provided OR override)
+ * 3. Data is provided OR not required (non-mailing job)
+ * 4. PO has been emailed to vendor
+ * 5. No manual workflow override is set
+ */
+export async function checkAndAdvanceWorkflow(jobId: string): Promise<boolean> {
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    include: {
+      File: true,
+      PurchaseOrder: true,
+      JobPortal: true,
+    },
+  });
+
+  if (!job) {
+    console.log(`[checkAndAdvanceWorkflow] Job ${jobId} not found`);
+    return false;
+  }
+
+  // Skip if manual override is set - respect user's explicit status
+  if (job.workflowStatusOverride) {
+    console.log(`[checkAndAdvanceWorkflow] Job ${jobId} has manual override, skipping`);
+    return false;
+  }
+
+  // Skip if already past NEW_JOB
+  if (job.workflowStatus !== 'NEW_JOB') {
+    console.log(`[checkAndAdvanceWorkflow] Job ${jobId} is already ${job.workflowStatus}, skipping`);
+    return false;
+  }
+
+  // Check QC conditions
+  const files = job.File || [];
+  const artworkFiles = files.filter((f) => f.kind === 'ARTWORK');
+  const dataFiles = files.filter((f) => f.kind === 'DATA_FILE');
+  const specs = job.specs as Record<string, unknown> | null;
+  const hasArtworkLink = !!(specs?.artworkUrl || specs?.artworkFilesLink);
+
+  // Artwork check: files uploaded, link provided, or override
+  const artworkOk = job.artOverride || artworkFiles.length > 0 || hasArtworkLink;
+
+  // Data check: files uploaded, dataIncludedWithArtwork, override, or not required (non-mailing)
+  const isMailingJob = specs?.isDirectMail === true;
+  const dataOk =
+    job.dataOverride === 'SENT' ||
+    job.dataOverride === 'NA' ||
+    job.dataIncludedWithArtwork ||
+    dataFiles.length > 0 ||
+    !isMailingJob; // Non-mailing jobs don't require data
+
+  // PO email check: at least one PO has been emailed
+  const poEmailed = job.PurchaseOrder?.some((po) => po.emailedAt);
+
+  console.log(`[checkAndAdvanceWorkflow] Job ${jobId}: artwork=${artworkOk}, data=${dataOk}, poEmailed=${poEmailed}`);
+
+  if (artworkOk && dataOk && poEmailed) {
+    // All conditions met - advance to AWAITING_PROOF_FROM_VENDOR
+    await prisma.job.update({
+      where: { id: jobId },
+      data: {
+        workflowStatus: 'AWAITING_PROOF_FROM_VENDOR',
+        workflowUpdatedAt: new Date(),
+      },
+    });
+
+    // Log activity
+    await prisma.jobActivity.create({
+      data: {
+        id: crypto.randomUUID(),
+        jobId,
+        action: 'WORKFLOW_AUTO_ADVANCED',
+        field: 'workflowStatus',
+        oldValue: 'NEW_JOB',
+        newValue: 'AWAITING_PROOF_FROM_VENDOR',
+        changedBy: 'System (auto-advance)',
+        changedByRole: 'BROKER_ADMIN',
+      },
+    });
+
+    console.log(`[checkAndAdvanceWorkflow] Job ${jobId} auto-advanced to AWAITING_PROOF_FROM_VENDOR`);
+    return true;
+  }
+
+  return false;
 }

@@ -27,7 +27,7 @@ export function getStageIndex(status: string): number {
 }
 
 // Status configuration with colors and labels
-const STATUS_CONFIG: Record<string, { label: string; bgColor: string; textColor: string; emoji?: string }> = {
+export const STATUS_CONFIG: Record<string, { label: string; bgColor: string; textColor: string; emoji?: string }> = {
   NEW_JOB: {
     label: 'New Job',
     bgColor: 'bg-yellow-100',

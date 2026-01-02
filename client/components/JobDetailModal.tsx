@@ -12,6 +12,7 @@ import { SendEmailModal } from './SendEmailModal';
 import { CommunicationThread } from './CommunicationThread';
 import { useQuery } from '@tanstack/react-query';
 import { WorkflowStatusBadge, getNextWorkflowStatuses, WORKFLOW_STAGES, getStageIndex } from './WorkflowStatusBadge';
+import { WorkflowStatusCard } from './WorkflowStatusCard';
 import { PDFPreviewModal } from './PDFPreviewModal';
 
 interface Job {
@@ -260,6 +261,7 @@ export function JobDetailModal({
   const [isEditMode, setIsEditMode] = useState(false);
   const [editedJob, setEditedJob] = useState<Partial<Job & { vendorId?: string; bradfordTotal?: number }>>({});
   const [isSavingJob, setIsSavingJob] = useState(false);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   // Vendor list for dropdown
   const [vendors, setVendors] = useState<Array<{ id: string; name: string; isPartner?: boolean }>>([]);
@@ -913,6 +915,7 @@ export function JobDetailModal({
   // Workflow status change handler
   const handleWorkflowStatusChange = async (newStatus: string) => {
     if (!job) return;
+    setIsUpdatingStatus(true);
 
     try {
       // Special case: Notify vendor when approving
@@ -947,6 +950,8 @@ export function JobDetailModal({
     } catch (error) {
       console.error('Failed to update workflow status:', error);
       alert(`Failed to update status: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsUpdatingStatus(false);
     }
   };
 
@@ -3202,11 +3207,6 @@ export function JobDetailModal({
                 ) : (
                   <span className="text-gray-600 truncate">{job.title}</span>
                 )}
-                {job.vendor?.isPartner && (
-                  <span className="px-2 py-0.5 bg-orange-500 text-white text-xs font-bold rounded flex-shrink-0">
-                    PARTNER
-                  </span>
-                )}
               </div>
               <button
                 onClick={onClose}
@@ -3217,204 +3217,192 @@ export function JobDetailModal({
               </button>
             </div>
 
-            {/* Quick Actions */}
-            <div className="flex flex-wrap gap-2 mt-4">
-              {/* Edit Mode Toggle */}
-              {isEditMode ? (
-                <>
-                  <button
-                    onClick={handleSaveJob}
-                    disabled={isSavingJob}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-50"
-                  >
-                    <Save className="w-4 h-4" />
-                    {isSavingJob ? 'Saving...' : 'Save Changes'}
-                  </button>
-                  <button
-                    onClick={handleCancelEdit}
-                    disabled={isSavingJob}
-                    className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium"
-                  >
-                    <X className="w-4 h-4" />
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    onClick={() => setIsEditMode(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                    Edit Job
-                  </button>
-                  {onGenerateEmail && (
-                    <button
-                      onClick={onGenerateEmail}
-                      className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"
-                    >
-                      <Mail className="w-4 h-4" />
-                      Email
-                    </button>
-                  )}
-                  {onDownloadPO && (
-                    <button
-                      onClick={onDownloadPO}
-                      className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"
-                    >
-                      <Printer className="w-4 h-4" />
-                      PO PDF
-                    </button>
-                  )}
-                  {onDownloadInvoice && (
-                    <button
-                      onClick={onDownloadInvoice}
-                      className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"
-                    >
-                      <Receipt className="w-4 h-4" />
-                      Invoice
-                    </button>
-                  )}
+            {/* Edit Mode Controls */}
+            {isEditMode && (
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={handleSaveJob}
+                  disabled={isSavingJob}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-50"
+                >
+                  <Save className="w-4 h-4" />
+                  {isSavingJob ? 'Saving...' : 'Save Changes'}
+                </button>
+                <button
+                  onClick={handleCancelEdit}
+                  disabled={isSavingJob}
+                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium"
+                >
+                  <X className="w-4 h-4" />
+                  Cancel
+                </button>
+              </div>
+            )}
 
-                  {/* Unified Send Email Dropdown */}
-                  <div className="relative" data-email-dropdown>
+            {/* Action Bar - Workflow Card + Document Actions */}
+            {!isEditMode && (
+              <div className="flex gap-4 mt-4">
+                {/* LEFT: Workflow Status Card */}
+                <WorkflowStatusCard
+                  currentStatus={job.workflowStatus || 'NEW_JOB'}
+                  onStatusChange={handleWorkflowStatusChange}
+                  isUpdating={isUpdatingStatus}
+                  className="w-56 flex-shrink-0"
+                />
+
+                {/* RIGHT: Document & Email Actions */}
+                <div className="flex-1 flex flex-col gap-2">
+                  {/* Top row: Edit + Documents grouped */}
+                  <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setShowEmailDropdown(!showEmailDropdown)}
-                      className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-100 text-sm"
+                      onClick={() => setIsEditMode(true)}
+                      className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
                     >
-                      <Send className="w-4 h-4" />
-                      Send Email
-                      <ChevronDown className={`w-4 h-4 transition-transform ${showEmailDropdown ? 'rotate-180' : ''}`} />
+                      <Edit2 className="w-4 h-4" />
+                      Edit
                     </button>
 
-                    {showEmailDropdown && (
-                      <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
-                        {/* Invoice to Customer */}
+                    {/* Document buttons grouped */}
+                    <div className="flex items-center border border-gray-200 rounded-lg bg-gray-50 overflow-hidden">
+                      {onDownloadQuote && (
                         <button
-                          onClick={() => {
-                            setEmailType('invoice');
-                            setShowEmailInvoiceModal(true);
-                            setShowEmailDropdown(false);
-                          }}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm hover:bg-gray-50 border-b border-gray-100"
+                          onClick={onDownloadQuote}
+                          className="flex items-center gap-1.5 px-3 py-2 text-gray-700 hover:bg-gray-100 text-sm border-r border-gray-200"
                         >
-                          <Receipt className="w-4 h-4 text-gray-500" />
-                          <div className="flex-1">
-                            <div className="font-medium text-gray-900">Invoice to Customer</div>
-                            <div className="text-xs text-gray-500">{job.customer?.email || 'No email'}</div>
-                          </div>
-                          {job.invoiceEmailedAt && (
-                            <span className="text-xs text-green-600 flex items-center gap-1">
-                              <Check className="w-3 h-3" />
-                              Sent
-                            </span>
-                          )}
+                          <FileText className="w-4 h-4" />
+                          Quote
                         </button>
+                      )}
+                      {onDownloadPO && (
+                        <button
+                          onClick={onDownloadPO}
+                          className="flex items-center gap-1.5 px-3 py-2 text-gray-700 hover:bg-gray-100 text-sm border-r border-gray-200"
+                        >
+                          <Printer className="w-4 h-4" />
+                          PO
+                        </button>
+                      )}
+                      {onDownloadInvoice && (
+                        <button
+                          onClick={onDownloadInvoice}
+                          className="flex items-center gap-1.5 px-3 py-2 text-gray-700 hover:bg-gray-100 text-sm"
+                        >
+                          <Receipt className="w-4 h-4" />
+                          Invoice
+                        </button>
+                      )}
+                    </div>
 
-                        {/* PO to Vendor(s) */}
-                        {job.purchaseOrders && job.purchaseOrders.length > 0 ? (
-                          job.purchaseOrders.map((po: any) => {
-                            const hasEmail = getPOEmailStatus(po);
-                            const vendorDisplayName = po.vendor?.name || po.targetCompany?.name || job.vendor?.name || 'Vendor';
-                            return hasEmail ? (
-                              <button
-                                key={po.id}
-                                onClick={() => {
-                                  setEmailType('po');
-                                  setSelectedPOForEmail({
-                                    id: po.id,
-                                    jobId: job.id,
-                                    poNumber: po.poNumber,
-                                    vendorName: vendorDisplayName,
-                                    vendorEmail: po.vendor?.email || po.targetCompany?.email || job.vendor?.email,
-                                    vendorContacts: po.vendor?.contacts || job.vendor?.contacts || [],
-                                  });
-                                  setShowEmailDropdown(false);
-                                }}
-                                className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
-                              >
-                                <FileText className="w-4 h-4 text-gray-500" />
-                                <div className="flex-1">
-                                  <div className="font-medium text-gray-900">PO to {vendorDisplayName.slice(0, 15)}</div>
-                                  <div className="text-xs text-gray-500">PO #{po.poNumber}</div>
+                    {/* Send Email Dropdown */}
+                    <div className="relative" data-email-dropdown>
+                      <button
+                        onClick={() => setShowEmailDropdown(!showEmailDropdown)}
+                        className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-100 text-sm"
+                      >
+                        <Send className="w-4 h-4" />
+                        Send Email
+                        <ChevronDown className={`w-4 h-4 transition-transform ${showEmailDropdown ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      {showEmailDropdown && (
+                        <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                          {/* Invoice to Customer */}
+                          <button
+                            onClick={() => {
+                              setEmailType('invoice');
+                              setShowEmailInvoiceModal(true);
+                              setShowEmailDropdown(false);
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm hover:bg-gray-50 border-b border-gray-100"
+                          >
+                            <Receipt className="w-4 h-4 text-gray-500" />
+                            <div className="flex-1">
+                              <div className="font-medium text-gray-900">Invoice to Customer</div>
+                              <div className="text-xs text-gray-500">{job.customer?.email || 'No email'}</div>
+                            </div>
+                            {job.invoiceEmailedAt && (
+                              <span className="text-xs text-green-600 flex items-center gap-1">
+                                <Check className="w-3 h-3" />
+                                Sent
+                              </span>
+                            )}
+                          </button>
+
+                          {/* PO to Vendor(s) */}
+                          {job.purchaseOrders && job.purchaseOrders.length > 0 ? (
+                            job.purchaseOrders.map((po: any) => {
+                              const hasEmail = getPOEmailStatus(po);
+                              const vendorDisplayName = po.vendor?.name || po.targetCompany?.name || job.vendor?.name || 'Vendor';
+                              return hasEmail ? (
+                                <button
+                                  key={po.id}
+                                  onClick={() => {
+                                    setEmailType('po');
+                                    setSelectedPOForEmail({
+                                      id: po.id,
+                                      jobId: job.id,
+                                      poNumber: po.poNumber,
+                                      vendorName: vendorDisplayName,
+                                      vendorEmail: po.vendor?.email || po.targetCompany?.email || job.vendor?.email,
+                                      vendorContacts: po.vendor?.contacts || job.vendor?.contacts || [],
+                                    });
+                                    setShowEmailDropdown(false);
+                                  }}
+                                  className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                >
+                                  <FileText className="w-4 h-4 text-gray-500" />
+                                  <div className="flex-1">
+                                    <div className="font-medium text-gray-900">PO to {vendorDisplayName.slice(0, 15)}</div>
+                                    <div className="text-xs text-gray-500">PO #{po.poNumber}</div>
+                                  </div>
+                                  {po.emailedAt && (
+                                    <span className="text-xs text-green-600 flex items-center gap-1">
+                                      <Check className="w-3 h-3" />
+                                      Sent
+                                    </span>
+                                  )}
+                                </button>
+                              ) : (
+                                <div
+                                  key={po.id}
+                                  className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm bg-gray-50 border-b border-gray-100 last:border-b-0 cursor-not-allowed"
+                                  title="Vendor has no email address"
+                                >
+                                  <FileText className="w-4 h-4 text-gray-300" />
+                                  <div className="flex-1">
+                                    <div className="font-medium text-gray-400">PO to {vendorDisplayName.slice(0, 15)}</div>
+                                    <div className="text-xs text-red-400">No email address</div>
+                                  </div>
                                 </div>
-                                {po.emailedAt && (
-                                  <span className="text-xs text-green-600 flex items-center gap-1">
-                                    <Check className="w-3 h-3" />
-                                    Sent
-                                  </span>
-                                )}
-                              </button>
-                            ) : (
-                              <div
-                                key={po.id}
-                                className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm bg-gray-50 border-b border-gray-100 last:border-b-0 cursor-not-allowed"
-                                title="Vendor has no email address"
-                              >
-                                <FileText className="w-4 h-4 text-gray-300" />
-                                <div className="flex-1">
-                                  <div className="font-medium text-gray-400">PO to {vendorDisplayName.slice(0, 15)}</div>
-                                  <div className="text-xs text-red-400">No email address</div>
-                                </div>
-                              </div>
-                            );
-                          })
-                        ) : (
-                          <div className="px-4 py-3 text-sm text-gray-500">
-                            No POs to send
-                          </div>
-                        )}
-                      </div>
-                    )}
+                              );
+                            })
+                          ) : (
+                            <div className="px-4 py-3 text-sm text-gray-500">
+                              No POs to send
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Email sent indicators */}
-                  {job.invoiceEmailedAt && (
-                    <span className="flex items-center gap-1 px-2 py-1 bg-green-50 text-green-700 text-xs rounded" title={`Invoice sent to ${job.invoiceEmailedTo || 'customer'}`}>
-                      <Check className="w-3 h-3" />
-                      Inv sent {new Date(job.invoiceEmailedAt).toLocaleDateString()}
-                    </span>
-                  )}
-                  {/* Invoice payment status toggle - shows when invoice has been sent */}
-                  {job.invoiceEmailedAt && (
-                    <select
-                      value={job.customerPaymentDate ? 'paid' : 'unpaid'}
-                      onChange={async (e) => {
-                        try {
-                          const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/jobs/${job.id}/customer-paid`, {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ status: e.target.value }),
-                          });
-                          if (!response.ok) throw new Error('Failed to update');
-                          onRefresh?.();
-                        } catch (err) {
-                          console.error('Failed to update payment status:', err);
-                        }
-                      }}
-                      className={`text-xs px-2 py-1 rounded border cursor-pointer ${
-                        job.customerPaymentDate
-                          ? 'bg-green-50 text-green-700 border-green-200'
-                          : 'bg-yellow-50 text-yellow-700 border-yellow-200'
-                      }`}
-                      title={job.sellPrice ? `$${Number(job.sellPrice).toFixed(2)}` : 'Payment status'}
-                    >
-                      <option value="unpaid">Unpaid</option>
-                      <option value="paid">Paid</option>
-                    </select>
-                  )}
-                  {onDownloadQuote && (
-                    <button
-                      onClick={onDownloadQuote}
-                      className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"
-                    >
-                      <FileText className="w-4 h-4" />
-                      Quote
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
+                  {/* Bottom row: Partner badge + payment info */}
+                  <div className="flex items-center gap-2 text-xs">
+                    {job.vendor?.isPartner && (
+                      <span className="px-2 py-0.5 bg-orange-500 text-white font-bold rounded">
+                        PARTNER
+                      </span>
+                    )}
+                    {job.invoiceEmailedAt && (
+                      <span className="flex items-center gap-1 px-2 py-1 bg-green-50 text-green-700 rounded" title={`Invoice sent to ${job.invoiceEmailedTo || 'customer'}`}>
+                        <Check className="w-3 h-3" />
+                        Inv sent {new Date(job.invoiceEmailedAt).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
           </div>
 

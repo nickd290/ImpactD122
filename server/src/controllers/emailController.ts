@@ -11,6 +11,7 @@ import {
   sendCustomerProofEmail,
   getJobEmailAddress,
 } from '../services/emailService';
+import { checkAndAdvanceWorkflow } from './jobs/jobsHelpers';
 import sgMail from '@sendgrid/mail';
 
 // Initialize SendGrid
@@ -441,11 +442,15 @@ export const emailVendorPOWithPortal = async (req: Request, res: Response) => {
       },
     });
 
+    // Check if workflow should auto-advance (PO sent + artwork + data ready)
+    const didAdvance = await checkAndAdvanceWorkflow(jobId);
+
     res.json({
       success: true,
       message: `Vendor PO emailed to ${email} with portal link`,
       emailedAt: result.emailedAt,
       portalUrl,
+      workflowAdvanced: didAdvance,
     });
   } catch (error: any) {
     console.error('Error emailing vendor PO with portal:', error);

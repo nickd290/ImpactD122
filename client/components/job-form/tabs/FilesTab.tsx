@@ -106,6 +106,20 @@ export function FilesTab({
               ⚠️ Artwork marked as "to follow" - will be sent separately
             </p>
           )}
+
+          {/* Data included with artwork checkbox */}
+          {specs.artworkUrl && (
+            <label className="flex items-center gap-2 mt-3 text-sm text-blue-800 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.dataIncludedWithArtwork}
+                onChange={(e) => setFormData({ ...formData, dataIncludedWithArtwork: e.target.checked })}
+                className="w-4 h-4 rounded border-blue-300 text-blue-600"
+              />
+              Data files included with artwork link
+              <span className="text-xs text-blue-600">(marks data as sent)</span>
+            </label>
+          )}
         </div>
       </div>
 

@@ -256,6 +256,9 @@ model Job {
   dataOverrideBy            String?
   dataOverrideNote          String?
 
+  // Data included with artwork link (checkbox for when data is bundled in artwork link)
+  dataIncludedWithArtwork   Boolean          @default(false)
+
   // Vendor Override: Mark as confirmed without portal action
   vendorConfirmOverride     Boolean          @default(false)
   vendorConfirmOverrideAt   DateTime?
