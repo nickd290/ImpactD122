@@ -20,7 +20,8 @@ function transformJobForPDF(job: any) {
     number: job.jobNo,
     title: job.title || '',
     status: job.status,
-    notes: job.notes || '',
+    // Combine all notes fields for vendor PO
+    notes: [job.notes, job.vendorSpecialInstructions].filter(Boolean).join('\n\n') || '',
     quantity: quantity,
     sizeName: job.sizeName || '',
     customerPONumber: job.customerPONumber || '',

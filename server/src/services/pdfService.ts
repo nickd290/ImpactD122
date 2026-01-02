@@ -1076,14 +1076,14 @@ export const generateVendorPOPDF = (jobData: any): Buffer => {
   // Draw grid border around total box
   drawSectionGrid(doc, 128, finalY + 6, 64, 20);
 
-  // Larger, more prominent total box
+  // Larger, more prominent total box - labeled as package total for mail packages
   doc.setFillColor(BRAND_ORANGE);
   doc.rect(130, finalY + 8, 60, 16, 'F');
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(14);
+  doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
-  doc.text('TOTAL:', 135, finalY + 18.5);
-  doc.setFontSize(16);
+  doc.text('PACKAGE TOTAL:', 133, finalY + 18.5);
+  doc.setFontSize(14);
   doc.text(`$${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 185, finalY + 18.5, { align: 'right' });
 
   // PAYMENT TERMS SECTION (keep below the total)
