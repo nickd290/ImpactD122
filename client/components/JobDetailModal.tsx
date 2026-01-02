@@ -262,6 +262,10 @@ export function JobDetailModal({
   const [isSavingJob, setIsSavingJob] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
+  // Local workflow state - keeps modal open when updating workflow
+  const [localWorkflowStatus, setLocalWorkflowStatus] = useState(job?.workflowStatus);
+  const [localWorkflowOverride, setLocalWorkflowOverride] = useState(job?.workflowStatusOverride);
+
   // Vendor list for dropdown
   const [vendors, setVendors] = useState<Array<{ id: string; name: string; isPartner?: boolean }>>([]);
   const [isLoadingVendors, setIsLoadingVendors] = useState(false);
@@ -341,6 +345,12 @@ export function JobDetailModal({
       setShowEmailDropdown(false);
     }
   }, [isOpen]);
+
+  // Sync local workflow state with job prop
+  useEffect(() => {
+    setLocalWorkflowStatus(job?.workflowStatus);
+    setLocalWorkflowOverride(job?.workflowStatusOverride);
+  }, [job?.workflowStatus, job?.workflowStatusOverride]);
 
   // Close email dropdown when clicking outside
   useEffect(() => {
@@ -911,14 +921,18 @@ export function JobDetailModal({
     }
   };
 
-  // Workflow status change handler
+  // Workflow status change handler - updates local state to keep modal open
   const handleWorkflowStatusChange = async (newStatus: string) => {
     if (!job) return;
     setIsUpdatingStatus(true);
 
+    // Update local state immediately for responsive UI
+    setLocalWorkflowStatus(newStatus);
+    setLocalWorkflowOverride(newStatus);
+
     try {
       // Special case: Notify vendor when approving
-      if (newStatus === 'IN_PRODUCTION' && job.workflowStatus === 'APPROVED_PENDING_VENDOR') {
+      if (newStatus === 'IN_PRODUCTION' && localWorkflowStatus === 'APPROVED_PENDING_VENDOR') {
         // Call the vendor approval notification endpoint
         const emailResponse = await fetch(`/api/emails/vendor-approval/${job.id}`, {
           method: 'POST',
@@ -932,10 +946,12 @@ export function JobDetailModal({
 
       // Update the workflow status via standardized API
       await jobsApi.updateWorkflowStatus(job.id, newStatus);
-
-      if (onRefresh) onRefresh();
+      // Don't call onRefresh - keeps modal open
     } catch (error) {
       console.error('Failed to update workflow status:', error);
+      // Revert local state on error
+      setLocalWorkflowStatus(job.workflowStatus);
+      setLocalWorkflowOverride(job.workflowStatusOverride);
       alert(`Failed to update status: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsUpdatingStatus(false);
@@ -1137,12 +1153,12 @@ export function JobDetailModal({
       </div>
 
       {/* Workflow Progress Checklist */}
-      {job.workflowStatus && (
+      {localWorkflowStatus && (
         <div className="bg-card border border-border rounded-lg p-3">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <span className="text-[10px] text-muted-foreground uppercase font-semibold">Workflow Progress</span>
-              {job.workflowStatusOverride && (
+              {localWorkflowOverride && (
                 <span className="text-xs text-orange-500 font-medium">(Manual Override)</span>
               )}
             </div>
@@ -1156,7 +1172,7 @@ export function JobDetailModal({
           {/* Workflow Stages Checklist */}
           <div className="space-y-1 mb-3">
             {WORKFLOW_STAGES.map((stage, index) => {
-              const currentStatus = job.workflowStatusOverride || job.workflowStatus;
+              const currentStatus = localWorkflowOverride || localWorkflowStatus;
               const currentIndex = getStageIndex(currentStatus);
               const isCompleted = index < currentIndex;
               const isCurrent = index === currentIndex;
@@ -1206,7 +1222,7 @@ export function JobDetailModal({
 
           {/* Next Action Buttons */}
           <div className="flex items-center gap-2 pt-2 border-t border-border">
-            {getNextWorkflowStatuses(job.workflowStatusOverride || job.workflowStatus).map(({ status, action }) => (
+            {getNextWorkflowStatuses(localWorkflowOverride || localWorkflowStatus).map(({ status, action }) => (
               <button
                 key={status}
                 onClick={() => handleWorkflowStatusChange(status)}
@@ -1216,11 +1232,14 @@ export function JobDetailModal({
                 {isUpdatingStatus ? 'Updating...' : action}
               </button>
             ))}
-            {job.workflowStatusOverride && (
+            {localWorkflowOverride && (
               <button
                 onClick={async () => {
+                  // Update local state first
+                  setLocalWorkflowOverride(undefined);
+                  setLocalWorkflowStatus(job.workflowStatus);
                   await jobsApi.updateWorkflowStatus(job.id, null, true);
-                  onRefresh?.();
+                  // Don't call onRefresh - keeps modal open
                 }}
                 className="px-3 py-1.5 text-xs font-medium border border-orange-300 text-orange-600 rounded hover:bg-orange-50 transition-colors ml-auto"
               >
