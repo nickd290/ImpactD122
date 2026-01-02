@@ -307,7 +307,7 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
     const missing: string[] = [];
     if (qc.artwork === 'missing') missing.push('Art');
     if (qc.data === 'missing') missing.push('Data');
-    if (!qc.vendorConfirmed) missing.push('Vendor');
+    // Vendor confirmation happens after PO is sent - not a pre-requisite
 
     // If nothing missing, check proof status
     if (missing.length === 0) {

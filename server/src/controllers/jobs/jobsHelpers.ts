@@ -772,31 +772,13 @@ export async function checkAndAdvanceWorkflow(jobId: string): Promise<boolean> {
     return false;
   }
 
-  // Check QC conditions
-  const files = job.File || [];
-  const artworkFiles = files.filter((f) => f.kind === 'ARTWORK');
-  const dataFiles = files.filter((f) => f.kind === 'DATA_FILE');
-  const specs = job.specs as Record<string, unknown> | null;
-  const hasArtworkLink = !!(specs?.artworkUrl || specs?.artworkFilesLink);
-
-  // Artwork check: files uploaded, link provided, or override
-  const artworkOk = job.artOverride || artworkFiles.length > 0 || hasArtworkLink;
-
-  // Data check: files uploaded, dataIncludedWithArtwork, override, or not required (non-mailing)
-  const isMailingJob = specs?.isDirectMail === true;
-  const dataOk =
-    job.dataOverride === 'SENT' ||
-    job.dataOverride === 'NA' ||
-    job.dataIncludedWithArtwork ||
-    dataFiles.length > 0 ||
-    !isMailingJob; // Non-mailing jobs don't require data
-
   // PO email check: at least one PO has been emailed
+  // Simplified: If PO is sent, artwork/data is implicitly ready
   const poEmailed = job.PurchaseOrder?.some((po) => po.emailedAt);
 
-  console.log(`[checkAndAdvanceWorkflow] Job ${jobId}: artwork=${artworkOk}, data=${dataOk}, poEmailed=${poEmailed}`);
+  console.log(`[checkAndAdvanceWorkflow] Job ${jobId}: poEmailed=${poEmailed}`);
 
-  if (artworkOk && dataOk && poEmailed) {
+  if (poEmailed) {
     // All conditions met - advance to AWAITING_PROOF_FROM_VENDOR
     await prisma.job.update({
       where: { id: jobId },
