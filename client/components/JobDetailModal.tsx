@@ -12,7 +12,6 @@ import { SendEmailModal } from './SendEmailModal';
 import { CommunicationThread } from './CommunicationThread';
 import { useQuery } from '@tanstack/react-query';
 import { WorkflowStatusBadge, getNextWorkflowStatuses, WORKFLOW_STAGES, getStageIndex } from './WorkflowStatusBadge';
-import { WorkflowStatusCard } from './WorkflowStatusCard';
 import { PDFPreviewModal } from './PDFPreviewModal';
 
 interface Job {
@@ -1205,20 +1204,30 @@ export function JobDetailModal({
             })}
           </div>
 
-          {/* Reset Override Button (if manual override active) */}
-          {job.workflowStatusOverride && (
-            <div className="flex items-center gap-2 pt-2 border-t border-border">
+          {/* Next Action Buttons */}
+          <div className="flex items-center gap-2 pt-2 border-t border-border">
+            {getNextWorkflowStatuses(job.workflowStatusOverride || job.workflowStatus).map(({ status, action }) => (
+              <button
+                key={status}
+                onClick={() => handleWorkflowStatusChange(status)}
+                disabled={isUpdatingStatus}
+                className="px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                {isUpdatingStatus ? 'Updating...' : action}
+              </button>
+            ))}
+            {job.workflowStatusOverride && (
               <button
                 onClick={async () => {
                   await jobsApi.updateWorkflowStatus(job.id, null, true);
                   onRefresh?.();
                 }}
-                className="px-3 py-1.5 text-xs font-medium border border-orange-300 text-orange-600 rounded hover:bg-orange-50 transition-colors"
+                className="px-3 py-1.5 text-xs font-medium border border-orange-300 text-orange-600 rounded hover:bg-orange-50 transition-colors ml-auto"
               >
                 ↩ Reset to Auto
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
 
@@ -3214,18 +3223,10 @@ export function JobDetailModal({
               </div>
             )}
 
-            {/* Action Bar - Workflow Card + Document Actions */}
+            {/* Action Bar - Document Actions */}
             {!isEditMode && (
               <div className="flex gap-4 mt-4">
-                {/* LEFT: Workflow Status Card */}
-                <WorkflowStatusCard
-                  currentStatus={job.workflowStatus || 'NEW_JOB'}
-                  onStatusChange={handleWorkflowStatusChange}
-                  isUpdating={isUpdatingStatus}
-                  className="w-56 flex-shrink-0"
-                />
-
-                {/* RIGHT: Document & Email Actions */}
+                {/* Document & Email Actions */}
                 <div className="flex-1 flex flex-col gap-2">
                   {/* Top row: Edit + Documents grouped */}
                   <div className="flex items-center gap-2">
