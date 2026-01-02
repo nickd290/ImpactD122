@@ -45,10 +45,6 @@ export const jobsApi = {
     method: 'PATCH',
     body: JSON.stringify({ status }),
   }),
-  updateWorkflowStatus: (id: string, workflowStatus: string) => apiFetch(`/jobs/${id}/workflow-status`, {
-    method: 'PATCH',
-    body: JSON.stringify({ status: workflowStatus }),
-  }),
   toggleLock: (id: string) => apiFetch(`/jobs/${id}/lock`, {
     method: 'PATCH',
   }),

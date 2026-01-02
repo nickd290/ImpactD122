@@ -931,20 +931,8 @@ export function JobDetailModal({
         }
       }
 
-      // Update the workflow status
-      const response = await fetch(`/api/jobs/${job.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workflowStatus: newStatus,
-          workflowUpdatedAt: new Date().toISOString(),
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to update workflow status');
-      }
+      // Update the workflow status via standardized API
+      await jobsApi.updateWorkflowStatus(job.id, newStatus);
 
       if (onRefresh) onRefresh();
     } catch (error) {
@@ -1176,16 +1164,12 @@ export function JobDetailModal({
               const isPending = index > currentIndex;
 
               return (
-                <button
+                <div
                   key={stage.status}
-                  onClick={async () => {
-                    await jobsApi.updateWorkflowStatus(job.id, stage.status);
-                    onRefresh?.();
-                  }}
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-left transition-colors ${
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-left ${
                     isCurrent
                       ? 'bg-blue-100 border border-blue-300'
-                      : 'hover:bg-muted/50'
+                      : ''
                   }`}
                 >
                   {/* Status Icon */}
@@ -1216,34 +1200,25 @@ export function JobDetailModal({
                   {isCurrent && (
                     <span className="ml-auto text-xs text-blue-600 font-medium">Current</span>
                   )}
-                </button>
+                </div>
               );
             })}
           </div>
 
-          {/* Next Action Buttons */}
-          <div className="flex items-center gap-2 pt-2 border-t border-border">
-            {getNextWorkflowStatuses(job.workflowStatusOverride || job.workflowStatus).map(({ status, action }) => (
-              <button
-                key={status}
-                onClick={() => handleWorkflowStatusChange(status)}
-                className="px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
-              >
-                {action}
-              </button>
-            ))}
-            {job.workflowStatusOverride && (
+          {/* Reset Override Button (if manual override active) */}
+          {job.workflowStatusOverride && (
+            <div className="flex items-center gap-2 pt-2 border-t border-border">
               <button
                 onClick={async () => {
                   await jobsApi.updateWorkflowStatus(job.id, null, true);
                   onRefresh?.();
                 }}
-                className="px-3 py-1.5 text-xs font-medium border border-orange-300 text-orange-600 rounded hover:bg-orange-50 transition-colors ml-auto"
+                className="px-3 py-1.5 text-xs font-medium border border-orange-300 text-orange-600 rounded hover:bg-orange-50 transition-colors"
               >
                 ↩ Reset to Auto
               </button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
