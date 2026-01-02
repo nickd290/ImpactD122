@@ -39,6 +39,8 @@ import {
   // Active tasks (production meeting action items)
   setJobTask,
   completeJobTask,
+  // Email webhook
+  createFromEmail,
 } from '../controllers/jobsController';
 
 const router = Router();
@@ -48,6 +50,7 @@ router.get('/', getAllJobs);
 router.get('/workflow-view', getJobsWorkflowView); // Must be before /:id
 router.get('/:id', getJob);
 router.post('/', createJob);
+router.post('/from-email', createFromEmail); // Webhook for n8n email automation
 router.post('/import', importBatchJobs);
 router.post('/batch-delete', batchDeleteJobs);
 router.post('/bulk-update-paper-source', bulkUpdatePaperSource);

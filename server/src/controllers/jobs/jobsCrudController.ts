@@ -1516,3 +1516,134 @@ export const completeJobTask = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to complete task' });
   }
 };
+
+// ============================================================================
+// EMAIL WEBHOOK - Auto-create jobs from parsed emails (e.g., Lahlouh)
+// ============================================================================
+
+/**
+ * Create a job from a parsed email (webhook from n8n)
+ * Used for automated job creation from customer emails like Lahlouh
+ */
+export const createFromEmail = async (req: Request, res: Response) => {
+  try {
+    const {
+      source,           // 'lahlouh' or other customer identifier
+      poNumber,         // Customer's PO number (e.g., OHP13562)
+      customerJobNumber, // Customer's job number (e.g., OH174385)
+      title,            // Job title/description
+      quantity,         // Total quantity
+      notes,            // Full email body as notes
+      fileLinks,        // Array of file URLs
+      mailDate,         // Mail drop date
+      inHomesDate,      // In-home window date
+    } = req.body;
+
+    console.log(`[createFromEmail] Received webhook from source: ${source}`);
+    console.log(`[createFromEmail] PO: ${poNumber}, Job: ${customerJobNumber}`);
+
+    // Validate required fields
+    if (!source || !title) {
+      return res.status(400).json({ error: 'Missing required fields: source, title' });
+    }
+
+    // Find customer by source name (case-insensitive)
+    let customer = await prisma.company.findFirst({
+      where: {
+        name: { contains: source, mode: 'insensitive' },
+        type: 'CUSTOMER',
+      },
+    });
+
+    // If not found, create the customer
+    if (!customer) {
+      customer = await prisma.company.create({
+        data: {
+          id: crypto.randomUUID(),
+          name: source.charAt(0).toUpperCase() + source.slice(1), // Capitalize
+          type: 'CUSTOMER',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      console.log(`[createFromEmail] Created new customer: ${customer.name}`);
+    }
+
+    // Check for duplicate by customerJobNumber to avoid re-processing
+    if (customerJobNumber) {
+      const existing = await prisma.job.findFirst({
+        where: {
+          customerJobNumber,
+          deletedAt: null,
+        },
+      });
+      if (existing) {
+        console.log(`[createFromEmail] Job already exists for ${customerJobNumber}: ${existing.jobNo}`);
+        return res.status(200).json({
+          success: true,
+          duplicate: true,
+          jobId: existing.id,
+          jobNo: existing.jobNo,
+          message: 'Job already exists',
+        });
+      }
+    }
+
+    // Generate job number
+    const lastJob = await prisma.job.findFirst({
+      orderBy: { jobNo: 'desc' },
+    });
+
+    let jobNo = 'J-1001';
+    if (lastJob) {
+      const match = lastJob.jobNo.match(/J-(\d+)/);
+      if (match) {
+        const lastNumber = parseInt(match[1]);
+        jobNo = `J-${(lastNumber + 1).toString().padStart(4, '0')}`;
+      }
+    }
+
+    // Build specs with file links
+    const specs: Record<string, any> = {};
+    if (fileLinks && Array.isArray(fileLinks) && fileLinks.length > 0) {
+      specs.artworkUrl = fileLinks[0]; // Primary link
+      specs.additionalLinks = fileLinks.slice(1); // Additional links
+    }
+
+    // Create the job
+    const now = new Date();
+    const job = await prisma.job.create({
+      data: {
+        id: crypto.randomUUID(),
+        jobNo,
+        title,
+        status: 'SUBMITTED',
+        workflowStatus: 'NEW',
+        companyId: customer.id,
+        customerPONumber: poNumber || null,
+        customerJobNumber: customerJobNumber || null,
+        quantity: quantity ? parseInt(quantity) : null,
+        notes: notes || null,
+        specs,
+        mailDate: mailDate ? new Date(mailDate) : null,
+        inHomesDate: inHomesDate ? new Date(inHomesDate) : null,
+        createdAt: now,
+        updatedAt: now,
+      },
+      include: JOB_INCLUDE,
+    });
+
+    console.log(`[createFromEmail] Created job ${jobNo} for ${customer.name}`);
+
+    res.status(201).json({
+      success: true,
+      jobId: job.id,
+      jobNo: job.jobNo,
+      customerId: customer.id,
+      customerName: customer.name,
+    });
+  } catch (error) {
+    console.error('Create from email error:', error);
+    res.status(500).json({ error: 'Failed to create job from email' });
+  }
+};

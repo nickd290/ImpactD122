@@ -3077,4 +3077,4 @@ export const updateInvoiceStatus = async (req: Request, res: Response) => {
 };
 
 // Re-export from crud controller
-export { getJobsWorkflowView, updateQCOverrides, updateWorkflowStatus, setJobTask, completeJobTask } from './jobs/jobsCrudController';
+export { getJobsWorkflowView, updateQCOverrides, updateWorkflowStatus, setJobTask, completeJobTask, createFromEmail } from './jobs/jobsCrudController';
