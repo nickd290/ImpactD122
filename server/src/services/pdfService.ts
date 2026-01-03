@@ -725,340 +725,363 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
 
 export const generateVendorPOPDF = (jobData: any): Buffer => {
   const doc = new jsPDF();
+  const specs = jobData.specs || {};
 
   // ===== CROSSHAIR REGISTRATION MARKS =====
   drawCrosshairs(doc);
 
   let currentY = 15;
 
-  // ===== LOGO (Top Left) =====
+  // ===== HEADER: LOGO + TITLE + PROMINENT DUE DATE =====
   drawLogo(doc, 20, currentY, 16);
 
-  // ===== HEADER SECTION (Right Side) =====
-  doc.setFontSize(24);
+  doc.setFontSize(22);
   doc.setTextColor(BRAND_BLACK);
   doc.setFont('helvetica', 'bold');
   doc.text('IMPACT DIRECT', 105, currentY + 8, { align: 'center' });
 
-  doc.setFontSize(10);
-  doc.setTextColor(TEXT_GRAY);
-  doc.setFont('helvetica', 'normal');
-  doc.text('PRINT-NATIVE AGENCY', 105, currentY + 14, { align: 'center' });
+  doc.setFontSize(16);
+  doc.setTextColor(BRAND_ORANGE);
+  doc.text('PURCHASE ORDER', 105, currentY + 16, { align: 'center' });
 
-  doc.setFontSize(9);
-  doc.text('Brandon@impactdirectprinting.com | 844-467-2280', 105, currentY + 20, { align: 'center' });
-
-  currentY += 28;
-
-  // ===== OUTLINED DOCUMENT TITLE =====
-  drawOutlinedText(doc, 'PURCHASE ORDER', 105, currentY, { align: 'center', fontSize: 20 });
-
-  // Heavy divider below title
-  currentY += 4;
-  drawHeavyDivider(doc, 20, 190, currentY);
-
-  // Orange accent line
-  doc.setLineWidth(0.8);
-  doc.setDrawColor(BRAND_ORANGE);
-  doc.line(20, currentY + 1, 190, currentY + 1);
-
-  currentY += 10;
-
-  // ===== TWO-COLUMN LAYOUT WITH GRID BOXES =====
-  const infoStartY = currentY;
-
-  // Left Column - PO Info
-  doc.setFontSize(10);
-  doc.setTextColor(0, 0, 0);
-  doc.setFont('helvetica', 'bold');
-  doc.text('PO NUMBER:', 20, currentY);
-  doc.setFont('helvetica', 'normal');
-  doc.text(jobData.vendorPONumber || jobData.jobNo || 'N/A', 50, currentY);
-
-  currentY += 6;
-  doc.setFont('helvetica', 'bold');
-  doc.text('PO DATE:', 20, currentY);
-  doc.setFont('helvetica', 'normal');
-  doc.text(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), 50, currentY);
-
-  currentY += 6;
-  doc.setFont('helvetica', 'bold');
-  doc.text('JOB NUMBER:', 20, currentY);
-  doc.setFont('helvetica', 'normal');
-  doc.text(jobData.jobNo || 'N/A', 50, currentY);
-
-  currentY += 6;
-  doc.setFont('helvetica', 'bold');
-  doc.text('DUE DATE:', 20, currentY);
-  doc.setFont('helvetica', 'normal');
-  doc.text(jobData.dueDate ? new Date(jobData.dueDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'ASAP', 50, currentY);
-
-  // Right Column - Vendor Info with Grid Box
-  const vendorY = infoStartY;
-  const vendorBoxHeight = 28;
-
-  // Draw grid box around "VENDOR:" section
-  drawSectionGrid(doc, 118, vendorY - 4, 72, vendorBoxHeight);
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('VENDOR:', 120, vendorY);
-  doc.setFont('helvetica', 'normal');
-  doc.text(jobData.vendor?.name || 'N/A', 120, vendorY + 5);
-  doc.text(jobData.vendor?.contactPerson || '', 120, vendorY + 10);
-  doc.text(jobData.vendor?.email || '', 120, vendorY + 15);
-  doc.text(jobData.vendor?.phone || '', 120, vendorY + 20);
-
-  // Vertical divider between columns
-  drawVerticalDivider(doc, 110, infoStartY - 4, infoStartY + vendorBoxHeight - 4);
-
-  currentY += 10;
-
-  // ===== PROJECT TITLE =====
-  doc.setFillColor(240, 240, 240);
-  doc.rect(20, currentY, 170, 10, 'F');
-  doc.setFont('helvetica', 'bold');
+  // PO Number and Due Date in header - prominent
   doc.setFontSize(11);
-  doc.text('PROJECT:', 22, currentY + 6.5);
+  doc.setTextColor(BRAND_BLACK);
+  doc.setFont('helvetica', 'bold');
+  const poNum = jobData.vendorPONumber || jobData.jobNo || 'N/A';
+  const dueDate = jobData.dueDate
+    ? new Date(jobData.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : 'ASAP';
+  doc.text(`PO# ${poNum}`, 20, currentY + 26);
+
+  // Due date box - prominent orange
+  doc.setFillColor(BRAND_ORANGE);
+  doc.rect(140, currentY + 20, 50, 10, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(10);
+  doc.text(`DUE: ${dueDate}`, 165, currentY + 26.5, { align: 'center' });
+
+  currentY += 35;
+
+  // Divider line
+  doc.setDrawColor(BRAND_ORANGE);
+  doc.setLineWidth(1);
+  doc.line(20, currentY, 190, currentY);
+  currentY += 8;
+
+  // ===== PROJECT TITLE BAR =====
+  doc.setFillColor(240, 240, 240);
+  doc.rect(20, currentY, 170, 12, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(BRAND_BLACK);
+  doc.text(jobData.title || 'Print Job', 25, currentY + 8);
+
+  // Vendor name on right side
+  doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
-  doc.text(jobData.title || 'Custom Print Job', 45, currentY + 6.5);
+  doc.setTextColor(100, 100, 100);
+  doc.text(`TO: ${jobData.vendor?.name || 'Vendor'}`, 185, currentY + 8, { align: 'right' });
 
-  currentY += 15;
+  currentY += 18;
 
-  // ===== ARTWORK URL OR "ARTWORK TO ARRIVE LATER" =====
-  const artworkUrl = jobData.specs?.artworkUrl;
+  // ===== SECTION 1: WHAT YOU'RE PRINTING =====
+  doc.setFillColor(BRAND_BLACK);
+  doc.rect(20, currentY, 170, 8, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text('WHAT YOU\'RE PRINTING', 25, currentY + 5.5);
+  currentY += 12;
+
+  // Build bullet points for key specs
+  doc.setTextColor(BRAND_BLACK);
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+
+  const bulletPoints: string[] = [];
+
+  // Product description
+  if (specs.productType) {
+    let productDesc = specs.productType;
+    if (specs.pageCount) productDesc += `, ${specs.pageCount} pages`;
+    if (specs.bindingStyle) productDesc += `, ${specs.bindingStyle}`;
+    bulletPoints.push(productDesc);
+  }
+
+  // Size
+  if (specs.finishedSize || jobData.sizeName) {
+    bulletPoints.push(`Size: ${specs.finishedSize || jobData.sizeName}${specs.flatSize ? ` (flat: ${specs.flatSize})` : ''}`);
+  }
+
+  // Paper
+  if (specs.paperType || specs.paperWeight || specs.paperLbs) {
+    let paper = specs.paperType || '';
+    if (specs.paperLbs) paper += ` ${specs.paperLbs}#`;
+    else if (specs.paperWeight) paper += ` ${specs.paperWeight}`;
+    bulletPoints.push(`Paper: ${paper}`);
+  }
+
+  // Colors
+  if (specs.colors) {
+    bulletPoints.push(`Colors: ${specs.colors}`);
+  }
+
+  // Coating/Finishing
+  const finishingParts: string[] = [];
+  if (specs.coating) finishingParts.push(specs.coating);
+  if (specs.finishing) finishingParts.push(specs.finishing);
+  if (specs.folds) finishingParts.push(`${specs.folds} folds`);
+  if (finishingParts.length > 0) {
+    bulletPoints.push(`Finishing: ${finishingParts.join(', ')}`);
+  }
+
+  // Quantity
+  if (jobData.quantity) {
+    bulletPoints.push(`Quantity: ${jobData.quantity.toLocaleString()}`);
+  }
+
+  // Render bullet points
+  bulletPoints.forEach((point) => {
+    doc.text(`•  ${point}`, 25, currentY);
+    currentY += 5;
+  });
+
+  if (bulletPoints.length === 0) {
+    doc.setTextColor(100, 100, 100);
+    doc.text('(See full specs below)', 25, currentY);
+    currentY += 5;
+  }
+
+  currentY += 6;
+
+  // ===== SECTION 2: KEY DATES (PROMINENT BOX) =====
+  const mailDate = specs.mailing?.mailDate || specs.timeline?.mailDate || jobData.mailDate;
+  const inHomesDate = specs.mailing?.inHomesDate || specs.timeline?.inHomesDate || jobData.inHomesDate;
+  const hasMailingDates = mailDate || inHomesDate;
+
+  // Green box for dates - can't miss it
+  doc.setFillColor(220, 252, 231); // Light green background
+  doc.setDrawColor(34, 197, 94); // Green border
+  doc.setLineWidth(1.5);
+  const datesBoxHeight = hasMailingDates ? 28 : 18;
+  doc.rect(20, currentY, 170, datesBoxHeight, 'FD');
+
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(22, 101, 52); // Dark green
+  doc.text('KEY DATES', 25, currentY + 6);
+
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(BRAND_BLACK);
+
+  // Due Date row
+  doc.setFont('helvetica', 'bold');
+  doc.text('Due Date:', 25, currentY + 13);
+  doc.setFont('helvetica', 'normal');
+  doc.text(dueDate, 55, currentY + 13);
+
+  if (hasMailingDates) {
+    // Mail Date
+    if (mailDate) {
+      doc.setFont('helvetica', 'bold');
+      doc.text('Mail Date:', 95, currentY + 13);
+      doc.setFont('helvetica', 'normal');
+      const formattedMailDate = new Date(mailDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      doc.text(formattedMailDate, 125, currentY + 13);
+    }
+
+    // In-Homes Date
+    if (inHomesDate) {
+      doc.setFont('helvetica', 'bold');
+      doc.text('In-Homes:', 25, currentY + 20);
+      doc.setFont('helvetica', 'normal');
+      const formattedInHomes = new Date(inHomesDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      doc.text(formattedInHomes, 55, currentY + 20);
+    }
+  }
+
+  currentY += datesBoxHeight + 6;
+
+  // ===== SECTION 3: ARTWORK FILES =====
+  const artworkUrl = jobData.poArtworkFilesLink || jobData.specs?.artworkUrl;
+  const artworkToFollow = jobData.specs?.artworkToFollow || jobData.artworkToFollow;
+
   if (artworkUrl) {
-    // Draw blue highlighted box for artwork link
     doc.setFillColor(219, 234, 254); // Light blue background
     doc.setDrawColor(59, 130, 246); // Blue border
     doc.setLineWidth(1);
-    doc.rect(20, currentY, 170, 18, 'FD');
+    doc.rect(20, currentY, 170, 16, 'FD');
 
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(30, 64, 175); // Dark blue text
-    doc.text('ARTWORK FILES:', 25, currentY + 6);
+    doc.setTextColor(30, 64, 175);
+    doc.text('ARTWORK FILES', 25, currentY + 6);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.setTextColor(37, 99, 235); // Blue link color
-
-    // Truncate URL if too long for display
-    const displayUrl = artworkUrl.length > 80 ? artworkUrl.substring(0, 77) + '...' : artworkUrl;
+    doc.setTextColor(37, 99, 235);
+    const displayUrl = artworkUrl.length > 75 ? artworkUrl.substring(0, 72) + '...' : artworkUrl;
     doc.text(displayUrl, 25, currentY + 12);
 
-    // Add note about accessing artwork
-    doc.setTextColor(100, 100, 100);
-    doc.setFontSize(7);
-    doc.text('Click or copy this link to access artwork files', 25, currentY + 16);
-
-    currentY += 22;
-  } else if (jobData.specs?.artworkToFollow || jobData.artworkToFollow) {
-    // Draw amber highlighted box for "artwork to arrive later"
-    doc.setFillColor(254, 243, 199); // Light amber background
-    doc.setDrawColor(245, 158, 11); // Amber border
+    currentY += 20;
+  } else if (artworkToFollow) {
+    doc.setFillColor(254, 243, 199); // Light amber
+    doc.setDrawColor(245, 158, 11);
     doc.setLineWidth(1);
-    doc.rect(20, currentY, 170, 14, 'FD');
-
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(180, 83, 9); // Dark amber text
-    doc.text('ARTWORK TO ARRIVE LATER', 25, currentY + 9);
-
-    currentY += 18;
-  }
-
-  // ===== PO-SPECIFIC ARTWORK FILES LINK (from email popup) =====
-  if (jobData.poArtworkFilesLink) {
-    doc.setFillColor(219, 234, 254); // Light blue background
-    doc.setDrawColor(59, 130, 246); // Blue border
-    doc.setLineWidth(1);
-    doc.rect(20, currentY, 170, 18, 'FD');
+    doc.rect(20, currentY, 170, 12, 'FD');
 
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(30, 64, 175); // Dark blue text
-    doc.text('ARTWORK FILES:', 25, currentY + 6);
+    doc.setTextColor(180, 83, 9);
+    doc.text('ARTWORK TO FOLLOW - We will send files separately', 25, currentY + 8);
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(37, 99, 235); // Blue link color
-
-    const displayUrl = jobData.poArtworkFilesLink.length > 70
-      ? jobData.poArtworkFilesLink.substring(0, 67) + '...'
-      : jobData.poArtworkFilesLink;
-    doc.text(displayUrl, 25, currentY + 12);
-
-    doc.setTextColor(100, 100, 100);
-    doc.setFontSize(7);
-    doc.text('Click or copy this link to access artwork files', 25, currentY + 16);
-
-    currentY += 22;
+    currentY += 16;
   }
 
-  // ===== PO-SPECIFIC SPECIAL INSTRUCTIONS (from email popup) =====
-  if (jobData.poSpecialInstructions) {
-    doc.setFillColor(254, 249, 195); // Light yellow background
-    doc.setDrawColor(234, 179, 8); // Yellow border
-    doc.setLineWidth(1);
-
-    // Calculate height based on text length
-    const instructionLines = doc.splitTextToSize(jobData.poSpecialInstructions, 160);
-    const boxHeight = Math.min(14 + (instructionLines.length * 4), 40);
-    doc.rect(20, currentY, 170, boxHeight, 'FD');
+  // ===== SECTION 4: SHIP TO =====
+  const shipTo = specs.shipToName || specs.shipToAddress;
+  if (shipTo) {
+    doc.setFillColor(245, 245, 245);
+    doc.rect(20, currentY, 170, 22, 'F');
 
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(161, 98, 7); // Dark yellow text
-    doc.text('SPECIAL INSTRUCTIONS:', 25, currentY + 6);
+    doc.setTextColor(BRAND_BLACK);
+    doc.text('SHIP TO', 25, currentY + 6);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.setTextColor(0, 0, 0);
-    // Show up to 3 lines
-    doc.text(instructionLines.slice(0, 3), 25, currentY + 12);
+    if (specs.shipToName) doc.text(specs.shipToName, 25, currentY + 12);
+    if (specs.shipToAddress) {
+      const addrLines = doc.splitTextToSize(specs.shipToAddress, 100);
+      doc.text(addrLines.slice(0, 2), 25, currentY + (specs.shipToName ? 17 : 12));
+    }
+    if (specs.shipVia) {
+      doc.setFont('helvetica', 'bold');
+      doc.text('Ship Via:', 130, currentY + 12);
+      doc.setFont('helvetica', 'normal');
+      doc.text(specs.shipVia, 155, currentY + 12);
+    }
 
-    currentY += boxHeight + 4;
+    currentY += 26;
   }
 
-  // ===== PRINT SPECIFICATIONS SECTION =====
-  const specs = jobData.specs || {};
+  // ===== SECTION 5: YOUR ROLE (NEW - CRITICAL!) =====
+  doc.setFillColor(BRAND_ORANGE);
+  doc.rect(20, currentY, 170, 8, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text('YOUR ROLE - What We Need From You', 25, currentY + 5.5);
+  currentY += 12;
 
-  // Build specs table data - only include populated fields
-  const specsData: string[][] = [];
+  doc.setTextColor(BRAND_BLACK);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
 
-  if (specs.productType) specsData.push(['Product Type:', specs.productType]);
-  if (jobData.quantity) specsData.push(['Quantity:', jobData.quantity.toLocaleString()]);
-  if (specs.finishedSize || jobData.sizeName) specsData.push(['Finished Size:', specs.finishedSize || jobData.sizeName]);
-  if (specs.flatSize) specsData.push(['Flat Size:', specs.flatSize]);
-  if (specs.paperType) specsData.push(['Paper Stock:', specs.paperType]);
-  if (specs.paperLbs || specs.paperWeight) specsData.push(['Paper Weight:', specs.paperLbs ? `${specs.paperLbs}#` : specs.paperWeight]);
-  if (specs.pageCount) specsData.push(['Page Count:', `${specs.pageCount} pages`]);
-  if (specs.colors) specsData.push(['Colors:', specs.colors]);
-  if (specs.coating) specsData.push(['Coating:', specs.coating]);
-  if (specs.bindingStyle) specsData.push(['Binding:', specs.bindingStyle]);
-  if (specs.finishing) specsData.push(['Finishing:', specs.finishing]);
-  if (specs.folds) specsData.push(['Folds:', specs.folds]);
-  if (specs.perforations) specsData.push(['Perforations:', specs.perforations]);
-  if (specs.dieCut) specsData.push(['Die Cut:', specs.dieCut]);
-  if (specs.bleed) specsData.push(['Bleed:', specs.bleed]);
-  if (specs.proofType) specsData.push(['Proof Type:', specs.proofType]);
-  // Only show cover fields for BOOK products
-  if (specs.productType === 'BOOK') {
-    if (specs.coverType) specsData.push(['Cover Type:', specs.coverType === 'PLUS' ? 'Plus Cover' : specs.coverType === 'SELF' ? 'Self Cover' : specs.coverType]);
-    if (specs.coverPaperType) specsData.push(['Cover Stock:', specs.coverPaperType]);
-  }
+  // Standard vendor checklist
+  const vendorSteps = [
+    '1. Confirm receipt of this PO via portal or email',
+    '2. Review specs and contact us with any questions',
+    '3. Upload proof for approval before printing',
+    '4. Print upon approval and meet the due date',
+    '5. Ship to address above (or contact us for instructions)',
+    '6. Update portal status when shipped + provide tracking'
+  ];
 
-  if (specsData.length > 0) {
-    drawSectionHeader(doc, 'PRINT SPECIFICATIONS', 20, currentY, 170);
-    currentY += 10;
+  vendorSteps.forEach((step) => {
+    doc.text(step, 25, currentY);
+    currentY += 4.5;
+  });
 
-    autoTable(doc, {
-      startY: currentY,
-      body: specsData,
-      theme: 'plain',
-      styles: { fontSize: 9, cellPadding: 2 },
-      columnStyles: {
-        0: { fontStyle: 'bold', cellWidth: 40, textColor: [80, 80, 80] },
-        1: { cellWidth: 130 },
-      },
-      margin: { left: 20, right: 20 },
-    });
+  currentY += 6;
 
-    currentY = (doc as any).lastAutoTable.finalY + 8;
-  }
-
-  // ===== RAW JOB DESCRIPTION FROM CUSTOMER PO (CRITICAL FOR VENDOR) =====
+  // ===== SECTION 6: FULL SPECS FROM CUSTOMER PO =====
   const rawJobDescription = jobData.specs?.rawJobDescription || jobData.specs?.rawDescriptionText || jobData.rawJobDescription || jobData.rawDescriptionText;
+
   if (rawJobDescription && rawJobDescription.trim()) {
     // Check if we need a page break
     const rawDescLines = doc.splitTextToSize(rawJobDescription, 165);
-    const rawDescLineHeight = 4;
-    const rawDescContentHeight = rawDescLines.length * rawDescLineHeight + 10;
+    const rawDescLineHeight = 3.5;
+    const rawDescContentHeight = Math.min(rawDescLines.length * rawDescLineHeight + 12, 120);
 
-    if (currentY + rawDescContentHeight + 20 > 270) {
+    if (currentY + rawDescContentHeight + 10 > 260) {
       doc.addPage();
       drawCrosshairs(doc);
       currentY = 20;
     }
 
-    // Section header with orange accent
-    doc.setFillColor(BRAND_ORANGE);
+    // Section header
+    doc.setFillColor(100, 100, 100);
     doc.rect(20, currentY, 170, 8, 'F');
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(255, 255, 255);
-    doc.text('JOB SPECIFICATIONS (FROM CUSTOMER PO)', 22, currentY + 5.5);
+    doc.text('FULL SPECS (From Customer PO)', 25, currentY + 5.5);
     currentY += 12;
 
-    // Content background
-    doc.setFillColor(255, 253, 240); // Slight cream background
-    doc.setDrawColor(BRAND_ORANGE);
+    // Content box
+    doc.setFillColor(250, 250, 250);
+    doc.setDrawColor(200, 200, 200);
     doc.setLineWidth(0.5);
     doc.rect(20, currentY - 2, 170, rawDescContentHeight, 'FD');
 
-    // Render raw description text
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
-    doc.setTextColor(0, 0, 0);
+    doc.setTextColor(60, 60, 60);
 
-    rawDescLines.forEach((line: string) => {
-      // Check for page break mid-content
-      if (currentY > 270) {
-        doc.addPage();
-        drawCrosshairs(doc);
-        currentY = 20;
+    let lineY = currentY;
+    const maxLines = Math.floor((rawDescContentHeight - 8) / rawDescLineHeight);
+    rawDescLines.slice(0, maxLines).forEach((line: string) => {
+      if (lineY < currentY + rawDescContentHeight - 4) {
+        doc.text(line, 22, lineY + 2);
+        lineY += rawDescLineHeight;
       }
-      doc.text(line, 22, currentY + 2);
-      currentY += rawDescLineHeight;
     });
 
-    currentY += 10;
+    currentY += rawDescContentHeight + 6;
   }
 
-  // ===== JOB NOTES SECTION =====
-  if (jobData.notes && jobData.notes.trim()) {
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
+  // ===== SECTION 7: SPECIAL INSTRUCTIONS (if any) =====
+  if (jobData.poSpecialInstructions || jobData.notes) {
+    const instructions = jobData.poSpecialInstructions || jobData.notes;
+    const instructionLines = doc.splitTextToSize(instructions, 160);
+    const boxHeight = Math.min(10 + (instructionLines.length * 4), 30);
 
-    // Split notes into lines that fit the page width
-    const notesLines = doc.splitTextToSize(jobData.notes, 165);
-    const lineHeight = 4.5;
-    const notesContentHeight = notesLines.length * lineHeight + 6; // Add padding
-
-    // Check if we need a page break before starting notes section
-    if (currentY + notesContentHeight + 15 > 240) {
+    if (currentY + boxHeight + 50 > 260) {
       doc.addPage();
       drawCrosshairs(doc);
       currentY = 20;
     }
 
-    drawSectionHeader(doc, 'JOB NOTES', 20, currentY, 170);
-    currentY += 10;
+    doc.setFillColor(254, 249, 195);
+    doc.setDrawColor(234, 179, 8);
+    doc.setLineWidth(1);
+    doc.rect(20, currentY, 170, boxHeight, 'FD');
 
-    // Draw background box for notes content
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(200, 200, 200);
-    doc.rect(20, currentY - 2, 170, notesContentHeight, 'FD');
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(161, 98, 7);
+    doc.text('SPECIAL INSTRUCTIONS:', 25, currentY + 5);
 
-    // Render text
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
     doc.setTextColor(0, 0, 0);
-    notesLines.forEach((line: string) => {
-      doc.text(line, 22, currentY + 2);
-      currentY += lineHeight;
-    });
+    doc.text(instructionLines.slice(0, 4), 25, currentY + 10);
 
-    currentY += 10;
+    currentY += boxHeight + 6;
   }
 
-  // ===== LINE ITEMS TABLE WITH GRID HEADER =====
-  // Check if we need a new page for ORDER DETAILS (need ~80pt minimum for table + total + footer)
+  // ===== SECTION 8: PRICING (AT BOTTOM) =====
   if (currentY > 200) {
     doc.addPage();
     drawCrosshairs(doc);
     currentY = 20;
   }
 
-  drawSectionHeader(doc, 'ORDER DETAILS', 20, currentY, 170);
+  drawSectionHeader(doc, 'PRICING', 20, currentY, 170);
   currentY += 10;
 
   const tableData = jobData.lineItems?.map((item: any) => {
@@ -1067,7 +1090,6 @@ export const generateVendorPOPDF = (jobData: any): Buffer => {
     const unitPrice = Number(item.unitPrice) || 0;
     const markupPercent = Number(item.markupPercent) || 0;
 
-    // Back-calculate unitCost if it's 0 but unitPrice exists
     if (unitCost === 0 && unitPrice > 0 && markupPercent > 0) {
       unitCost = unitPrice / (1 + markupPercent / 100);
     }
@@ -1082,29 +1104,29 @@ export const generateVendorPOPDF = (jobData: any): Buffer => {
 
   autoTable(doc, {
     startY: currentY,
-    head: [['Description', 'Quantity', 'Unit Cost', 'Line Total']],
+    head: [['Description', 'Qty', 'Unit', 'Total']],
     body: tableData,
     theme: 'striped',
     headStyles: {
-      fillColor: BRAND_ORANGE,
-      fontSize: 10,
+      fillColor: [80, 80, 80],
+      fontSize: 9,
       fontStyle: 'bold',
     },
     styles: {
       fontSize: 9,
     },
     columnStyles: {
-      0: { cellWidth: 90 },
-      1: { cellWidth: 30, halign: 'center' },
-      2: { cellWidth: 30, halign: 'right' },
-      3: { cellWidth: 30, halign: 'right' },
+      0: { cellWidth: 95 },
+      1: { cellWidth: 25, halign: 'center' },
+      2: { cellWidth: 25, halign: 'right' },
+      3: { cellWidth: 25, halign: 'right' },
     },
+    margin: { left: 20, right: 20 },
   });
 
   const finalY = (doc as any).lastAutoTable.finalY || currentY + 20;
 
-  // ===== TOTAL WITH GRID BORDER =====
-  // Use buyCost directly if available, otherwise calculate from lineItems
+  // Total box
   const total = jobData.buyCost
     ? Number(jobData.buyCost)
     : jobData.lineItems?.reduce((sum: number, item: any) => {
@@ -1112,61 +1134,49 @@ export const generateVendorPOPDF = (jobData: any): Buffer => {
         const quantity = Number(item.quantity) || 0;
         const unitPrice = Number(item.unitPrice) || 0;
         const markupPercent = Number(item.markupPercent) || 0;
-
-        // Back-calculate unitCost if it's 0 but unitPrice exists
         if (unitCost === 0 && unitPrice > 0 && markupPercent > 0) {
           unitCost = unitPrice / (1 + markupPercent / 100);
         }
-
         return sum + quantity * unitCost;
       }, 0) || 0;
 
-  // Draw grid border around total box
-  drawSectionGrid(doc, 128, finalY + 6, 64, 20);
-
-  // Larger, more prominent total box - labeled as package total for mail packages
   doc.setFillColor(BRAND_ORANGE);
-  doc.rect(130, finalY + 8, 60, 16, 'F');
+  doc.rect(130, finalY + 4, 60, 14, 'F');
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(11);
+  doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
-  doc.text('PACKAGE TOTAL:', 133, finalY + 18.5);
-  doc.setFontSize(14);
-  doc.text(`$${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 185, finalY + 18.5, { align: 'right' });
+  doc.text('TOTAL:', 135, finalY + 12);
+  doc.setFontSize(12);
+  doc.text(`$${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 185, finalY + 12, { align: 'right' });
 
-  // PAYMENT TERMS SECTION (keep below the total)
-  const paymentTerms = specs.paymentTerms;
-  const fob = specs.fob;
-  if (paymentTerms || fob) {
-    const termsY = finalY + 30;
+  // Payment terms if present
+  if (specs.paymentTerms || specs.fob) {
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(100, 100, 100);
-    if (paymentTerms) doc.text(`Payment Terms: ${paymentTerms}`, 20, termsY);
-    if (fob) doc.text(`FOB: ${fob}`, paymentTerms ? 100 : 20, termsY);
+    if (specs.paymentTerms) doc.text(`Payment Terms: ${specs.paymentTerms}`, 20, finalY + 12);
   }
 
-  // ===== FOOTER - Add to all pages with page numbers =====
+  // ===== FOOTER ON ALL PAGES =====
   const totalPages = doc.getNumberOfPages();
   for (let i = 1; i <= totalPages; i++) {
     doc.setPage(i);
     const pageHeight = doc.internal.pageSize.height;
 
-    // Page number on all pages
+    // Page number
     doc.setFontSize(8);
     doc.setTextColor(100, 100, 100);
     doc.setFont('helvetica', 'normal');
     doc.text(`Page ${i} of ${totalPages}`, 105, pageHeight - 8, { align: 'center' });
 
-    // Full footer only on last page
+    // Contact footer on last page
     if (i === totalPages) {
-      doc.setFont('helvetica', 'italic');
-      doc.text('Please confirm receipt of this PO and provide production timeline.', 105, pageHeight - 20, { align: 'center' });
-      doc.text('Questions? Contact Brandon at 844-467-2280 or Brandon@impactdirectprinting.com', 105, pageHeight - 15, { align: 'center' });
-
       doc.setDrawColor(BRAND_ORANGE);
-      doc.setLineWidth(0.3);
-      doc.line(20, pageHeight - 12, 190, pageHeight - 12);
+      doc.setLineWidth(0.5);
+      doc.line(20, pageHeight - 18, 190, pageHeight - 18);
+
+      doc.setFont('helvetica', 'normal');
+      doc.text('Questions? Brandon@impactdirectprinting.com | 844-467-2280', 105, pageHeight - 13, { align: 'center' });
     }
   }
 
