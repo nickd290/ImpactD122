@@ -1537,6 +1537,10 @@ export const createFromEmail = async (req: Request, res: Response) => {
       fileLinks,        // Array of file URLs
       mailDate,         // Mail drop date
       inHomesDate,      // In-home window date
+      // NEW: From PDF parsing
+      parsedSpecs,      // AI-parsed specs from PDF
+      lineItems,        // Parsed line items with quantities/prices
+      sellPrice,        // Customer sell price from PDF
     } = req.body;
 
     console.log(`[createFromEmail] Received webhook from source: ${source}`);
@@ -1603,11 +1607,17 @@ export const createFromEmail = async (req: Request, res: Response) => {
       }
     }
 
-    // Build specs with file links
-    const specs: Record<string, any> = {};
+    // Build specs - merge file links with parsed specs from PDF
+    const specs: Record<string, any> = {
+      ...(parsedSpecs || {}),
+    };
     if (fileLinks && Array.isArray(fileLinks) && fileLinks.length > 0) {
       specs.artworkUrl = fileLinks[0]; // Primary link
       specs.additionalLinks = fileLinks.slice(1); // Additional links
+    }
+    // Include line items in specs for PDF generation
+    if (lineItems && Array.isArray(lineItems) && lineItems.length > 0) {
+      specs.lineItems = lineItems;
     }
 
     // Create the job
@@ -1622,7 +1632,8 @@ export const createFromEmail = async (req: Request, res: Response) => {
         companyId: customer.id,
         customerPONumber: poNumber || null,
         customerJobNumber: customerJobNumber || null,
-        quantity: quantity ? parseInt(quantity) : null,
+        quantity: quantity ? parseInt(String(quantity)) : null,
+        sellPrice: sellPrice ? parseFloat(String(sellPrice)) : null,
         notes: notes || null,
         specs,
         mailDate: mailDate ? new Date(mailDate) : null,
@@ -1633,7 +1644,7 @@ export const createFromEmail = async (req: Request, res: Response) => {
       include: JOB_INCLUDE,
     });
 
-    console.log(`[createFromEmail] Created job ${jobNo} for ${customer.name}`);
+    console.log(`[createFromEmail] Created job ${jobNo} for ${customer.name} with ${lineItems?.length || 0} line items`);
 
     res.status(201).json({
       success: true,
