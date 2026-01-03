@@ -205,6 +205,13 @@ model Job {
   artworkEmailedAt          DateTime?        // Last time artwork notification was emailed
   artworkEmailedTo          String?          // Email address artwork notification was sent to
 
+  // === MAILING VENDOR TRACKING (Lahlouh → Three Z flow) ===
+  mailingVendorId           String?          // Link to mailing vendor (e.g., Three Z)
+  mailingVendorJobNo        String?          // Mailing vendor's job number (e.g., J-1234)
+  mailingVendorPOSent       DateTime?        // When PO was sent to mailing vendor
+  mailingVendorPOSentTo     String?          // Email address PO was sent to
+  matchType                 String?          // "2-WAY" | "3-WAY" for mail package matching
+
   requiresApproval          Boolean          @default(false)
   approvedBy                String?
   approvedAt                DateTime?
@@ -283,7 +290,8 @@ model Job {
   Employee                  Employee?        @relation(fields: [employeeId], references: [id])
   PaperInventory            PaperInventory?  @relation(fields: [paperInventoryId], references: [id])
   Quote                     Quote?           @relation(fields: [quoteId], references: [id])
-  Vendor                    Vendor?          @relation(fields: [vendorId], references: [id])
+  Vendor                    Vendor?          @relation("JobVendor", fields: [vendorId], references: [id])
+  MailingVendor             Vendor?          @relation("JobMailingVendor", fields: [mailingVendorId], references: [id])
   JobActivity               JobActivity[]
   JobCommunication          JobCommunication[]  // Email relay communications
   Notification              Notification[]
@@ -305,6 +313,7 @@ model Job {
   @@index([routingType])
   @@index([status])
   @@index([vendorId])
+  @@index([mailingVendorId])
 }
 
 model JobActivity {
@@ -783,7 +792,8 @@ model Vendor {
   streetAddress String?
   vendorCode    String?         @unique
   zip           String?
-  Job           Job[]
+  Job           Job[]           @relation("JobVendor")
+  MailingJobs   Job[]           @relation("JobMailingVendor")
   PurchaseOrder PurchaseOrder[]
   contacts      VendorContact[]
   rfqAssignments VendorRFQVendor[]

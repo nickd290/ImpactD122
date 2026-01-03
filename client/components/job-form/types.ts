@@ -86,4 +86,29 @@ export interface Vendor {
   isPartner?: boolean;
 }
 
-export type JobFormTab = 'basics' | 'specs' | 'pricing' | 'files';
+export type JobFormTab = 'basics' | 'specs' | 'pricing' | 'files' | 'mailing';
+
+// Mailing-specific types for Lahlouh → Three Z flow
+export interface MailingVersion {
+  version: string;
+  quantity: number;
+  phone?: string;
+}
+
+export interface MailingComponent {
+  name: string;
+  supplier: 'JD' | 'LAHLOUH' | 'THREE_Z' | string;
+  specs?: string;
+}
+
+export interface MailingData {
+  mailingVendorId?: string;
+  mailingVendorJobNo?: string;
+  mailingVendorPOSent?: string;
+  mailingVendorPOSentTo?: string;
+  matchType?: '2-WAY' | '3-WAY';
+  versions?: MailingVersion[];
+  components?: MailingComponent[];
+  mailDate?: string;
+  inHomesDate?: string;
+}

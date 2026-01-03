@@ -374,6 +374,9 @@ export const createJob = async (req: Request, res: Response) => {
       bradfordCut: bradfordCut || null,
       jdSuppliesPaper: jdSuppliesPaper === true,
       lineItems: lineItems || null,
+      // Ensure raw job description is preserved for vendor POs
+      rawJobDescription: specs?.rawJobDescription || specs?.rawDescriptionText || null,
+      rawDescriptionText: specs?.rawDescriptionText || specs?.rawJobDescription || null,
     };
 
     // Final validation: ensure sellPrice is valid before saving
@@ -1521,9 +1524,67 @@ export const completeJobTask = async (req: Request, res: Response) => {
 // EMAIL WEBHOOK - Auto-create jobs from parsed emails (e.g., Lahlouh)
 // ============================================================================
 
+// Three Z mailing vendor constants
+const THREE_Z_VENDOR = {
+  name: 'Three Z Printing',
+  email: 'jenny@threez.com',
+  phone: '(513) 942-0011',
+  address: '150 Lawton Avenue, Monroe, OH 45050',
+};
+
+/**
+ * Detect if a job is a mailing job (needs mailing vendor like Three Z)
+ * vs. a print-only job (just print and ship back to customer)
+ */
+function isMailingJob(data: {
+  mailing?: any;
+  timeline?: any;
+  notes?: string;
+  matchType?: string;
+  versions?: any[];
+  components?: any[];
+}): boolean {
+  // Check explicit isDirectMail flag
+  if (data.mailing?.isDirectMail === true) return true;
+
+  // Check for mail-related dates in timeline
+  if (data.timeline?.mailDate) return true;
+  if (data.timeline?.inHomesDate) return true;
+
+  // Check mailing object for dates
+  if (data.mailing?.mailDate) return true;
+  if (data.mailing?.inHomesDate) return true;
+
+  // Check mailing infrastructure
+  if (data.mailing?.dropLocation) return true;
+  if (data.mailing?.mailClass) return true;
+  if (data.mailing?.presortType) return true;
+  if (data.mailing?.mailProcess) return true;
+
+  // If it has a match type (2-way, 3-way), it's likely mailing
+  if (data.matchType) return true;
+
+  // Check components for envelope (strong mailing indicator)
+  if (data.components?.some((c: any) =>
+    c.name?.toLowerCase().includes('envelope') ||
+    c.component?.toLowerCase().includes('envelope')
+  )) return true;
+
+  // Check notes for mailing keywords
+  const notes = data.notes || '';
+  const mailingKeywords = /mail date|in-homes|in homes|in home window|usps|presort|drop date|mailing date|standard mail|first class mail/i;
+  if (mailingKeywords.test(notes)) return true;
+
+  return false;
+}
+
 /**
  * Create a job from a parsed email (webhook from n8n)
  * Used for automated job creation from customer emails like Lahlouh
+ *
+ * For Lahlouh source:
+ * - Automatically creates Three Z mailing vendor PO
+ * - Returns mailingVendorId and mailingVendorEmail for n8n to send email
  */
 export const createFromEmail = async (req: Request, res: Response) => {
   try {
@@ -1537,10 +1598,16 @@ export const createFromEmail = async (req: Request, res: Response) => {
       fileLinks,        // Array of file URLs
       mailDate,         // Mail drop date
       inHomesDate,      // In-home window date
-      // NEW: From PDF parsing
+      // From PDF parsing
       parsedSpecs,      // AI-parsed specs from PDF
       lineItems,        // Parsed line items with quantities/prices
       sellPrice,        // Customer sell price from PDF
+      // Enhanced Lahlouh data
+      versions,         // Multi-version breakdown [{version, qty, phone}]
+      components,       // Component breakdown [{name, supplier, specs}]
+      matchType,        // "2-WAY" | "3-WAY"
+      mailing,          // Mailing details {isDirectMail, mailClass, etc.}
+      timeline,         // All dates from PO
     } = req.body;
 
     console.log(`[createFromEmail] Received webhook from source: ${source}`);
@@ -1610,6 +1677,14 @@ export const createFromEmail = async (req: Request, res: Response) => {
     // Build specs - merge file links with parsed specs from PDF
     const specs: Record<string, any> = {
       ...(parsedSpecs || {}),
+      // Store enhanced Lahlouh data in specs
+      versions: versions || null,
+      components: components || null,
+      mailing: mailing || null,
+      timeline: timeline || null,
+      // Ensure raw job description is preserved for vendor POs
+      rawJobDescription: parsedSpecs?.rawJobDescription || parsedSpecs?.rawDescriptionText || req.body.rawJobDescription || null,
+      rawDescriptionText: parsedSpecs?.rawDescriptionText || parsedSpecs?.rawJobDescription || req.body.rawDescriptionText || null,
     };
     if (fileLinks && Array.isArray(fileLinks) && fileLinks.length > 0) {
       specs.artworkUrl = fileLinks[0]; // Primary link
@@ -1620,31 +1695,106 @@ export const createFromEmail = async (req: Request, res: Response) => {
       specs.lineItems = lineItems;
     }
 
+    // Check if this is a Lahlouh job and determine if it needs mailing vendor
+    const isLahlouhJob = source?.toLowerCase() === 'lahlouh';
+    const isMailing = isMailingJob({ mailing, timeline, notes, matchType, versions, components });
+    const needsMailingVendor = isLahlouhJob && isMailing;
+    let mailingVendorId: string | null = null;
+    let mailingVendorEmail: string | null = null;
+
+    console.log(`[createFromEmail] Job classification: isLahlouh=${isLahlouhJob}, isMailing=${isMailing}, needsMailingVendor=${needsMailingVendor}`);
+
+    // Find or create Three Z vendor for Lahlouh jobs
+    if (needsMailingVendor) {
+      let threeZVendor = await prisma.vendor.findFirst({
+        where: {
+          OR: [
+            { name: { contains: 'Three Z', mode: 'insensitive' } },
+            { name: { contains: 'ThreeZ', mode: 'insensitive' } },
+            { email: THREE_Z_VENDOR.email },
+          ],
+        },
+      });
+
+      if (!threeZVendor) {
+        threeZVendor = await prisma.vendor.create({
+          data: {
+            id: crypto.randomUUID(),
+            name: THREE_Z_VENDOR.name,
+            email: THREE_Z_VENDOR.email,
+            phone: THREE_Z_VENDOR.phone,
+            streetAddress: THREE_Z_VENDOR.address,
+            isActive: true,
+            isPartner: false,
+            updatedAt: new Date(),
+          },
+        });
+        console.log(`[createFromEmail] Created Three Z vendor: ${threeZVendor.id}`);
+      }
+
+      mailingVendorId = threeZVendor.id;
+      mailingVendorEmail = threeZVendor.email;
+    }
+
     // Create the job
+    // Print-only Lahlouh jobs are flagged in notes for manual vendor assignment
+    const isPrintOnlyLahlouh = isLahlouhJob && !isMailing;
+    const jobNotes = isPrintOnlyLahlouh
+      ? `${notes || ''}\n\n[AUTO] Print-only Lahlouh job - no mailing signals detected. Needs manual vendor assignment.`
+      : notes;
+
     const now = new Date();
     const job = await prisma.job.create({
       data: {
         id: crypto.randomUUID(),
         jobNo,
         title,
-        status: 'SUBMITTED',
-        workflowStatus: 'NEW',
-        companyId: customer.id,
+        status: 'ACTIVE',
+        workflowStatus: 'NEW_JOB',
+        customerId: customer.id,
         customerPONumber: poNumber || null,
         customerJobNumber: customerJobNumber || null,
         quantity: quantity ? parseInt(String(quantity)) : null,
         sellPrice: sellPrice ? parseFloat(String(sellPrice)) : null,
-        notes: notes || null,
+        notes: jobNotes || null,
         specs,
-        mailDate: mailDate ? new Date(mailDate) : null,
-        inHomesDate: inHomesDate ? new Date(inHomesDate) : null,
-        createdAt: now,
+        mailDate: mailDate ? new Date(mailDate) : (timeline?.mailDate ? new Date(timeline.mailDate) : null),
+        inHomesDate: inHomesDate ? new Date(inHomesDate) : (timeline?.inHomesDate ? new Date(timeline.inHomesDate) : null),
+        // Mailing vendor tracking
+        mailingVendorId: mailingVendorId,
+        matchType: matchType || null,
         updatedAt: now,
       },
       include: JOB_INCLUDE,
     });
 
-    console.log(`[createFromEmail] Created job ${jobNo} for ${customer.name} with ${lineItems?.length || 0} line items`);
+    console.log(`[createFromEmail] Created job ${jobNo} for ${customer.name}`);
+    console.log(`[createFromEmail] Versions: ${versions?.length || 0}, Components: ${components?.length || 0}, MatchType: ${matchType || 'none'}`);
+
+    // For Lahlouh jobs, create Three Z vendor PO
+    let mailingPONumber: string | null = null;
+    if (mailingVendorId) {
+      try {
+        const poNumber = `${jobNo}-MAIL-${Date.now()}`;
+        await prisma.purchaseOrder.create({
+          data: {
+            id: crypto.randomUUID(),
+            jobId: job.id,
+            originCompanyId: COMPANY_IDS.IMPACT_DIRECT,
+            targetVendorId: mailingVendorId,
+            poNumber,
+            description: `Mailing Services - ${title}`,
+            specialInstructions: formatMailingInstructions(versions, components, matchType, fileLinks),
+            status: 'PENDING',
+            updatedAt: new Date(),
+          },
+        });
+        mailingPONumber = poNumber;
+        console.log(`[createFromEmail] Created Three Z PO: ${poNumber}`);
+      } catch (poError) {
+        console.error(`[createFromEmail] Failed to create Three Z PO:`, poError);
+      }
+    }
 
     res.status(201).json({
       success: true,
@@ -1652,9 +1802,73 @@ export const createFromEmail = async (req: Request, res: Response) => {
       jobNo: job.jobNo,
       customerId: customer.id,
       customerName: customer.name,
+      // Job classification
+      isLahlouhJob,
+      isMailingJob: isMailing,
+      isPrintOnly: isPrintOnlyLahlouh,
+      // For n8n to send Three Z email
+      mailingVendorId,
+      mailingVendorEmail,
+      mailingPONumber,
+      // Return structured data for Three Z email
+      threeZEmailData: mailingVendorId ? {
+        lahlouhPO: poNumber,
+        lahlouhJob: customerJobNumber,
+        jdJob: jobNo,
+        mailDate: mailDate || timeline?.mailDate || null,
+        inHomesDate: inHomesDate || timeline?.inHomesDate || null,
+        versions: versions || [],
+        components: components || [],
+        matchType: matchType || null,
+        fileLinks: fileLinks || [],
+        totalQuantity: quantity,
+      } : null,
     });
   } catch (error) {
     console.error('Create from email error:', error);
     res.status(500).json({ error: 'Failed to create job from email' });
   }
 };
+
+/**
+ * Format mailing instructions for Three Z PO
+ */
+function formatMailingInstructions(
+  versions: any[] | null,
+  components: any[] | null,
+  matchType: string | null,
+  fileLinks: string[] | null
+): string {
+  const lines: string[] = [];
+
+  if (matchType) {
+    lines.push(`MATCH TYPE: ${matchType}`);
+    lines.push('');
+  }
+
+  if (versions && versions.length > 0) {
+    lines.push('VERSIONS:');
+    versions.forEach((v: any) => {
+      lines.push(`- ${v.version || v.versionName}: ${v.qty || v.quantity} qty${v.phone ? ` (${v.phone})` : ''}`);
+    });
+    lines.push('');
+  }
+
+  if (components && components.length > 0) {
+    lines.push('COMPONENTS:');
+    components.forEach((c: any) => {
+      const supplier = c.supplier?.toUpperCase() || 'TBD';
+      lines.push(`- [${supplier}] ${c.name}${c.specs ? `: ${c.specs}` : ''}`);
+    });
+    lines.push('');
+  }
+
+  if (fileLinks && fileLinks.length > 0) {
+    lines.push('ARTWORK FILES:');
+    fileLinks.forEach((link: string) => {
+      lines.push(`- ${link}`);
+    });
+  }
+
+  return lines.join('\n');
+}

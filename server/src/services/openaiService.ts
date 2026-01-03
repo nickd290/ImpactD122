@@ -428,12 +428,15 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
         - packingInstructions: How to pack/box the job
         - labelingInstructions: Labeling requirements
 
-    11. **Additional Notes - CRITICAL FOR VENDOR**:
-        - rawDescriptionText: COPY THE ENTIRE ORIGINAL DESCRIPTION/LINE ITEM TEXT VERBATIM
-          - This preserves ALL information even if structured extraction misses details
-          - Include ALL versions, specs, instructions, quantities EXACTLY as written on the PO
-          - Do NOT summarize - copy word-for-word
-        - additionalNotes: In ADDITION to rawDescriptionText, extract:
+    11. **RAW JOB DESCRIPTION - CRITICAL FOR VENDOR PO**:
+        - rawJobDescription: THIS IS THE MOST IMPORTANT FIELD FOR VENDOR COMMUNICATION!
+          - COPY THE ENTIRE job description/specs section from the customer PO VERBATIM
+          - Include EVERYTHING: paper specs, ink, sizes, finishing, versions, quantities, mail dates, delivery info
+          - This text will become the BODY of our vendor PO - it must be complete
+          - Do NOT summarize or abbreviate - copy word-for-word as it appears on the customer PO
+          - If multiple sections exist, include ALL of them with clear separation
+        - rawDescriptionText: Same as rawJobDescription (legacy field, populate both identically)
+        - additionalNotes: In ADDITION to the raw text, extract:
           - Mailing instructions (mail date, drop location, USPS requirements)
           - File delivery dates/requirements
           - Proof requirements and dates
@@ -498,7 +501,7 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
       poNumber, customerJobNumber, title, projectName,
       dueDate, mailDate, inHomesDate,
       shipToName, shipToAddress, shipVia, specialInstructions,
-      rawDescriptionText,
+      rawJobDescription, rawDescriptionText,
       specs: {
         productType, flatSize, finishedSize, paperType, paperWeight, coverPaperType,
         colors, coating, finishing, folds, perforations, dieCut,
@@ -692,12 +695,13 @@ export const parsePurchaseOrder = async (base64Data: string, mimeType: string): 
       packingInstructions: parsed.packingInstructions || null,
       labelingInstructions: parsed.labelingInstructions || null,
 
-      // Raw description text - verbatim copy from PO for reference
-      rawDescriptionText: parsed.rawDescriptionText || null,
+      // Raw job description - verbatim copy from PO for vendor PO body
+      rawJobDescription: parsed.rawJobDescription || parsed.rawDescriptionText || null,
+      rawDescriptionText: parsed.rawDescriptionText || parsed.rawJobDescription || null,
 
       // Notes - combine ALL critical vendor information
       notes: [
-        parsed.rawDescriptionText ? `=== ORIGINAL PO TEXT ===\n${parsed.rawDescriptionText}` : null,
+        (parsed.rawJobDescription || parsed.rawDescriptionText) ? `=== ORIGINAL PO TEXT ===\n${parsed.rawJobDescription || parsed.rawDescriptionText}` : null,
         parsed.additionalNotes ? `=== ADDITIONAL NOTES ===\n${parsed.additionalNotes}` : null,
       ].filter(Boolean).join('\n\n') || null,
 

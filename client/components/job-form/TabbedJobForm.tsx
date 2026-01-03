@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { User, Settings, DollarSign, Paperclip } from 'lucide-react';
-import { JobFormData, Specs, LineItem, JobFormTab, Customer, Vendor } from './types';
+import { User, Settings, DollarSign, Paperclip, Mail } from 'lucide-react';
+import { JobFormData, Specs, LineItem, JobFormTab, Customer, Vendor, MailingData } from './types';
 import { BasicsTab } from './tabs/BasicsTab';
 import { SpecsTab } from './tabs/SpecsTab';
 import { PricingTab } from './tabs/PricingTab';
 import { FilesTab } from './tabs/FilesTab';
+import { MailingTab } from './tabs/MailingTab';
 
 interface ParsedCustomer {
   name: string;
@@ -36,12 +37,26 @@ interface TabbedJobFormProps {
   onCustomerCreated?: (newCustomer: Customer) => void;
 }
 
-const tabs: { id: JobFormTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+const baseTabs: { id: JobFormTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'basics', label: 'Basics', icon: User },
   { id: 'specs', label: 'Specs', icon: Settings },
   { id: 'pricing', label: 'Pricing', icon: DollarSign },
   { id: 'files', label: 'Files', icon: Paperclip },
 ];
+
+const mailingTab = { id: 'mailing' as JobFormTab, label: 'Mailing', icon: Mail };
+
+const getInitialMailingData = (data: any): MailingData => ({
+  mailingVendorId: data?.mailingVendorId || '',
+  mailingVendorJobNo: data?.mailingVendorJobNo || '',
+  mailingVendorPOSent: data?.mailingVendorPOSent || '',
+  mailingVendorPOSentTo: data?.mailingVendorPOSentTo || '',
+  matchType: data?.matchType || undefined,
+  versions: data?.specs?.versions || [],
+  components: data?.specs?.components || [],
+  mailDate: data?.specs?.mailing?.mailDate || data?.specs?.timeline?.mailDate || '',
+  inHomesDate: data?.specs?.mailing?.inHomesDate || data?.specs?.timeline?.inHomesDate || '',
+});
 
 const getInitialFormData = (data: any): JobFormData => ({
   title: data?.title || '',
@@ -124,6 +139,15 @@ export function TabbedJobForm({
   const [formData, setFormData] = useState<JobFormData>(() => getInitialFormData(initialData));
   const [specs, setSpecs] = useState<Specs>(() => getInitialSpecs(initialData));
   const [lineItems, setLineItems] = useState<LineItem[]>(() => getInitialLineItems(initialData));
+  const [mailingData, setMailingData] = useState<MailingData>(() => getInitialMailingData(initialData));
+
+  // Determine if we should show mailing tab (Lahlouh jobs or jobs with mailing vendor)
+  const isLahlouhJob = initialData?.source === 'lahlouh';
+  const hasMailingVendor = !!initialData?.mailingVendorId;
+  const showMailingTab = isLahlouhJob || hasMailingVendor;
+
+  // Build tabs array conditionally
+  const tabs = showMailingTab ? [...baseTabs, mailingTab] : baseTabs;
 
   const [useCustomSize, setUseCustomSize] = useState(false);
   const [customSizeValue, setCustomSizeValue] = useState('');
@@ -152,6 +176,7 @@ export function TabbedJobForm({
     setFormData(getInitialFormData(initialData));
     setSpecs(getInitialSpecs(initialData));
     setLineItems(getInitialLineItems(initialData));
+    setMailingData(getInitialMailingData(initialData));
     setSellPrice(initialData?.sellPrice ? String(initialData.sellPrice) : '');
     setOverrideSellPrice(!!initialData?.sellPrice);
     setBradfordCut(initialData?.bradfordCut || 0);
@@ -258,6 +283,17 @@ export function TabbedJobForm({
             setIsDragging={setIsDragging}
             onFileSelect={onFileSelect}
             onDeleteFile={onDeleteFile}
+          />
+        )}
+
+        {activeTab === 'mailing' && showMailingTab && (
+          <MailingTab
+            mailingData={mailingData}
+            setMailingData={setMailingData}
+            source={initialData?.source}
+            jobNo={initialData?.jobNo}
+            customerJobNumber={initialData?.customerJobNumber}
+            poNumber={initialData?.customerPONumber}
           />
         )}
       </div>

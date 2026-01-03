@@ -967,6 +967,54 @@ export const generateVendorPOPDF = (jobData: any): Buffer => {
     currentY = (doc as any).lastAutoTable.finalY + 8;
   }
 
+  // ===== RAW JOB DESCRIPTION FROM CUSTOMER PO (CRITICAL FOR VENDOR) =====
+  const rawJobDescription = jobData.specs?.rawJobDescription || jobData.specs?.rawDescriptionText || jobData.rawJobDescription || jobData.rawDescriptionText;
+  if (rawJobDescription && rawJobDescription.trim()) {
+    // Check if we need a page break
+    const rawDescLines = doc.splitTextToSize(rawJobDescription, 165);
+    const rawDescLineHeight = 4;
+    const rawDescContentHeight = rawDescLines.length * rawDescLineHeight + 10;
+
+    if (currentY + rawDescContentHeight + 20 > 270) {
+      doc.addPage();
+      drawCrosshairs(doc);
+      currentY = 20;
+    }
+
+    // Section header with orange accent
+    doc.setFillColor(BRAND_ORANGE);
+    doc.rect(20, currentY, 170, 8, 'F');
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.text('JOB SPECIFICATIONS (FROM CUSTOMER PO)', 22, currentY + 5.5);
+    currentY += 12;
+
+    // Content background
+    doc.setFillColor(255, 253, 240); // Slight cream background
+    doc.setDrawColor(BRAND_ORANGE);
+    doc.setLineWidth(0.5);
+    doc.rect(20, currentY - 2, 170, rawDescContentHeight, 'FD');
+
+    // Render raw description text
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(0, 0, 0);
+
+    rawDescLines.forEach((line: string) => {
+      // Check for page break mid-content
+      if (currentY > 270) {
+        doc.addPage();
+        drawCrosshairs(doc);
+        currentY = 20;
+      }
+      doc.text(line, 22, currentY + 2);
+      currentY += rawDescLineHeight;
+    });
+
+    currentY += 10;
+  }
+
   // ===== JOB NOTES SECTION =====
   if (jobData.notes && jobData.notes.trim()) {
     doc.setFontSize(9);
