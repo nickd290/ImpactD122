@@ -56,6 +56,8 @@ async function getTestCompany(): Promise<string> {
     data: {
       id: 'test-company-verification',
       name: 'Test Company (Verification)',
+      type: 'customer',
+      updatedAt: new Date(),
     },
   });
 
@@ -80,6 +82,7 @@ async function getTestVendor(): Promise<{ id: string; vendorCode: string }> {
       name: 'Test Vendor (Verification)',
       email: 'vendor@verification.local',
       vendorCode: 'TEST',
+      updatedAt: new Date(),
     },
   });
 

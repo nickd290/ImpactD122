@@ -910,7 +910,7 @@ export const importBatchJobs = async (req: Request, res: Response) => {
       quantity: jobData.quantity || 0,
       sellPrice: jobData.sellPrice || jobData.customerTotal || 0,
       specs: jobData.specs || {},
-      routingType: jobData.vendorId ? 'THIRD_PARTY_VENDOR' : 'BRADFORD_JD',
+      routingType: (jobData.vendorId ? 'THIRD_PARTY_VENDOR' : 'BRADFORD_JD') as 'BRADFORD_JD' | 'THIRD_PARTY_VENDOR',
       source: 'IMPORT' as const,
     }));
 

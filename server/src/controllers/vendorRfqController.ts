@@ -807,7 +807,7 @@ export const convertToJob = async (req: Request, res: Response) => {
       title: overrideTitle || rfq.title,
       customerId,
       vendorId: awardedQuote.vendorId,
-      sellPrice: awardedQuote.quoteAmount || 0,
+      sellPrice: awardedQuote.quoteAmount ? Number(awardedQuote.quoteAmount) : 0,
       specs: {
         rfqSpecs: rfq.specs,
         rfqNumber: rfq.rfqNumber,

@@ -630,7 +630,7 @@ export async function receiveCampaignWebhook(req: Request, res: Response) {
           : null;
 
         // === PATHWAY SYSTEM: Use unified job creation service ===
-        const { job: createdJob, baseJobId, pathway } = await createJobUnified({
+        const { job: createdJob, jobNo, baseJobId, pathway } = await createJobUnified({
           title: `${payload.name} - ${dropDateStr}`,
           customerId,
           quantity: payload.quantity,
