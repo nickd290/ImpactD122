@@ -41,7 +41,30 @@ import {
   completeJobTask,
   // Email webhook
   createFromEmail,
+  // Job Readiness & QC
+  getJobReadiness,
+  updateJobQcFlags,
+  recalculateReadiness,
+  // Job Components
+  getJobComponents,
+  createJobComponent,
+  updateJobComponent,
+  deleteJobComponent,
+  // Mailing type detection
+  detectMailingTypeEndpoint,
 } from '../controllers/jobsController';
+import {
+  // Change Orders
+  listChangeOrders,
+  getChangeOrder,
+  createChangeOrder,
+  updateChangeOrder,
+  deleteChangeOrder,
+  submitForApproval,
+  approveChangeOrder,
+  rejectChangeOrder,
+  getEffectiveJobState,
+} from '../controllers/changeOrderController';
 
 const router = Router();
 
@@ -51,6 +74,7 @@ router.get('/workflow-view', getJobsWorkflowView); // Must be before /:id
 router.get('/:id', getJob);
 router.post('/', createJob);
 router.post('/from-email', createFromEmail); // Webhook for n8n email automation
+router.post('/detect-mailing-type', detectMailingTypeEndpoint); // Mailing type detection preview
 router.post('/import', importBatchJobs);
 router.post('/batch-delete', batchDeleteJobs);
 router.post('/bulk-update-paper-source', bulkUpdatePaperSource);
@@ -97,5 +121,28 @@ router.delete('/:jobId/pos/:poId', deletePO);
 
 // Invoice status
 router.patch('/invoices/:invoiceId/status', updateInvoiceStatus);
+
+// Job Readiness & QC routes
+router.get('/:id/readiness', getJobReadiness);
+router.patch('/:id/qc', updateJobQcFlags);
+router.post('/:id/readiness/recalculate', recalculateReadiness);
+
+// Job Component routes
+router.get('/:id/components', getJobComponents);
+router.post('/:id/components', createJobComponent);
+router.put('/:id/components/:componentId', updateJobComponent);
+router.delete('/:id/components/:componentId', deleteJobComponent);
+
+// Change Order routes
+router.get('/:jobId/change-orders', listChangeOrders);
+router.post('/:jobId/change-orders', createChangeOrder);
+router.get('/:jobId/effective-state', getEffectiveJobState);
+// Non-nested change order routes (for operations on specific COs)
+router.get('/change-orders/:id', getChangeOrder);
+router.patch('/change-orders/:id', updateChangeOrder);
+router.delete('/change-orders/:id', deleteChangeOrder);
+router.post('/change-orders/:id/submit', submitForApproval);
+router.post('/change-orders/:id/approve', approveChangeOrder);
+router.post('/change-orders/:id/reject', rejectChangeOrder);
 
 export default router;

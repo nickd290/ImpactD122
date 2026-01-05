@@ -129,6 +129,39 @@ export const jobsApi = {
     apiFetch(`/jobs/${id}/task/complete`, {
       method: 'PATCH',
     }),
+  // Mailing type detection (for job creation preview)
+  detectMailingType: (data: {
+    mailDate?: string | Date | null;
+    inHomesDate?: string | Date | null;
+    matchType?: string | null;
+    notes?: string | null;
+    mailing?: {
+      isDirectMail?: boolean;
+      mailDate?: string | Date | null;
+      inHomesDate?: string | Date | null;
+      dropLocation?: string | null;
+      mailClass?: string | null;
+      presortType?: string | null;
+      mailProcess?: string | null;
+    } | null;
+    timeline?: {
+      mailDate?: string | Date | null;
+      inHomesDate?: string | Date | null;
+    } | null;
+    components?: Array<{ name?: string; description?: string }> | null;
+    versions?: Array<{ name?: string; quantity?: number }> | null;
+    specs?: Record<string, unknown> | string | null;
+    title?: string | null;
+  }) => apiFetch('/jobs/detect-mailing-type', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }) as Promise<{
+    isMailing: boolean;
+    suggestedFormat: 'SELF_MAILER' | 'POSTCARD' | 'ENVELOPE' | null;
+    confidence: 'high' | 'medium' | 'low';
+    signals: string[];
+    envelopeComponents?: number;
+  }>,
 };
 
 // Entities API
@@ -350,6 +383,64 @@ export const portalApi = {
   downloadFile: (token: string, fileId: string) => {
     window.open(`${API_BASE_URL}/portal/${token}/files/${fileId}`, '_blank');
   },
+};
+
+// Change Orders API
+export const changeOrdersApi = {
+  // List all COs for a job (sorted by version desc)
+  list: (jobId: string) => apiFetch(`/jobs/${jobId}/change-orders`),
+
+  // Get single CO details
+  get: (id: string) => apiFetch(`/jobs/change-orders/${id}`),
+
+  // Create draft CO
+  create: (jobId: string, data: {
+    summary: string;
+    changes?: Record<string, unknown>;
+    affectsVendors?: string[];
+    requiresNewPO?: boolean;
+    requiresReprice?: boolean;
+  }) => apiFetch(`/jobs/${jobId}/change-orders`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+
+  // Update draft CO
+  update: (id: string, data: {
+    summary?: string;
+    changes?: Record<string, unknown>;
+    affectsVendors?: string[];
+    requiresNewPO?: boolean;
+    requiresReprice?: boolean;
+  }) => apiFetch(`/jobs/change-orders/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
+
+  // Delete draft CO
+  delete: (id: string) => apiFetch(`/jobs/change-orders/${id}`, {
+    method: 'DELETE',
+  }),
+
+  // Submit CO for approval (DRAFT → PENDING_APPROVAL)
+  submit: (id: string) => apiFetch(`/jobs/change-orders/${id}/submit`, {
+    method: 'POST',
+  }),
+
+  // Approve CO (PENDING_APPROVAL → APPROVED)
+  approve: (id: string, approvedBy?: string) => apiFetch(`/jobs/change-orders/${id}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ approvedBy }),
+  }),
+
+  // Reject CO (PENDING_APPROVAL → REJECTED)
+  reject: (id: string, rejectionReason?: string) => apiFetch(`/jobs/change-orders/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ rejectionReason }),
+  }),
+
+  // Get effective job state with approved COs applied
+  getEffectiveState: (jobId: string) => apiFetch(`/jobs/${jobId}/effective-state`),
 };
 
 // Vendor RFQ API - Request for Quotes from vendors

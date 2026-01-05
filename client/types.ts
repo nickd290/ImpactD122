@@ -152,3 +152,40 @@ export interface DashboardStats {
   activeJobs: number;
   pendingQuotes: number;
 }
+
+// Change Order Types
+export type ChangeOrderStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
+
+export interface ChangeOrder {
+  id: string;
+  jobId: string;
+  changeOrderNo: string;
+  version: number;
+  summary: string;
+  changes: Record<string, unknown>;
+  status: ChangeOrderStatus;
+  approvedAt: string | null;
+  approvedBy: string | null;
+  rejectionReason: string | null;
+  affectsVendors: string[];
+  requiresNewPO: boolean;
+  requiresReprice: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateChangeOrderInput {
+  summary: string;
+  changes?: Record<string, unknown>;
+  affectsVendors?: string[];
+  requiresNewPO?: boolean;
+  requiresReprice?: boolean;
+}
+
+export interface UpdateChangeOrderInput {
+  summary?: string;
+  changes?: Record<string, unknown>;
+  affectsVendors?: string[];
+  requiresNewPO?: boolean;
+  requiresReprice?: boolean;
+}

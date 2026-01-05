@@ -11,6 +11,7 @@ import {
   sendCustomerProofEmail,
   getJobEmailAddress,
 } from '../services/emailService';
+import { finalizeVendorPOExecutionId } from '../services/poService';
 import { checkAndAdvanceWorkflow } from './jobs/jobsHelpers';
 import sgMail from '@sendgrid/mail';
 
@@ -358,6 +359,10 @@ export const emailShipmentTracking = async (req: Request, res: Response) => {
 };
 
 // Email vendor PO with portal link
+//
+// Sprint 3 Additions:
+// 1. Finalize executionId before sending (Option A: assign at send time)
+// 2. Block P3 sends if no scoped components (Sprint 3B.4)
 export const emailVendorPOWithPortal = async (req: Request, res: Response) => {
   try {
     const { jobId, poId } = req.params;
@@ -373,6 +378,7 @@ export const emailVendorPOWithPortal = async (req: Request, res: Response) => {
           include: { Vendor: true },
         },
         JobPortal: true,
+        JobComponent: true, // Sprint 3B.4: Need components for P3 check
       },
     });
 
@@ -380,9 +386,58 @@ export const emailVendorPOWithPortal = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Job not found' });
     }
 
-    const po = job.PurchaseOrder[0];
+    let po = job.PurchaseOrder[0];
     if (!po) {
       return res.status(404).json({ error: 'Purchase order not found' });
+    }
+
+    // =========================================================================
+    // Sprint 3B.4: Block P3 PO send if no scoped components
+    // =========================================================================
+    if (job.pathway === 'P3' && po.targetVendorId) {
+      // Check for vendor-owned components with no vendorId (ERROR - block globally)
+      const unassignedVendorComponents = job.JobComponent?.filter(
+        (c: any) => c.owner === 'VENDOR' && !c.vendorId
+      ) || [];
+
+      if (unassignedVendorComponents.length > 0) {
+        return res.status(400).json({
+          error: 'Cannot send P3 PO: vendor-owned components have no vendor assigned',
+          details: unassignedVendorComponents.map((c: any) => c.name),
+          hint: 'Assign a vendor to all vendor-owned components before sending POs',
+        });
+      }
+
+      // Check for components scoped to THIS vendor
+      const scopedComponents = job.JobComponent?.filter(
+        (c: any) => c.owner === 'VENDOR' && c.vendorId === po.targetVendorId
+      ) || [];
+
+      if (scopedComponents.length === 0) {
+        return res.status(400).json({
+          error: 'Cannot send P3 PO: no components assigned to this vendor',
+          vendorId: po.targetVendorId,
+          vendorName: po.Vendor?.name,
+          hint: 'Assign at least one component to this vendor before sending the PO, or delete this PO if vendor is not needed',
+        });
+      }
+    }
+
+    // =========================================================================
+    // Sprint 3: Finalize executionId before sending (one-time assignment)
+    // =========================================================================
+    if (po.originCompanyId === 'impact-direct' && po.targetVendorId && !po.executionId) {
+      try {
+        const finalizedPO = await finalizeVendorPOExecutionId(poId);
+        // Only update executionId field to avoid type conflicts
+        (po as any).executionId = finalizedPO.executionId;
+        console.log(`📍 Finalized executionId: ${po.executionId}`);
+      } catch (err: any) {
+        return res.status(400).json({
+          error: 'Cannot send PO: executionId generation failed',
+          details: err.message,
+        });
+      }
     }
 
     // Get or create portal link

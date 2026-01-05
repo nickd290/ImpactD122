@@ -761,6 +761,10 @@ export function JobsView({
           }}
           job={selectedJob}
           onEdit={() => onEditJob(selectedJob)}
+          onDelete={() => {
+            setIsDrawerOpen(false);
+            onDeleteJob(selectedJob);
+          }}
           onGenerateEmail={() => onShowEmailDraft(selectedJob)}
           onDownloadPO={() => pdfApi.generateVendorPO(selectedJob.id)}
           onDownloadInvoice={() => pdfApi.generateInvoice(selectedJob.id)}

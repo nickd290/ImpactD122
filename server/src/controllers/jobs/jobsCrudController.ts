@@ -40,6 +40,15 @@ import {
   JOB_INCLUDE_FULL,
   JOB_INCLUDE_WORKFLOW,
 } from './jobsHelpers';
+import {
+  determineInitialQcFlags,
+  isMailingJob as isMailingJobCheck,
+  updateJobReadiness,
+} from '../../services/readinessService';
+import { determinePathway } from '../../services/pathwayService';
+import { generateBaseJobId, getTypeCode } from '../../services/jobIdService';
+import { createJobUnified, CreateJobUnifiedInput } from '../../services/jobCreationService';
+import { detectMailingType, MailingDetectionInput } from '../../services/mailingDetectionService';
 
 // ============================================================================
 // READ OPERATIONS
@@ -272,20 +281,6 @@ export const createJob = async (req: Request, res: Response) => {
       }
     }
 
-    // Generate job number
-    const lastJob = await prisma.job.findFirst({
-      orderBy: { jobNo: 'desc' },
-    });
-
-    let jobNo = 'J-1001';
-    if (lastJob) {
-      const match = lastJob.jobNo.match(/J-(\d+)/);
-      if (match) {
-        const lastNumber = parseInt(match[1]);
-        jobNo = `J-${(lastNumber + 1).toString().padStart(4, '0')}`;
-      }
-    }
-
     // Calculate quantity from line items or use provided quantity
     const quantity =
       inputQuantity ||
@@ -352,8 +347,6 @@ export const createJob = async (req: Request, res: Response) => {
       }
     }
 
-    const jobId = crypto.randomUUID();
-
     // Guard: Backend pricing validation - reject negative margin without override
     if (totalCost > 0 && sellPrice < totalCost && req.body.allowNegativeMargin !== true) {
       return res.status(400).json({
@@ -384,33 +377,41 @@ export const createJob = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Sell price is required and must be greater than 0' });
     }
 
-    const job = await prisma.job.create({
-      data: {
-        id: jobId,
-        jobNo,
-        title: title || '',
-        customerId,
-        vendorId: vendorId || null,
-        status: status || 'ACTIVE',
-        specs: jobSpecs,
-        quantity,
-        sellPrice,
-        sizeName,
-        paperSource,
-        bradfordPaperLbs: bradfordPaperLbs ? parseFloat(bradfordPaperLbs) : null,
-        customerPONumber: customerPONumber || null,
-        partnerPONumber: bradfordRefNumber || null,
-        deliveryDate: dueDate ? new Date(dueDate) : null,
-        mailDate: mailDate ? new Date(mailDate) : null,
-        inHomesDate: inHomesDate ? new Date(inHomesDate) : null,
-        dataIncludedWithArtwork: dataIncludedWithArtwork === true,
-        updatedAt: new Date(),
-      },
-      include: JOB_INCLUDE,
+    // Determine routing type for pathway calculation
+    const routingType = rest.routingType || 'BRADFORD_JD';
+
+    // === PATHWAY SYSTEM: Use unified job creation service ===
+    // This ensures atomic sequence increment + pathway assignment
+    const { job, jobNo, baseJobId, pathway } = await createJobUnified({
+      title: title || '',
+      customerId,
+      vendorId: vendorId || null,
+      quantity,
+      sellPrice,
+      status: status || 'ACTIVE',
+      specs: jobSpecs,
+      lineItems: lineItems || null,
+      sizeName,
+      paperSource: paperSource as any,
+      bradfordPaperLbs: bradfordPaperLbs ? parseFloat(bradfordPaperLbs) : null,
+      customerPONumber: customerPONumber || null,
+      partnerPONumber: bradfordRefNumber || null,
+      dueDate: dueDate ? new Date(dueDate) : null,
+      mailDate: mailDate ? new Date(mailDate) : null,
+      inHomesDate: inHomesDate ? new Date(inHomesDate) : null,
+      dataIncludedWithArtwork: dataIncludedWithArtwork === true,
+      routingType: routingType as any,
+      jobMetaType: rest.jobMetaType || null,
+      mailFormat: rest.mailFormat || null,
+      envelopeComponents: rest.envelopeComponents || null,
+      jobType: rest.jobType || null,
+      source: 'MANUAL',
     });
 
+    const jobId = job.id;
+    console.log(`🛤️ [createJob] Created via unified service: pathway=${pathway} | baseJobId=${baseJobId}`);
+
     // Auto-create POs for BRADFORD_JD routing
-    const routingType = rest.routingType || 'BRADFORD_JD';
     const poValidation = canCreateImpactPO({ quantity, sizeName, sellPrice });
     const shouldCreatePOs = (routingType === 'BRADFORD_JD' && poValidation.valid) || isBradfordJob;
 
@@ -428,9 +429,28 @@ export const createJob = async (req: Request, res: Response) => {
       console.log(`Skipping PO creation for job ${jobNo}: ${poValidation.reason}`);
     }
 
-    // Auto-create vendor PO for non-Bradford vendors
-    if (vendorId && !isBradfordJob) {
-      await createVendorPO(jobId, jobNo, vendorId, title, quantity, lineItems);
+    // Auto-create vendor PO(s) for non-Bradford vendors
+    // Group line items by vendor (per-line vendorId overrides job-level vendorId)
+    if (!isBradfordJob && lineItems?.length > 0) {
+      const lineItemsByVendor: Record<string, any[]> = {};
+
+      for (const item of lineItems) {
+        const itemVendorId = item.vendorId || vendorId;
+        if (itemVendorId) {
+          if (!lineItemsByVendor[itemVendorId]) {
+            lineItemsByVendor[itemVendorId] = [];
+          }
+          lineItemsByVendor[itemVendorId].push(item);
+        }
+      }
+
+      // Create one PO per vendor
+      for (const [targetVendorId, vendorLineItems] of Object.entries(lineItemsByVendor)) {
+        await createVendorPO(jobId, jobNo, targetVendorId, title, quantity, vendorLineItems);
+      }
+    } else if (vendorId && !isBradfordJob) {
+      // Fallback for jobs without line items
+      await createVendorPO(jobId, jobNo, vendorId, title, quantity, lineItems || []);
     }
 
     // Create ProfitSplit record for this job
@@ -489,7 +509,13 @@ export const createJob = async (req: Request, res: Response) => {
         console.error(`Failed to initiate threads for job ${jobNo}:`, err.message);
       });
 
-    res.status(201).json(transformJob(job));
+    // Re-fetch job with includes for proper transform
+    const jobWithIncludes = await prisma.job.findUnique({
+      where: { id: jobId },
+      include: JOB_INCLUDE,
+    });
+
+    res.status(201).json(transformJob(jobWithIncludes));
   } catch (error) {
     console.error('Create job error:', error);
     res.status(500).json({ error: 'Failed to create job' });
@@ -873,43 +899,37 @@ export const importBatchJobs = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid jobs data' });
     }
 
-    const createdJobs = [];
+    // === PATHWAY SYSTEM: Use unified batch job creation ===
+    // This ensures atomic sequence increment + pathway assignment for all jobs
+    const { createJobsUnifiedBatch } = await import('../../services/jobCreationService');
 
-    for (const jobData of jobs) {
-      const lastJob = await prisma.job.findFirst({
-        orderBy: { jobNo: 'desc' },
-      });
+    const inputs = jobs.map((jobData: any) => ({
+      title: jobData.title || '',
+      customerId: jobData.customerId,
+      vendorId: jobData.vendorId || null,
+      quantity: jobData.quantity || 0,
+      sellPrice: jobData.sellPrice || jobData.customerTotal || 0,
+      specs: jobData.specs || {},
+      routingType: jobData.vendorId ? 'THIRD_PARTY_VENDOR' : 'BRADFORD_JD',
+      source: 'IMPORT' as const,
+    }));
 
-      let jobNo = 'J-1001';
-      if (lastJob) {
-        const match = lastJob.jobNo.match(/J-(\d+)/);
-        if (match) {
-          const lastNumber = parseInt(match[1]);
-          jobNo = `J-${(lastNumber + 1 + createdJobs.length).toString().padStart(4, '0')}`;
-        }
-      }
+    const results = await createJobsUnifiedBatch(inputs);
+    console.log(`🛤️ [importBatchJobs] Created ${results.length} jobs via unified service`);
 
-      const job = await prisma.job.create({
-        data: {
-          id: crypto.randomUUID(),
-          jobNo,
-          title: jobData.title || '',
-          customerId: jobData.customerId,
-          vendorId: jobData.vendorId || null,
-          status: 'ACTIVE',
-          specs: jobData.specs || {},
-          quantity: jobData.quantity || 0,
-          sellPrice: jobData.sellPrice || jobData.customerTotal || 0,
-          updatedAt: new Date(),
-        },
-        include: {
-          Company: true,
-          Vendor: true,
-        },
-      });
-
-      createdJobs.push(transformJob(job));
-    }
+    // Re-fetch jobs with includes for transform
+    const createdJobs = await Promise.all(
+      results.map(async ({ job }) => {
+        const fullJob = await prisma.job.findUnique({
+          where: { id: job.id },
+          include: {
+            Company: true,
+            Vendor: true,
+          },
+        });
+        return transformJob(fullJob);
+      })
+    );
 
     res.status(201).json({
       success: true,
@@ -1660,20 +1680,6 @@ export const createFromEmail = async (req: Request, res: Response) => {
       }
     }
 
-    // Generate job number
-    const lastJob = await prisma.job.findFirst({
-      orderBy: { jobNo: 'desc' },
-    });
-
-    let jobNo = 'J-1001';
-    if (lastJob) {
-      const match = lastJob.jobNo.match(/J-(\d+)/);
-      if (match) {
-        const lastNumber = parseInt(match[1]);
-        jobNo = `J-${(lastNumber + 1).toString().padStart(4, '0')}`;
-      }
-    }
-
     // Build specs - merge file links with parsed specs from PDF
     const specs: Record<string, any> = {
       ...(parsedSpecs || {}),
@@ -1743,30 +1749,90 @@ export const createFromEmail = async (req: Request, res: Response) => {
       ? `${notes || ''}\n\n[AUTO] Print-only Lahlouh job - no mailing signals detected. Needs manual vendor assignment.`
       : notes;
 
-    const now = new Date();
-    const job = await prisma.job.create({
+    // Calculate initial QC flags based on available data
+    const tempJobForQc = {
+      mailingVendorId,
+      matchType: matchType || null,
+      mailDate: mailDate ? new Date(mailDate) : (timeline?.mailDate ? new Date(timeline.mailDate) : null),
+      inHomesDate: inHomesDate ? new Date(inHomesDate) : (timeline?.inHomesDate ? new Date(timeline.inHomesDate) : null),
+      notes: jobNotes,
+      specs,
+      artOverride: false,
+      dataOverride: null,
+      dataIncludedWithArtwork: false,
+    } as any;
+    const qcFlags = determineInitialQcFlags(tempJobForQc, specs);
+
+    // === PATHWAY SYSTEM: Use unified job creation service ===
+    // This ensures atomic sequence increment + pathway assignment
+    const { job: createdJob, jobNo, baseJobId, pathway } = await createJobUnified({
+      title,
+      customerId: customer.id,
+      vendorId: mailingVendorId || null,
+      quantity: quantity ? parseInt(String(quantity)) : 0,
+      sellPrice: sellPrice ? parseFloat(String(sellPrice)) : 0,
+      status: 'ACTIVE',
+      specs,
+      customerPONumber: poNumber || null,
+      customerJobNumber: customerJobNumber || null,
+      notes: jobNotes || null,
+      mailDate: mailDate ? new Date(mailDate) : (timeline?.mailDate ? new Date(timeline.mailDate) : null),
+      inHomesDate: inHomesDate ? new Date(inHomesDate) : (timeline?.inHomesDate ? new Date(timeline.inHomesDate) : null),
+      // Detect mailing job type for proper type code
+      jobMetaType: isMailing ? 'MAILING' : null,
+      routingType: 'THIRD_PARTY_VENDOR', // Email jobs use external vendors
+      source: 'EMAIL',
+    });
+
+    console.log(`🛤️ [createFromEmail] Created via unified service: pathway=${pathway} | baseJobId=${baseJobId}`);
+
+    // Update with extra fields not in unified service
+    const job = await prisma.job.update({
+      where: { id: createdJob.id },
       data: {
-        id: crypto.randomUUID(),
-        jobNo,
-        title,
-        status: 'ACTIVE',
         workflowStatus: 'NEW_JOB',
-        customerId: customer.id,
-        customerPONumber: poNumber || null,
-        customerJobNumber: customerJobNumber || null,
-        quantity: quantity ? parseInt(String(quantity)) : null,
-        sellPrice: sellPrice ? parseFloat(String(sellPrice)) : null,
-        notes: jobNotes || null,
-        specs,
-        mailDate: mailDate ? new Date(mailDate) : (timeline?.mailDate ? new Date(timeline.mailDate) : null),
-        inHomesDate: inHomesDate ? new Date(inHomesDate) : (timeline?.inHomesDate ? new Date(timeline.inHomesDate) : null),
-        // Mailing vendor tracking
         mailingVendorId: mailingVendorId,
         matchType: matchType || null,
-        updatedAt: now,
+        readinessStatus: 'INCOMPLETE',
+        qcArtwork: qcFlags.qcArtwork,
+        qcDataFiles: qcFlags.qcDataFiles,
+        qcMailing: qcFlags.qcMailing,
+        qcSuppliedMaterials: qcFlags.qcSuppliedMaterials,
+        qcVersions: qcFlags.qcVersions,
       },
       include: JOB_INCLUDE,
     });
+
+    // Create JobComponents from parsed components (if any)
+    if (components && Array.isArray(components) && components.length > 0) {
+      for (let i = 0; i < components.length; i++) {
+        const comp = components[i];
+        try {
+          await prisma.jobComponent.create({
+            data: {
+              jobId: job.id,
+              name: comp.name || `Component ${i + 1}`,
+              description: comp.description || null,
+              quantity: comp.quantity ? parseInt(String(comp.quantity)) : null,
+              supplier: comp.supplier === 'LAHLOUH' ? 'LAHLOUH' : (comp.supplier === 'THIRD_PARTY' ? 'THIRD_PARTY' : 'JD'),
+              supplierName: comp.supplierName || null,
+              artworkStatus: comp.artworkUrl ? 'RECEIVED' : 'PENDING',
+              artworkLink: comp.artworkUrl || null,
+              materialStatus: comp.supplier === 'JD' ? 'NA' : 'PENDING',
+              specs: comp.specs || null,
+              notes: comp.notes || null,
+              sortOrder: i,
+            },
+          });
+        } catch (compError) {
+          console.error(`[createFromEmail] Failed to create component ${comp.name}:`, compError);
+        }
+      }
+      console.log(`[createFromEmail] Created ${components.length} job components`);
+    }
+
+    // Calculate final readiness
+    await updateJobReadiness(job.id);
 
     console.log(`[createFromEmail] Created job ${jobNo} for ${customer.name}`);
     console.log(`[createFromEmail] Versions: ${versions?.length || 0}, Components: ${components?.length || 0}, MatchType: ${matchType || 'none'}`);
@@ -1827,6 +1893,35 @@ export const createFromEmail = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Create from email error:', error);
     res.status(500).json({ error: 'Failed to create job from email' });
+  }
+};
+
+// ============================================================================
+// MAILING DETECTION
+// ============================================================================
+
+/**
+ * POST /api/jobs/detect-mailing-type
+ *
+ * Detect if parsed job data indicates a mailing job and suggest mail format.
+ * Used by ParsedJobReviewModal for preview before submission.
+ */
+export const detectMailingTypeEndpoint = async (req: Request, res: Response) => {
+  try {
+    const data: MailingDetectionInput = req.body;
+
+    const result = detectMailingType(data);
+
+    res.json({
+      isMailing: result.isMailing,
+      suggestedFormat: result.suggestedFormat,
+      confidence: result.confidence,
+      signals: result.signals,
+      envelopeComponents: result.envelopeComponents,
+    });
+  } catch (error) {
+    console.error('Mailing type detection error:', error);
+    res.status(500).json({ error: 'Failed to detect mailing type' });
   }
 };
 

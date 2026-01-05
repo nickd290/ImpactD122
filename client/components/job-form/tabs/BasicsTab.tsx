@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { Plus, Loader2, Check } from 'lucide-react';
-import { JobFormData, Customer, Vendor } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Plus, Loader2, Check, Mail } from 'lucide-react';
+import { JobFormData, Customer, Vendor, JobMetaType, MailFormat, EnvelopeComponentDetail } from '../types';
 import { toDateInputValue } from '../../../lib/utils';
 
 interface ParsedCustomer {
@@ -46,6 +46,21 @@ export function BasicsTab({
 
   // Auto-show create form if we have a parsed customer that doesn't match
   const shouldShowCreatePrompt = parsedCustomer && !formData.customerId;
+
+  // Sync envelope component list size with count
+  useEffect(() => {
+    const currentCount = formData.envelopeComponentList?.length || 0;
+    if (currentCount !== formData.envelopeComponents) {
+      const newList = [...(formData.envelopeComponentList || [])];
+      while (newList.length < formData.envelopeComponents) {
+        newList.push({ name: '', size: '' });
+      }
+      setFormData({
+        ...formData,
+        envelopeComponentList: newList.slice(0, formData.envelopeComponents)
+      });
+    }
+  }, [formData.envelopeComponents]);
 
   const handleCreateCustomer = async () => {
     if (!newCustomerName.trim()) return;
@@ -301,6 +316,103 @@ export function BasicsTab({
             ? '50/50 split with Bradford'
             : '35% Bradford / 65% Impact split'}
         </p>
+      </div>
+
+      {/* Mailing Type */}
+      <div className="col-span-2 border-t border-gray-200 pt-4 mt-2">
+        <div className="flex items-center gap-2 mb-3">
+          <Mail className="w-4 h-4 text-purple-600" />
+          <span className="text-sm font-medium text-gray-700">Job Classification</span>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          {/* Is it a mailing job? */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Job Category
+            </label>
+            <select
+              value={formData.jobMetaType}
+              onChange={(e) => setFormData({ ...formData, jobMetaType: e.target.value as JobMetaType })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+            >
+              <option value="JOB">Standard Print Job</option>
+              <option value="MAILING">Mailing Job</option>
+            </select>
+          </div>
+
+          {/* Mail Format - only show if mailing */}
+          {formData.jobMetaType === 'MAILING' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Mail Format
+              </label>
+              <select
+                value={formData.mailFormat}
+                onChange={(e) => setFormData({ ...formData, mailFormat: e.target.value as MailFormat | '' })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+              >
+                <option value="">Select format...</option>
+                <option value="SELF_MAILER">Self-Mailer</option>
+                <option value="POSTCARD">Postcard</option>
+                <option value="ENVELOPE">Envelope Package</option>
+              </select>
+            </div>
+          )}
+        </div>
+
+        {/* Envelope Components - only show if envelope format */}
+        {formData.jobMetaType === 'MAILING' && formData.mailFormat === 'ENVELOPE' && (
+          <div className="mt-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-sm font-medium text-purple-800">
+                Envelope Package Components
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-purple-600">Count:</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={formData.envelopeComponents}
+                  onChange={(e) => setFormData({ ...formData, envelopeComponents: parseInt(e.target.value) || 2 })}
+                  className="w-16 px-2 py-1 text-sm border border-purple-300 rounded focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              {(formData.envelopeComponentList || []).map((comp, idx) => (
+                <div key={idx} className="flex items-center gap-2 bg-white p-2 rounded border border-purple-200">
+                  <span className="text-xs text-purple-500 w-6 font-medium">{idx + 1}.</span>
+                  <input
+                    type="text"
+                    placeholder={idx === 0 ? '#10 Envelope' : idx === 1 ? 'Letter' : 'Buckslip'}
+                    value={comp.name}
+                    onChange={(e) => {
+                      const updated = [...formData.envelopeComponentList];
+                      updated[idx] = { ...updated[idx], name: e.target.value };
+                      setFormData({ ...formData, envelopeComponentList: updated });
+                    }}
+                    className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Size (e.g., 9.5 x 4.125)"
+                    value={comp.size}
+                    onChange={(e) => {
+                      const updated = [...formData.envelopeComponentList];
+                      updated[idx] = { ...updated[idx], size: e.target.value };
+                      setFormData({ ...formData, envelopeComponentList: updated });
+                    }}
+                    className="w-36 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-purple-600">
+              Enter each piece in the envelope package with its size
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Customer PO Number */}

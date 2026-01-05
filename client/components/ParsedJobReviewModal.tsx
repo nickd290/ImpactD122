@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, X, AlertCircle, Plus, Trash2, UserPlus } from 'lucide-react';
-import { entitiesApi } from '../lib/api';
+import { FileText, X, AlertCircle, Plus, Trash2, UserPlus, Mail, Zap } from 'lucide-react';
+import { entitiesApi, jobsApi } from '../lib/api';
 import { getBradfordSizes, getBradfordPricing, isBradfordSize } from '../utils/bradfordPricing';
 
 interface ParsedJobReviewModalProps {
@@ -114,6 +114,28 @@ export function ParsedJobReviewModal({
   const [bradfordPaperSellCPM, setBradfordPaperSellCPM] = useState(0);
   // Total cost to Impact = Paper SELL + Print (NOT paper cost)
   const [impactTotalCostCPM, setImpactTotalCostCPM] = useState(0);
+
+  // Mailing Type Detection
+  const [jobCategory, setJobCategory] = useState<'print' | 'mailing'>('print');
+  const [mailFormat, setMailFormat] = useState<'SELF_MAILER' | 'POSTCARD' | 'ENVELOPE' | null>(null);
+  const [envelopeComponents, setEnvelopeComponents] = useState<number>(2);
+  const [detectionResult, setDetectionResult] = useState<{
+    isMailing: boolean;
+    suggestedFormat: 'SELF_MAILER' | 'POSTCARD' | 'ENVELOPE' | null;
+    confidence: 'high' | 'medium' | 'low';
+    signals: string[];
+    envelopeComponents?: number;
+  } | null>(null);
+  const [detectingMailing, setDetectingMailing] = useState(false);
+
+  // Component details for envelope mailings
+  const [envelopeComponentList, setEnvelopeComponentList] = useState<{
+    name: string;
+    size: string;
+  }[]>([
+    { name: '', size: '' },
+    { name: '', size: '' }
+  ]);
 
   // Check for unmatched customer on mount and pre-fill contact info
   useEffect(() => {
@@ -233,6 +255,53 @@ export function ParsedJobReviewModal({
       setImpactTotalCostCPM(0);
     }
   }, [vendorId, finishedSize, useCustomSize, isBradfordVendor]);
+
+  // Mailing type auto-detection on mount
+  useEffect(() => {
+    const detectMailing = async () => {
+      setDetectingMailing(true);
+      try {
+        const result = await jobsApi.detectMailingType({
+          mailDate: parsedData.mailDate || parsedData.timeline?.mailDate,
+          inHomesDate: parsedData.inHomesDate || parsedData.timeline?.inHomesDate,
+          matchType: parsedData.matchType,
+          notes: parsedData.notes || parsedData.specs?.specialInstructions,
+          mailing: parsedData.mailing,
+          timeline: parsedData.timeline,
+          components: parsedData.productComponents,
+          specs: parsedData.specs,
+          title: parsedData.title,
+        });
+        setDetectionResult(result);
+        // Auto-apply detection if high/medium confidence
+        if (result.isMailing && result.confidence !== 'low') {
+          setJobCategory('mailing');
+          if (result.suggestedFormat) {
+            setMailFormat(result.suggestedFormat);
+          }
+          if (result.envelopeComponents) {
+            setEnvelopeComponents(result.envelopeComponents);
+          }
+        }
+      } catch (error) {
+        console.error('Mailing detection error:', error);
+      } finally {
+        setDetectingMailing(false);
+      }
+    };
+    detectMailing();
+  }, []); // Run once on mount
+
+  // Sync envelope component list size with count
+  useEffect(() => {
+    setEnvelopeComponentList(prev => {
+      const newList = [...prev];
+      while (newList.length < envelopeComponents) {
+        newList.push({ name: '', size: '' });
+      }
+      return newList.slice(0, envelopeComponents);
+    });
+  }, [envelopeComponents]);
 
   const handleAddLineItem = () => {
     setLineItems([...lineItems, { description: '', quantity: 0, unitCost: 0, unitPrice: 0, markupPercent: 30 }]);
@@ -366,6 +435,18 @@ export function ParsedJobReviewModal({
         // Bradford's paper profit (separate from 50/50 split)
         bradfordPaperProfit: quantity > 0 ? (bradfordPaperSellCPM - bradfordPaperCostCPM) * (quantity / 1000) : 0,
       } : undefined,
+      // Mailing type fields
+      jobMetaType: jobCategory === 'mailing' ? 'MAILING' : 'JOB',
+      mailFormat: jobCategory === 'mailing' ? mailFormat : null,
+      envelopeComponents: jobCategory === 'mailing' && mailFormat === 'ENVELOPE' ? envelopeComponents : null,
+      // Envelope component details
+      components: jobCategory === 'mailing' && mailFormat === 'ENVELOPE'
+        ? envelopeComponentList.map((comp, idx) => ({
+            name: comp.name || `Component ${idx + 1}`,
+            specs: { size: comp.size },
+            sortOrder: idx
+          }))
+        : undefined,
     };
     onCreate(jobData);
   };
@@ -404,7 +485,19 @@ export function ParsedJobReviewModal({
         shipToAddress: shipToAddress || undefined,
       },
       lineItems,
-      status: 'ACTIVE'
+      status: 'ACTIVE',
+      // Mailing type fields
+      jobMetaType: jobCategory === 'mailing' ? 'MAILING' : 'JOB',
+      mailFormat: jobCategory === 'mailing' ? mailFormat : null,
+      envelopeComponents: jobCategory === 'mailing' && mailFormat === 'ENVELOPE' ? envelopeComponents : null,
+      // Envelope component details
+      components: jobCategory === 'mailing' && mailFormat === 'ENVELOPE'
+        ? envelopeComponentList.map((comp, idx) => ({
+            name: comp.name || `Component ${idx + 1}`,
+            specs: { size: comp.size },
+            sortOrder: idx
+          }))
+        : undefined,
     };
     onSaveDraft(jobData);
   };
@@ -636,6 +729,112 @@ export function ParsedJobReviewModal({
                   <option value="single">Single Vendor</option>
                   <option value="multipart">Multi-Part Vendors</option>
                 </select>
+              </div>
+
+              {/* Mailing Type Detection */}
+              <div className="col-span-2">
+                <div className="flex items-center gap-4 mb-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Job Category
+                  </label>
+                  {detectingMailing && (
+                    <span className="text-xs text-gray-500 italic">Detecting...</span>
+                  )}
+                  {detectionResult && !detectingMailing && detectionResult.confidence !== 'low' && (
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                      detectionResult.isMailing
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'bg-gray-100 text-gray-600'
+                    }`}>
+                      <Zap className="w-3 h-3" />
+                      {detectionResult.isMailing ? 'Detected: Mailing' : 'Detected: Print Only'}
+                      <span className="text-gray-500">({detectionResult.confidence})</span>
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-4">
+                  <select
+                    value={jobCategory}
+                    onChange={(e) => {
+                      setJobCategory(e.target.value as 'print' | 'mailing');
+                      if (e.target.value === 'print') {
+                        setMailFormat(null);
+                      } else if (e.target.value === 'mailing' && !mailFormat && detectionResult?.suggestedFormat) {
+                        setMailFormat(detectionResult.suggestedFormat);
+                      }
+                    }}
+                    className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  >
+                    <option value="print">Print Job</option>
+                    <option value="mailing">Direct Mail</option>
+                  </select>
+
+                  {jobCategory === 'mailing' && (
+                    <>
+                      <select
+                        value={mailFormat || ''}
+                        onChange={(e) => setMailFormat(e.target.value as 'SELF_MAILER' | 'POSTCARD' | 'ENVELOPE' | null)}
+                        className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      >
+                        <option value="">Select Format...</option>
+                        <option value="SELF_MAILER">Self-Mailer</option>
+                        <option value="POSTCARD">Postcard</option>
+                        <option value="ENVELOPE">Envelope</option>
+                      </select>
+
+                      {mailFormat === 'ENVELOPE' && (
+                        <div className="flex items-center gap-2">
+                          <label className="text-sm text-gray-600">Components:</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="10"
+                            value={envelopeComponents}
+                            onChange={(e) => setEnvelopeComponents(parseInt(e.target.value) || 2)}
+                            className="w-16 px-2 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                          />
+                        </div>
+                      )}
+                      {mailFormat === 'ENVELOPE' && envelopeComponents > 0 && (
+                        <div className="col-span-2 mt-2 space-y-2">
+                          <label className="text-sm font-medium text-gray-700">Component Details:</label>
+                          {envelopeComponentList.map((comp, idx) => (
+                            <div key={idx} className="flex items-center gap-2 bg-gray-50 p-2 rounded">
+                              <span className="text-xs text-gray-500 w-6">{idx + 1}.</span>
+                              <input
+                                type="text"
+                                placeholder={`Name (e.g., ${idx === 0 ? '#10 Envelope' : idx === 1 ? 'Letter' : 'Buckslip'})`}
+                                value={comp.name}
+                                onChange={(e) => {
+                                  const updated = [...envelopeComponentList];
+                                  updated[idx] = { ...updated[idx], name: e.target.value };
+                                  setEnvelopeComponentList(updated);
+                                }}
+                                className="flex-1 px-2 py-1.5 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+                              />
+                              <input
+                                type="text"
+                                placeholder="Size (e.g., 9.5 x 4.125)"
+                                value={comp.size}
+                                onChange={(e) => {
+                                  const updated = [...envelopeComponentList];
+                                  updated[idx] = { ...updated[idx], size: e.target.value };
+                                  setEnvelopeComponentList(updated);
+                                }}
+                                className="w-36 px-2 py-1.5 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+                {detectionResult && detectionResult.signals.length > 0 && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    {detectionResult.signals.slice(0, 3).join(' · ')}
+                  </p>
+                )}
               </div>
 
               <div>

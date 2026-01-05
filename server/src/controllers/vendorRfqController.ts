@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { prisma } from '../utils/prisma';
 import { RFQStatus, VendorQuoteStatus } from '@prisma/client';
 import { sendRfqEmail } from '../services/emailService';
+import { createJobUnified } from '../services/jobCreationService';
 
 /**
  * Generate RFQ number in format: RFQ-YYYYMMDD-XXX
@@ -801,37 +802,22 @@ export const convertToJob = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Customer ID is required to create a new job' });
     }
 
-    // Generate job number
-    const lastJob = await prisma.job.findFirst({
-      orderBy: { jobNo: 'desc' },
-    });
-
-    let jobNo = 'J-1001';
-    if (lastJob) {
-      const match = lastJob.jobNo.match(/J-(\d+)/);
-      if (match) {
-        const lastNumber = parseInt(match[1]);
-        jobNo = `J-${(lastNumber + 1).toString().padStart(4, '0')}`;
-      }
-    }
-
-    // Create new job
-    const job = await prisma.job.create({
-      data: {
-        id: crypto.randomUUID(),
-        jobNo,
-        title: overrideTitle || rfq.title,
-        customerId,
-        vendorId: awardedQuote.vendorId,
-        status: 'ACTIVE',
-        sellPrice: awardedQuote.quoteAmount,
-        specs: {
-          rfqSpecs: rfq.specs,
-          rfqNumber: rfq.rfqNumber,
-        },
-        updatedAt: new Date(),
+    // === PATHWAY SYSTEM: Use unified job creation service ===
+    const { job: createdJob, jobNo, baseJobId, pathway } = await createJobUnified({
+      title: overrideTitle || rfq.title,
+      customerId,
+      vendorId: awardedQuote.vendorId,
+      sellPrice: awardedQuote.quoteAmount || 0,
+      specs: {
+        rfqSpecs: rfq.specs,
+        rfqNumber: rfq.rfqNumber,
       },
+      routingType: 'THIRD_PARTY_VENDOR', // RFQ conversions use external vendors
+      source: 'RFQ',
     });
+
+    console.log(`🛤️ [convertToJob] Created via unified service: pathway=${pathway} | baseJobId=${baseJobId}`);
+    const job = createdJob;
 
     // Link RFQ to job and update status
     await prisma.vendorRFQ.update({

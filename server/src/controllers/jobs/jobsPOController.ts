@@ -18,6 +18,8 @@ import crypto from 'crypto';
 import { prisma } from '../../utils/prisma';
 import { calculateProfitSplit } from '../../services/pricingService';
 import { COMPANY_IDS, isImpactOriginPO } from '../../constants';
+import { createImpactVendorPO as createVendorPOWithExecutionId } from '../../services/poService';
+import { Pathway } from '@prisma/client';
 
 // ============================================================================
 // PO NUMBER GENERATION
@@ -72,6 +74,7 @@ export const getJobPOs = async (req: Request, res: Response) => {
     const transformed = pos.map((po) => ({
       id: po.id,
       poNumber: po.poNumber,
+      executionId: po.executionId, // Sprint 3: Vendor-specific ID
       originCompanyId: po.originCompanyId,
       targetCompanyId: po.targetCompanyId,
       description: po.description || 'Vendor Services',
@@ -108,6 +111,10 @@ export const getJobPOs = async (req: Request, res: Response) => {
 /**
  * Create a new PO for a job
  *
+ * Sprint 3 Pathway-Specific Behavior:
+ * - P1 (bradford-jd): NO executionId, internal tracking only
+ * - P2/P3 (vendor): executionId generated from baseJobId-vendorCode.vendorCount
+ *
  * @param poType - 'bradford-jd' for internal tracking, or 'vendor' for Impact→Vendor
  */
 export const createJobPO = async (req: Request, res: Response) => {
@@ -138,85 +145,109 @@ export const createJobPO = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Job not found' });
     }
 
-    // Determine origin/target based on poType
-    let originCompanyId: string;
-    let targetCompanyId: string | null = null;
-    let targetVendorId: string | null = null;
-    let poNumber: string;
+    let po: any;
 
     if (poType === 'bradford-jd') {
-      // Bradford → JD Graphic (internal tracking, NOT Impact's cost)
-      originCompanyId = COMPANY_IDS.BRADFORD;
-      targetCompanyId = COMPANY_IDS.JD_GRAPHIC;
-
-      // Keep existing format for Bradford→JD POs
+      // ===================================================================
+      // P1: Bradford → JD Graphic (internal tracking, NOT Impact's cost)
+      // NO executionId - this is internal routing only
+      // ===================================================================
       const timestamp = Date.now();
       const random = Math.random().toString(36).substring(2, 6);
-      poNumber = `PO-BJ-${timestamp}-${random}`;
+      const poNumber = `PO-BJ-${timestamp}-${random}`;
+
+      po = await prisma.purchaseOrder.create({
+        data: {
+          id: crypto.randomUUID(),
+          poNumber,
+          jobId,
+          originCompanyId: COMPANY_IDS.BRADFORD,
+          targetCompanyId: COMPANY_IDS.JD_GRAPHIC,
+          // NO executionId for P1 internal POs
+          description: description || 'Bradford → JD Production',
+          buyCost: buyCost || 0,
+          paperCost: paperCost || null,
+          paperMarkup: paperMarkup || null,
+          mfgCost: mfgCost || null,
+          printCPM: printCPM || null,
+          paperCPM: paperCPM || null,
+          vendorRef: vendorRef || null,
+          status: status || 'PENDING',
+          updatedAt: new Date(),
+        },
+        include: {
+          Vendor: true,
+        },
+      });
     } else {
-      // Impact → Vendor (counts as our cost) - default
-      originCompanyId = COMPANY_IDS.IMPACT_DIRECT;
-      targetVendorId = vendorId || null;
-
-      // PO format: {jobDigits}-{random4}.{seq} (per vendor per job)
-      if (vendorId) {
-        // Get job number digits only (strip "J-" prefix)
-        const jobDigits = job.jobNo.replace(/^J-/i, '');
-
-        // Check if this vendor already has a PO for this job (reuse random4)
-        const existingVendorPO = await prisma.purchaseOrder.findFirst({
-          where: { jobId, targetVendorId: vendorId },
-          orderBy: { createdAt: 'asc' },
+      // ===================================================================
+      // P2/P3: Impact → Vendor (counts as our cost)
+      // GENERATES executionId via poService.createImpactVendorPO
+      // ===================================================================
+      if (!vendorId) {
+        return res.status(400).json({
+          error: 'vendorId is required for vendor POs',
+          hint: 'Vendor POs require a target vendor to generate executionId',
         });
-
-        let random4: string;
-        if (existingVendorPO?.poNumber) {
-          // Extract random4 from existing PO: "2056-9283.1" → "9283"
-          const match = existingVendorPO.poNumber.match(/-(\d{4})\./);
-          random4 = match?.[1] || Math.floor(1000 + Math.random() * 9000).toString();
-        } else {
-          // Generate new random 4-digit suffix for this vendor on this job
-          random4 = Math.floor(1000 + Math.random() * 9000).toString();
-        }
-
-        // Count existing POs for sequence
-        const existingPOCount = await prisma.purchaseOrder.count({
-          where: { jobId, targetVendorId: vendorId },
-        });
-        const sequenceNum = existingPOCount + 1;
-
-        poNumber = `${jobDigits}-${random4}.${sequenceNum}`;
-      } else {
-        // No vendor specified, use fallback format
-        const timestamp = Date.now();
-        const random = Math.random().toString(36).substring(2, 6);
-        poNumber = `PO-IV-${timestamp}-${random}`;
       }
-    }
 
-    const po = await prisma.purchaseOrder.create({
-      data: {
-        id: crypto.randomUUID(),
-        poNumber,
-        jobId,
-        originCompanyId,
-        targetCompanyId,
-        targetVendorId,
-        description: description || 'Vendor Services',
-        buyCost: buyCost || 0,
-        paperCost: paperCost || null,
-        paperMarkup: paperMarkup || null,
-        mfgCost: mfgCost || null,
-        printCPM: printCPM || null,
-        paperCPM: paperCPM || null,
-        vendorRef: vendorRef || null,
-        status: status || 'PENDING',
-        updatedAt: new Date(),
-      },
-      include: {
-        Vendor: true,
-      },
-    });
+      // Generate PO number (legacy format for backward compatibility)
+      const jobDigits = job.jobNo.replace(/^J-/i, '');
+      const existingVendorPO = await prisma.purchaseOrder.findFirst({
+        where: { jobId, targetVendorId: vendorId },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      let random4: string;
+      if (existingVendorPO?.poNumber) {
+        const match = existingVendorPO.poNumber.match(/-(\d{4})\./);
+        random4 = match?.[1] || Math.floor(1000 + Math.random() * 9000).toString();
+      } else {
+        random4 = Math.floor(1000 + Math.random() * 9000).toString();
+      }
+
+      const existingPOCount = await prisma.purchaseOrder.count({
+        where: { jobId, targetVendorId: vendorId },
+      });
+      const sequenceNum = existingPOCount + 1;
+      const poNumber = `${jobDigits}-${random4}.${sequenceNum}`;
+
+      try {
+        // Use new function that generates executionId
+        po = await createVendorPOWithExecutionId(jobId, vendorId, {
+          buyCost,
+          description: description || 'Vendor Services',
+          poNumber,
+        });
+
+        // Fetch vendor for response (createVendorPOWithExecutionId doesn't include it)
+        const vendor = await prisma.vendor.findUnique({
+          where: { id: vendorId },
+          select: { id: true, name: true },
+        });
+        po.Vendor = vendor;
+      } catch (err: any) {
+        // Handle specific errors from poService
+        if (err.message.includes('missing vendorCode')) {
+          return res.status(400).json({
+            error: 'Vendor missing vendorCode',
+            details: err.message,
+            hint: 'Update the vendor record with a unique vendorCode before creating a PO',
+          });
+        }
+        if (err.message.includes('does not have a baseJobId')) {
+          return res.status(400).json({
+            error: 'Job missing baseJobId',
+            details: err.message,
+            hint: 'Jobs created before pathway system do not have baseJobId. Edit and save the job to generate one.',
+          });
+        }
+        throw err;
+      }
+
+      // === Update job.vendorCount ===
+      await updateJobVendorCount(jobId);
+    }
 
     // Recalculate profit split now that a PO has been added
     await recalculateProfitSplit(jobId, [...(job.PurchaseOrder || []), po]);
@@ -224,6 +255,7 @@ export const createJobPO = async (req: Request, res: Response) => {
     res.status(201).json({
       id: po.id,
       poNumber: po.poNumber,
+      executionId: po.executionId || null, // Sprint 3: Include executionId
       originCompanyId: po.originCompanyId,
       targetCompanyId: po.targetCompanyId,
       description: po.description,
@@ -246,6 +278,10 @@ export const createJobPO = async (req: Request, res: Response) => {
 
 /**
  * Update an existing PO
+ *
+ * Sprint 3 CRITICAL RULE:
+ * - executionId is NEVER mutated. New scope = new PO. Always.
+ * - If vendor changes, create a new PO instead of updating.
  */
 export const updatePO = async (req: Request, res: Response) => {
   try {
@@ -265,6 +301,24 @@ export const updatePO = async (req: Request, res: Response) => {
       paidAt,
     } = req.body;
 
+    // === Sprint 3: Block vendor changes on existing vendor POs with executionId ===
+    // If vendor changes, user should delete this PO and create a new one
+    if (vendorId !== undefined) {
+      const existingPO = await prisma.purchaseOrder.findUnique({
+        where: { id: poId },
+        select: { targetVendorId: true, executionId: true },
+      });
+
+      if (existingPO?.executionId && existingPO.targetVendorId !== vendorId) {
+        return res.status(400).json({
+          error: 'Cannot change vendor on a PO with executionId',
+          details: 'executionId is tied to the original vendor and cannot be regenerated',
+          hint: 'Delete this PO and create a new one for the different vendor',
+          existingExecutionId: existingPO.executionId,
+        });
+      }
+    }
+
     const updateData: any = {
       updatedAt: new Date(),
     };
@@ -282,6 +336,8 @@ export const updatePO = async (req: Request, res: Response) => {
     if (status !== undefined) updateData.status = status;
     if (issuedAt !== undefined) updateData.issuedAt = issuedAt ? new Date(issuedAt) : null;
     if (paidAt !== undefined) updateData.paidAt = paidAt ? new Date(paidAt) : null;
+
+    // NEVER include executionId in updateData - it's immutable
 
     const po = await prisma.purchaseOrder.update({
       where: { id: poId },
@@ -308,6 +364,7 @@ export const updatePO = async (req: Request, res: Response) => {
     res.json({
       id: po.id,
       poNumber: po.poNumber,
+      executionId: po.executionId || null, // Sprint 3: Include executionId (read-only)
       originCompanyId: po.originCompanyId,
       targetCompanyId: po.targetCompanyId,
       description: po.description,
@@ -333,6 +390,8 @@ export const updatePO = async (req: Request, res: Response) => {
 /**
  * Delete a PO
  * Prevents deletion after invoice generated for financial integrity
+ *
+ * Sprint 3: Updates job.vendorCount after deletion
  */
 export const deletePO = async (req: Request, res: Response) => {
   try {
@@ -348,6 +407,7 @@ export const deletePO = async (req: Request, res: Response) => {
     }
 
     const jobId = po.jobId;
+    const isVendorPO = po.originCompanyId === COMPANY_IDS.IMPACT_DIRECT && po.targetVendorId;
 
     // Guard: Prevent PO deletion after invoice generated
     if (jobId) {
@@ -366,7 +426,7 @@ export const deletePO = async (req: Request, res: Response) => {
       where: { id: poId },
     });
 
-    // Recalculate profit split after PO deletion (only if linked to a job)
+    // Recalculate profit split and vendorCount after PO deletion
     if (jobId) {
       const job = await prisma.job.findUnique({
         where: { id: jobId },
@@ -377,6 +437,11 @@ export const deletePO = async (req: Request, res: Response) => {
 
       if (job) {
         await recalculateProfitSplit(jobId, job.PurchaseOrder || []);
+      }
+
+      // Sprint 3: Update vendorCount if this was a vendor PO
+      if (isVendorPO) {
+        await updateJobVendorCount(jobId);
       }
     }
 
@@ -390,6 +455,59 @@ export const deletePO = async (req: Request, res: Response) => {
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
+
+/**
+ * Update job.vendorCount based on distinct vendors in vendor POs
+ * Called after PO create/delete to keep vendorCount in sync
+ *
+ * CRITICAL PATHWAY RULES:
+ * - P1 is ONLY determined by routingType === BRADFORD_JD (workflow-based)
+ * - P1 is NEVER changed automatically by vendorCount
+ * - P2 ↔ P3 transitions are based on vendorCount (for non-P1 jobs only)
+ */
+async function updateJobVendorCount(jobId: string): Promise<void> {
+  const vendorPOs = await prisma.purchaseOrder.findMany({
+    where: {
+      jobId,
+      originCompanyId: COMPANY_IDS.IMPACT_DIRECT,
+      targetVendorId: { not: null },
+    },
+    select: { targetVendorId: true },
+  });
+
+  const distinctVendorIds = new Set(vendorPOs.map(po => po.targetVendorId));
+  const vendorCount = distinctVendorIds.size;
+
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    select: { pathway: true, routingType: true },
+  });
+
+  // CRITICAL: P1 is determined by routingType, NEVER by vendorCount
+  // If routingType is BRADFORD_JD, pathway MUST remain P1 (or be set to P1)
+  // Never auto-transition TO P1 from P2/P3
+  // Never auto-transition FROM P1 to P2/P3
+  let newPathway = job?.pathway;
+
+  if (job?.routingType === 'BRADFORD_JD') {
+    // P1 workflow - pathway should be P1, don't change based on vendorCount
+    newPathway = Pathway.P1;
+  } else if (job?.pathway !== Pathway.P1) {
+    // Non-P1 job: P2 vs P3 is determined by vendorCount
+    // Only transition between P2 and P3, never to P1
+    newPathway = vendorCount > 1 ? Pathway.P3 : Pathway.P2;
+  }
+  // If current pathway is P1 but routingType is not BRADFORD_JD,
+  // that's a data inconsistency - leave it alone for manual review
+
+  await prisma.job.update({
+    where: { id: jobId },
+    data: {
+      vendorCount,
+      pathway: newPathway,
+    },
+  });
+}
 
 /**
  * Recalculate profit split for a job based on its POs

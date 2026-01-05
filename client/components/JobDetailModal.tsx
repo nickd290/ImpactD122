@@ -7,17 +7,32 @@ import { toDateInputValue } from '../lib/utils';
 import { EditableField } from './EditableField';
 import { InlineEditableCell } from './InlineEditableCell';
 import { LineItemRow } from './LineItemRow';
-import { pdfApi, emailApi, communicationsApi, invoiceApi, filesApi, jobsApi } from '../lib/api';
+import { pdfApi, emailApi, communicationsApi, invoiceApi, filesApi, jobsApi, changeOrdersApi } from '../lib/api';
+import { ChangeOrderList } from './job-detail/ChangeOrderList';
+import { ChangeOrderModal } from './job-detail/ChangeOrderModal';
+import type { ChangeOrder, ChangeOrderStatus } from '../types';
 import { SendEmailModal } from './SendEmailModal';
 import { CommunicationThread } from './CommunicationThread';
 import { useQuery } from '@tanstack/react-query';
 import { WorkflowStatusBadge, getNextWorkflowStatuses, WORKFLOW_STAGES, getStageIndex } from './WorkflowStatusBadge';
 import { PDFPreviewModal } from './PDFPreviewModal';
+import { JobReadinessCard } from './job-form/JobReadinessCard';
+
+// Pathway badge styling
+const PATHWAY_STYLES = {
+  P1: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'P1' },
+  P2: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'P2' },
+  P3: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'P3' },
+} as const;
+
+type Pathway = 'P1' | 'P2' | 'P3';
 
 interface Job {
   id: string;
   number?: string;
   jobNo?: string;
+  baseJobId?: string | null;  // Canonical job ID (e.g., ME2-3000)
+  pathway?: Pathway | null;    // P1, P2, or P3
   title: string;
   status: string;
   sellPrice?: number;
@@ -212,6 +227,7 @@ interface JobDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   onEdit?: () => void;
+  onDelete?: () => void;
   onGenerateEmail?: () => void;
   onDownloadPO?: () => void;
   onDownloadInvoice?: () => void;
@@ -219,13 +235,14 @@ interface JobDetailModalProps {
   onRefresh?: () => void;
 }
 
-type TabType = 'details' | 'financials';
+type TabType = 'details' | 'financials' | 'change-orders';
 
 export function JobDetailModal({
   job,
   isOpen,
   onClose,
   onEdit,
+  onDelete,
   onGenerateEmail,
   onDownloadPO,
   onDownloadInvoice,
@@ -261,6 +278,10 @@ export function JobDetailModal({
   const [editedJob, setEditedJob] = useState<Partial<Job & { vendorId?: string; bradfordTotal?: number }>>({});
   const [isSavingJob, setIsSavingJob] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+  // Change Order state
+  const [selectedCO, setSelectedCO] = useState<ChangeOrder | undefined>(undefined);
+  const [showCOModal, setShowCOModal] = useState(false);
 
   // Local workflow state - keeps modal open when updating workflow
   const [localWorkflowStatus, setLocalWorkflowStatus] = useState(job?.workflowStatus);
@@ -432,6 +453,24 @@ export function JobDetailModal({
     enabled: !!job?.id,
   });
   const poFiles = (jobFiles || []).filter((f: any) => f.kind === 'PO_PDF');
+
+  // Fetch change orders for this job
+  const { data: changeOrders, isLoading: isLoadingCOs, refetch: refetchCOs } = useQuery({
+    queryKey: ['changeOrders', job?.id],
+    queryFn: () => job?.id ? changeOrdersApi.list(job.id) : Promise.resolve([]),
+    enabled: !!job?.id,
+  });
+
+  // Compute latest CO for badge display
+  const latestCO = changeOrders && changeOrders.length > 0
+    ? { version: changeOrders[0].version, status: changeOrders[0].status as ChangeOrderStatus }
+    : null;
+
+  // Handle CO success (refetch COs and job)
+  const handleCOSuccess = () => {
+    refetchCOs();
+    onRefresh?.();
+  };
 
   if (!job) return null;
 
@@ -1070,541 +1109,230 @@ export function JobDetailModal({
 
   const OverviewTab = () => {
     const populatedSpecs = getPopulatedSpecs();
-    const hasArtwork = job.specs?.artworkUrl || isEditMode;
-    const showPaperSource = paperSource !== 'VENDOR' || paperMarkup > 0 || job.paperInventory;
+    const hasArtwork = job.specs?.artworkUrl || uploadedFiles.some(f => f.kind === 'ARTWORK');
+    const hasProof = uploadedFiles.some(f => f.kind === 'VENDOR_PROOF');
+    const currentStatus = localWorkflowOverride || localWorkflowStatus;
+    const currentIndex = getStageIndex(currentStatus || 'NEW_JOB');
+    const currentStage = WORKFLOW_STAGES[currentIndex];
+    const nextActions = getNextWorkflowStatuses(currentStatus || 'NEW_JOB');
+
+    // Determine what's blocking progress
+    const getBlockers = () => {
+      const blockers: string[] = [];
+      if (!job.vendor) blockers.push('No vendor assigned');
+      if (!hasArtwork && !job.artOverride) blockers.push('No artwork');
+      if (currentStatus === 'AWAITING_PROOF_FROM_VENDOR' && !hasProof) blockers.push('Waiting for vendor proof');
+      if (currentStatus === 'AWAITING_CUSTOMER_RESPONSE') blockers.push('Waiting for customer approval');
+      return blockers;
+    };
+    const blockers = getBlockers();
 
     return (
-    <div className="space-y-4">
-      {/* Key Metrics Row */}
-      <div className="grid grid-cols-4 gap-3">
-        {/* Status */}
-        <div className="bg-card border border-border rounded-lg p-3">
-          <span className="text-[10px] text-muted-foreground uppercase block mb-1">Status</span>
+    <div className="space-y-3">
+      {/* Compact Header Row: Key Numbers */}
+      <div className="grid grid-cols-5 gap-2 text-center bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <div className="p-2 border-r border-gray-100">
+          <div className="text-[10px] text-gray-500 uppercase">Status</div>
           {isEditMode ? (
             <select
               value={editedJob.status ?? job.status ?? ''}
               onChange={(e) => updateEditedField('status', e.target.value)}
-              className="w-full px-2 py-1 text-sm border border-input rounded focus:ring-2 focus:ring-primary"
+              className="w-full px-1 py-0.5 text-xs border rounded"
             >
               {statusOptions.map(opt => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
           ) : (
-            <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${
+            <span className={`inline-block px-1.5 py-0.5 text-xs font-medium rounded ${
               job.status === 'PAID' ? 'bg-green-100 text-green-700' :
               job.status === 'CANCELLED' ? 'bg-red-100 text-red-700' :
-              job.status === 'ACTIVE' ? 'bg-amber-100 text-amber-700' :
-              'bg-muted text-muted-foreground'
+              'bg-amber-100 text-amber-700'
             }`}>
-              {statusOptions.find(s => s.value === job.status)?.label || job.status}
+              {job.status}
             </span>
           )}
         </div>
-        {/* Sell Price - Editable in Edit Mode */}
-        <div className="bg-card border border-border rounded-lg p-3">
-          <span className="text-[10px] text-muted-foreground uppercase block mb-1">Sell Price</span>
-          {job.invoiceGeneratedAt ? (
-            <p className="text-lg font-semibold text-foreground" title="Locked after invoice generated">
-              {formatCurrency(job.sellPrice || 0)}
-            </p>
-          ) : isEditMode ? (
-            <input
-              type="number"
-              step="0.01"
-              value={editedJob.sellPrice ?? job.sellPrice ?? ''}
-              onChange={(e) => updateEditedField('sellPrice', parseFloat(e.target.value) || 0)}
-              className="w-full px-2 py-1 text-lg font-semibold border border-input rounded focus:ring-2 focus:ring-primary"
-            />
-          ) : (
-            <InlineEditableCell
-              value={job.sellPrice}
-              onSave={async (value) => {
-                await handleInlineSave('sellPrice', parseFloat(value) || 0);
-              }}
-              type="number"
-              prefix="$"
-              formatDisplay={(val) => formatCurrency(Number(val) || 0)}
-              className="text-lg font-semibold"
-            />
-          )}
+        <div className="p-2 border-r border-gray-100">
+          <div className="text-[10px] text-gray-500 uppercase">Sell</div>
+          <div className="text-sm font-bold text-gray-900">{formatCurrency(job.sellPrice || 0)}</div>
         </div>
-        {/* Quantity */}
-        <div className="bg-card border border-border rounded-lg p-3">
-          <span className="text-[10px] text-muted-foreground uppercase block mb-1">Quantity</span>
-          {isEditMode ? (
-            <input
-              type="number"
-              value={editedJob.quantity ?? job.quantity ?? ''}
-              onChange={(e) => updateEditedField('quantity', parseInt(e.target.value) || 0)}
-              className="w-full px-2 py-1 text-sm border border-input rounded focus:ring-2 focus:ring-primary"
-            />
-          ) : (
-            <p className="text-lg font-semibold text-foreground">{(job.quantity || 0).toLocaleString()}</p>
-          )}
+        <div className="p-2 border-r border-gray-100">
+          <div className="text-[10px] text-gray-500 uppercase">Cost</div>
+          <div className="text-sm font-bold text-gray-600">{formatCurrency(job.profit?.totalCost || 0)}</div>
         </div>
-        {/* Spread */}
-        <div className="bg-card border border-border rounded-lg p-3">
-          <span className="text-[10px] text-muted-foreground uppercase block mb-1">Spread</span>
-          <p className={`text-lg font-semibold ${(job.profit?.spread || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+        <div className="p-2 border-r border-gray-100">
+          <div className="text-[10px] text-gray-500 uppercase">Spread</div>
+          <div className={`text-sm font-bold ${(job.profit?.spread || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
             {formatCurrency(job.profit?.spread || 0)}
-          </p>
+          </div>
+        </div>
+        <div className="p-2">
+          <div className="text-[10px] text-gray-500 uppercase">Qty</div>
+          <div className="text-sm font-bold text-gray-900">{(job.quantity || 0).toLocaleString()}</div>
         </div>
       </div>
 
-      {/* Workflow Progress Checklist */}
-      {localWorkflowStatus && (
-        <div className="bg-card border border-border rounded-lg p-3">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-muted-foreground uppercase font-semibold">Workflow Progress</span>
-              {localWorkflowOverride && (
-                <span className="text-xs text-orange-500 font-medium">(Manual Override)</span>
-              )}
-            </div>
+      {/* Workflow Status Bar - Simple Progress + Action */}
+      <div className="bg-white border border-gray-200 rounded-lg p-2">
+        <div className="flex items-center gap-3">
+          {/* Progress dots */}
+          <div className="flex items-center gap-0.5">
+            {WORKFLOW_STAGES.map((stage, index) => (
+              <div
+                key={index}
+                title={stage.label}
+                className={`w-3 h-3 rounded-full ${
+                  index < currentIndex ? 'bg-green-500' :
+                  index === currentIndex ? 'bg-blue-500' :
+                  'bg-gray-200'
+                }`}
+              />
+            ))}
+          </div>
+          <div className="flex-1">
+            <span className="text-sm font-medium">{currentStage?.label || 'Unknown'}</span>
             {job.workflowUpdatedAt && (
-              <span className="text-xs text-muted-foreground">
-                Updated {new Date(job.workflowUpdatedAt).toLocaleDateString()}
+              <span className="text-xs text-gray-400 ml-2">
+                {new Date(job.workflowUpdatedAt).toLocaleDateString()}
               </span>
             )}
           </div>
-
-          {/* Workflow Stages Checklist */}
-          <div className="space-y-1 mb-3">
-            {WORKFLOW_STAGES.map((stage, index) => {
-              const currentStatus = localWorkflowOverride || localWorkflowStatus;
-              const currentIndex = getStageIndex(currentStatus);
-              const isCompleted = index < currentIndex;
-              const isCurrent = index === currentIndex;
-              const isPending = index > currentIndex;
-
-              return (
-                <div
-                  key={stage.status}
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-left ${
-                    isCurrent
-                      ? 'bg-blue-100 border border-blue-300'
-                      : ''
-                  }`}
-                >
-                  {/* Status Icon */}
-                  {isCompleted ? (
-                    <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
-                  ) : isCurrent ? (
-                    <div className="w-4 h-4 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
-                      <div className="w-2 h-2 rounded-full bg-white" />
-                    </div>
-                  ) : (
-                    <Circle className="w-4 h-4 text-gray-300 flex-shrink-0" />
-                  )}
-
-                  {/* Stage Label */}
-                  <span
-                    className={`text-sm ${
-                      isCompleted
-                        ? 'text-green-700 line-through'
-                        : isCurrent
-                        ? 'text-blue-800 font-semibold'
-                        : 'text-muted-foreground'
-                    }`}
-                  >
-                    {stage.label}
-                  </span>
-
-                  {/* Current indicator */}
-                  {isCurrent && (
-                    <span className="ml-auto text-xs text-blue-600 font-medium">Current</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Next Action Buttons */}
-          <div className="flex items-center gap-2 pt-2 border-t border-border">
-            {getNextWorkflowStatuses(localWorkflowOverride || localWorkflowStatus).map(({ status, action }) => (
-              <button
-                key={status}
-                onClick={() => handleWorkflowStatusChange(status)}
-                disabled={isUpdatingStatus}
-                className="px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors disabled:opacity-50"
-              >
-                {isUpdatingStatus ? 'Updating...' : action}
-              </button>
-            ))}
-            {localWorkflowOverride && (
-              <button
-                onClick={async () => {
-                  // Update local state first
-                  setLocalWorkflowOverride(undefined);
-                  setLocalWorkflowStatus(job.workflowStatus);
-                  await jobsApi.updateWorkflowStatus(job.id, null, true);
-                  // Don't call onRefresh - keeps modal open
-                }}
-                className="px-3 py-1.5 text-xs font-medium border border-orange-300 text-orange-600 rounded hover:bg-orange-50 transition-colors ml-auto"
-              >
-                ↩ Reset to Auto
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Customer & Vendor Row */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-card border border-border rounded-lg p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <User className="w-3.5 h-3.5 text-muted-foreground" />
-            <span className="text-[10px] font-semibold text-muted-foreground uppercase">Customer</span>
-          </div>
-          {job.customer ? (
-            <div>
-              <p className="font-medium text-sm text-foreground">{job.customer.name}</p>
-              {job.customer.email && <p className="text-xs text-muted-foreground">{job.customer.email}</p>}
-            </div>
-          ) : (
-            <p className="text-muted-foreground italic text-sm">Not assigned</p>
-          )}
-        </div>
-
-        <div className="bg-card border border-border rounded-lg p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <Package className="w-3.5 h-3.5 text-muted-foreground" />
-            <span className="text-[10px] font-semibold text-muted-foreground uppercase">Vendor</span>
-            {!isEditMode && job.vendor?.isPartner && (
-              <span className="px-1.5 py-0.5 bg-primary text-primary-foreground text-[9px] font-bold rounded ml-auto">
-                PARTNER
-              </span>
-            )}
-          </div>
-          {isEditMode ? (
-            <select
-              value={editedJob.vendorId || ''}
-              onChange={(e) => updateEditedField('vendorId', e.target.value || null)}
-              className="w-full px-2 py-1 text-sm border border-input rounded focus:ring-2 focus:ring-primary"
-              disabled={isLoadingVendors}
-            >
-              <option value="">Select vendor...</option>
-              {vendors.map(vendor => (
-                <option key={vendor.id} value={vendor.id}>
-                  {vendor.name}{vendor.isPartner ? ' (Partner)' : ''}
-                </option>
-              ))}
-            </select>
-          ) : job.vendor ? (
-            <div>
-              <p className="font-medium text-sm text-foreground">{job.vendor.name}</p>
-              {job.vendor.email && <p className="text-xs text-muted-foreground">{job.vendor.email}</p>}
-            </div>
-          ) : (
-            <p className="text-muted-foreground italic text-sm">Not assigned</p>
-          )}
-        </div>
-      </div>
-
-      {/* Job Details Row: PO, Due Date, Paper Source */}
-      <div className="bg-card border border-border rounded-lg p-3">
-        <div className="flex items-center gap-6 text-sm">
-          <div>
-            <span className="text-[10px] text-muted-foreground uppercase">Customer PO</span>
-            {isEditMode ? (
-              <input
-                type="text"
-                value={editedJob.customerPONumber ?? job.customerPONumber ?? ''}
-                onChange={(e) => updateEditedField('customerPONumber', e.target.value)}
-                className="w-32 px-2 py-1 text-sm border border-input rounded focus:ring-2 focus:ring-primary block mt-0.5"
-                placeholder="PO #"
-              />
-            ) : (
-              <p className="font-medium text-foreground">{job.customerPONumber || '—'}</p>
-            )}
-            {/* PO Document */}
-            {poFiles.length > 0 && (
-              <div className="mt-1">
-                {poFiles.map((file: any) => (
-                  <button
-                    key={file.id}
-                    onClick={() => setPreviewFile({ id: file.id, fileName: file.fileName })}
-                    className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline"
-                    title={`Preview: ${file.fileName}`}
-                  >
-                    <FileText className="w-3 h-3" />
-                    <span className="truncate max-w-[100px]">{file.fileName}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <div>
-            <span className="text-[10px] text-muted-foreground uppercase">Due Date</span>
-            {isEditMode ? (
-              <input
-                type="date"
-                value={toDateInputValue(editedJob.dueDate ?? job.dueDate)}
-                onChange={(e) => updateEditedField('dueDate', e.target.value)}
-                className="px-2 py-1 text-sm border border-input rounded focus:ring-2 focus:ring-primary block mt-0.5"
-              />
-            ) : (
-              <p className={`font-medium ${job.dueDate && new Date(job.dueDate) < new Date() ? 'text-red-600' : 'text-foreground'}`}>
-                {job.dueDate ? new Date(job.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
-              </p>
-            )}
-          </div>
-          {showPaperSource && (
-            <div className="flex items-center gap-2 ml-auto">
-              <Building2 className={`w-4 h-4 ${paperSource === 'BRADFORD' ? 'text-primary' : 'text-muted-foreground'}`} />
-              <span className={`text-sm font-medium ${paperSource === 'BRADFORD' ? 'text-primary' : 'text-muted-foreground'}`}>
-                {paperSource === 'BRADFORD' ? 'Bradford Paper' : paperSource === 'CUSTOMER' ? 'Customer Paper' : 'Vendor Paper'}
-              </span>
-              {paperMarkup > 0 && (
-                <span className="text-xs text-primary">+{formatCurrency(paperMarkup)}</span>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Specifications - Collapsible */}
-      <div className="bg-card border border-border rounded-lg overflow-hidden">
-        <button
-          onClick={() => setShowAllSpecs(!showAllSpecs)}
-          className="w-full px-3 py-2 flex items-center justify-between hover:bg-accent/50 transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            <FileText className="w-3.5 h-3.5 text-muted-foreground" />
-            <span className="text-[10px] font-semibold text-muted-foreground uppercase">Specifications</span>
-            {!isEditMode && populatedSpecs.length > 0 && (
-              <span className="text-xs text-muted-foreground">({populatedSpecs.length} fields)</span>
-            )}
-          </div>
-          <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${showAllSpecs ? 'rotate-180' : ''}`} />
-        </button>
-
-        {/* Compact inline specs preview (when collapsed) */}
-        {!showAllSpecs && populatedSpecs.length > 0 && (
-          <div className="px-3 pb-2 text-sm text-muted-foreground">
-            {populatedSpecs.slice(0, 4).map((s, i) => (
-              <span key={s.key}>
-                {i > 0 && ' · '}
-                <span className="text-foreground">{s.value}</span>
-              </span>
-            ))}
-            {populatedSpecs.length > 4 && <span> · +{populatedSpecs.length - 4} more</span>}
-          </div>
-        )}
-
-        {/* Full specs grid (when expanded or editing) */}
-        {(showAllSpecs || isEditMode) && (
-          <div className="px-3 pb-3 pt-1 border-t border-border">
-            <div className="grid grid-cols-3 gap-x-4 gap-y-2 text-sm">
-              <EditableField label="Product" value={getSpecValue('productType')} isEditing={isEditMode} onChange={(val) => updateEditedSpec('productType', val)} emptyText="—" />
-              <EditableField label="Flat Size" value={getSpecValue('flatSize')} isEditing={isEditMode} onChange={(val) => updateEditedSpec('flatSize', val)} emptyText="—" />
-              <EditableField label="Finished" value={getSpecValue('finishedSize')} isEditing={isEditMode} onChange={(val) => updateEditedSpec('finishedSize', val)} emptyText="—" />
-              <EditableField label="Colors" value={getSpecValue('colors')} isEditing={isEditMode} onChange={(val) => updateEditedSpec('colors', val)} emptyText="—" />
-              <EditableField label="Pages" value={getSpecValue('pageCount')} isEditing={isEditMode} onChange={(val) => updateEditedSpec('pageCount', parseInt(val) || 0)} type="number" emptyText="—" />
-              <EditableField label="Paper" value={getSpecValue('paperType')} isEditing={isEditMode} onChange={(val) => updateEditedSpec('paperType', val)} emptyText="—" />
-              <EditableField label="Coating" value={getSpecValue('coating')} isEditing={isEditMode} onChange={(val) => updateEditedSpec('coating', val)} emptyText="—" />
-              <EditableField label="Finishing" value={getSpecValue('finishing')} isEditing={isEditMode} onChange={(val) => updateEditedSpec('finishing', val)} emptyText="—" />
-              <EditableField label="Binding" value={getSpecValue('bindingStyle')} isEditing={isEditMode} onChange={(val) => updateEditedSpec('bindingStyle', val)} emptyText="—" />
-              {(job.bradfordPaperLbs || isEditMode) && (
-                <EditableField label="Bradford lbs" value={job.bradfordPaperLbs ?? getSpecValue('paperLbs') ?? ''} isEditing={isEditMode} onChange={(val) => updateEditedField('bradfordPaperLbs', parseFloat(val) || null)} type="number" emptyText="—" />
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Artwork Link - Only show if has URL or in edit mode */}
-      {hasArtwork && (
-        <div className="bg-card border border-border rounded-lg p-3">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <Link className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-[10px] font-semibold text-muted-foreground uppercase">Artwork</span>
-            </div>
-            {job.artworkEmailedAt && (
-              <span className="text-[10px] text-green-600 flex items-center gap-1">
-                <Check className="w-3 h-3" />
-                Sent {new Date(job.artworkEmailedAt).toLocaleDateString()}
-              </span>
-            )}
-          </div>
-          {job.specs?.artworkUrl && (
-            <a
-              href={job.specs.artworkUrl as string}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-primary hover:underline flex items-center gap-1 mb-2 truncate"
-            >
-              {job.specs.artworkUrl as string}
-              <ExternalLink className="w-3 h-3 flex-shrink-0" />
-            </a>
-          )}
-          <div className="flex gap-2">
-            <input
-              type="url"
-              placeholder="Paste artwork link..."
-              value={artworkUrl}
-              onChange={(e) => setArtworkUrl(e.target.value)}
-              className="flex-1 px-2 py-1.5 text-sm border border-input rounded focus:ring-2 focus:ring-primary"
-            />
+          {/* Next Action */}
+          {nextActions.length > 0 && (
             <button
-              onClick={() => setShowArtworkConfirmModal(true)}
-              disabled={!artworkUrl.trim() || !job.vendor?.email || isSendingArtworkNotification}
-              className="px-3 py-1.5 bg-primary text-primary-foreground text-sm font-medium rounded hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              onClick={() => handleWorkflowStatusChange(nextActions[0].status)}
+              disabled={isUpdatingStatus}
+              className="px-2 py-1 text-xs font-medium bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
             >
-              <Send className="w-3.5 h-3.5" />
-              Send
+              {isUpdatingStatus ? '...' : nextActions[0].action}
             </button>
-          </div>
-          {!job.vendor?.email && (
-            <p className="mt-1 text-[10px] text-amber-600 flex items-center gap-1">
-              <AlertTriangle className="w-3 h-3" />
-              No vendor email
-            </p>
           )}
         </div>
-      )}
-
-      {/* Vendor Status Section */}
-      {job.portal && (
-        <div className="bg-card border border-border rounded-lg p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <Truck className="w-3.5 h-3.5 text-muted-foreground" />
-            <span className="text-[10px] font-semibold text-muted-foreground uppercase">Vendor Status</span>
+        {/* Blockers - inline alert */}
+        {blockers.length > 0 && (
+          <div className="mt-1 text-xs text-amber-600 flex items-center gap-1">
+            <AlertTriangle className="w-3 h-3" />
+            {blockers.join(' • ')}
           </div>
-          <div className="space-y-2">
-            {/* Confirmation Status */}
-            <div className="flex items-center gap-2">
-              {job.portal.confirmedAt ? (
-                <>
-                  <Check className="w-4 h-4 text-green-600" />
-                  <span className="text-sm text-foreground">
-                    Confirmed by {job.portal.confirmedByName}
-                    <span className="text-muted-foreground ml-1">
-                      ({new Date(job.portal.confirmedAt).toLocaleDateString()})
-                    </span>
-                  </span>
-                </>
-              ) : (
-                <>
-                  <AlertTriangle className="w-4 h-4 text-amber-500" />
-                  <span className="text-sm text-amber-600">Awaiting PO confirmation</span>
-                </>
-              )}
-            </div>
-
-            {/* Production Status Badge */}
-            {job.portal.vendorStatus && job.portal.vendorStatus !== 'PENDING' && (
-              <div className="flex items-center gap-2">
-                <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${
-                  job.portal.vendorStatus === 'SHIPPED' ? 'bg-green-100 text-green-700' :
-                  job.portal.vendorStatus === 'PRINTING_COMPLETE' ? 'bg-blue-100 text-blue-700' :
-                  job.portal.vendorStatus === 'IN_PRODUCTION' ? 'bg-purple-100 text-purple-700' :
-                  'bg-gray-100 text-gray-700'
-                }`}>
-                  {job.portal.vendorStatus === 'PO_RECEIVED' ? 'PO Received' :
-                   job.portal.vendorStatus === 'IN_PRODUCTION' ? 'In Production' :
-                   job.portal.vendorStatus === 'PRINTING_COMPLETE' ? 'Printing Complete' :
-                   job.portal.vendorStatus === 'SHIPPED' ? 'Shipped' :
-                   job.portal.vendorStatus}
-                </span>
-                {job.portal.statusUpdatedAt && (
-                  <span className="text-[10px] text-muted-foreground">
-                    Updated {new Date(job.portal.statusUpdatedAt).toLocaleDateString()}
-                  </span>
-                )}
-              </div>
-            )}
-
-            {/* Tracking Info */}
-            {job.portal.vendorStatus === 'SHIPPED' && job.portal.trackingNumber && (
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-muted-foreground">Tracking:</span>
-                <span className="font-mono text-foreground">
-                  {job.portal.trackingCarrier && `${job.portal.trackingCarrier}: `}
-                  {job.portal.trackingNumber}
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* File Upload Section */}
-      <div className="bg-card border border-border rounded-lg p-3">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <Upload className="w-3.5 h-3.5 text-muted-foreground" />
-            <span className="text-[10px] font-semibold text-muted-foreground uppercase">Files</span>
-          </div>
-          {uploadedFiles.length > 0 && (
-            <span className="text-[10px] text-muted-foreground">{uploadedFiles.length} file{uploadedFiles.length !== 1 ? 's' : ''}</span>
-          )}
-        </div>
-
-        {/* Drag & Drop Zone */}
-        <div
-          className={`relative border-2 border-dashed rounded-lg p-3 text-center transition-colors ${
-            isDragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
-          }`}
-          onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-          onDragLeave={() => setIsDragging(false)}
-          onDrop={(e) => { e.preventDefault(); setIsDragging(false); handleFileUpload(e.dataTransfer.files); }}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            onChange={(e) => handleFileUpload(e.target.files)}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            accept="*/*"
-          />
-          <Upload className="w-5 h-5 mx-auto text-muted-foreground mb-1" />
-          <p className="text-xs text-muted-foreground">
-            {isUploading ? 'Uploading...' : 'Drop files or click to browse'}
-          </p>
-        </div>
-
-        {/* Upload Error */}
-        {uploadError && (
-          <p className="mt-2 text-xs text-destructive">{uploadError}</p>
         )}
+      </div>
 
-        {/* Uploaded Files List */}
-        {uploadedFiles.length > 0 && (
-          <div className="mt-2 space-y-1">
-            {uploadedFiles.map((file) => (
-              <div key={file.id} className="flex items-center justify-between p-2 bg-muted/50 rounded text-xs">
-                <div className="flex items-center gap-2 min-w-0">
-                  <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                  <span className="truncate">{file.fileName}</span>
-                  <span className="text-muted-foreground flex-shrink-0">{formatFileSize(file.size)}</span>
-                  {file.kind === 'VENDOR_PROOF' && (
-                    <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-semibold rounded flex-shrink-0">
-                      VENDOR PROOF
-                    </span>
+      {/* Data Grid: Key Info Table */}
+      <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+        <tbody className="divide-y divide-gray-100">
+          <tr className="bg-gray-50">
+            <td className="px-3 py-2 font-medium text-gray-500 w-24">Customer</td>
+            <td className="px-3 py-2">{job.customer?.name || '—'}</td>
+            <td className="px-3 py-2 font-medium text-gray-500 w-24">Vendor</td>
+            <td className="px-3 py-2">
+              {job.vendor?.name || '—'}
+              {job.vendor?.isPartner && <span className="ml-1 px-1 text-[10px] bg-blue-100 text-blue-700 rounded">PARTNER</span>}
+            </td>
+          </tr>
+          <tr>
+            <td className="px-3 py-2 font-medium text-gray-500">Customer PO</td>
+            <td className="px-3 py-2">{job.customerPONumber || '—'}</td>
+            <td className="px-3 py-2 font-medium text-gray-500">Due Date</td>
+            <td className="px-3 py-2">{job.dueDate ? new Date(job.dueDate).toLocaleDateString() : '—'}</td>
+          </tr>
+          <tr className="bg-gray-50">
+            <td className="px-3 py-2 font-medium text-gray-500">Product</td>
+            <td className="px-3 py-2">{job.specs?.productType || '—'}</td>
+            <td className="px-3 py-2 font-medium text-gray-500">Size</td>
+            <td className="px-3 py-2">{job.sizeName || job.specs?.flatSize || '—'}</td>
+          </tr>
+          {populatedSpecs.length > 0 && (
+            <tr>
+              <td className="px-3 py-2 font-medium text-gray-500">Specs</td>
+              <td className="px-3 py-2" colSpan={3}>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
+                  {populatedSpecs.slice(0, showAllSpecs ? undefined : 4).map(spec => (
+                    <span key={spec.key}><strong>{spec.label}:</strong> {spec.value}</span>
+                  ))}
+                  {populatedSpecs.length > 4 && !showAllSpecs && (
+                    <button onClick={() => setShowAllSpecs(true)} className="text-blue-600 hover:underline">
+                      +{populatedSpecs.length - 4} more
+                    </button>
                   )}
                 </div>
-                <div className="flex items-center gap-1 flex-shrink-0">
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      {/* Vendor Portal Status - Compact Row */}
+      {job.portal && (
+        <div className="flex items-center gap-4 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm">
+          <span className="font-medium text-gray-500">Vendor:</span>
+          {job.portal.confirmedAt ? (
+            <span className="flex items-center gap-1 text-green-600">
+              <Check className="w-3 h-3" /> Confirmed {new Date(job.portal.confirmedAt).toLocaleDateString()}
+            </span>
+          ) : (
+            <span className="text-amber-600">Awaiting confirmation</span>
+          )}
+          {job.portal.vendorStatus && job.portal.vendorStatus !== 'PENDING' && (
+            <>
+              <span className="text-gray-300">|</span>
+              <span className={`px-1.5 py-0.5 text-xs rounded ${
+                job.portal.vendorStatus === 'SHIPPED' ? 'bg-green-100 text-green-700' :
+                job.portal.vendorStatus === 'IN_PRODUCTION' ? 'bg-purple-100 text-purple-700' :
+                'bg-gray-100 text-gray-600'
+              }`}>
+                {job.portal.vendorStatus.replace(/_/g, ' ')}
+              </span>
+            </>
+          )}
+          {job.portal.trackingNumber && (
+            <>
+              <span className="text-gray-300">|</span>
+              <span className="font-mono text-xs">Tracking: {job.portal.trackingNumber}</span>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Files - Compact List */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+          <span className="text-xs font-medium text-gray-500 uppercase">Files ({uploadedFiles.length})</span>
+          <label className="text-xs text-blue-600 hover:underline cursor-pointer">
+            + Upload
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              onChange={(e) => handleFileUpload(e.target.files)}
+              className="hidden"
+            />
+          </label>
+        </div>
+        {uploadedFiles.length > 0 ? (
+          <div className="divide-y divide-gray-100 max-h-32 overflow-y-auto">
+            {uploadedFiles.map((file) => (
+              <div key={file.id} className="px-3 py-1.5 flex items-center justify-between text-xs hover:bg-gray-50">
+                <div className="flex items-center gap-2 min-w-0">
+                  <FileText className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                  <span className="truncate">{file.fileName}</span>
+                  {file.kind === 'VENDOR_PROOF' && (
+                    <span className="px-1 py-0.5 bg-purple-100 text-purple-700 text-[10px] rounded">PROOF</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
                   {file.kind === 'VENDOR_PROOF' && job.customer?.email && (
                     <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedProofFiles([file]);
-                        setShowSendProofModal(true);
-                      }}
-                      className="p-1 text-primary hover:bg-primary/10 rounded"
+                      onClick={() => { setSelectedProofFiles([file]); setShowSendProofModal(true); }}
+                      className="p-1 text-blue-600 hover:bg-blue-50 rounded"
                       title="Send to customer"
                     >
                       <Send className="w-3 h-3" />
                     </button>
                   )}
                   <button
-                    type="button"
                     onClick={() => handleDeleteFile(file.id)}
-                    className="p-1 text-destructive hover:bg-destructive/10 rounded"
-                    title="Delete file"
+                    className="p-1 text-red-400 hover:bg-red-50 rounded"
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>
@@ -1612,65 +1340,12 @@ export function JobDetailModal({
               </div>
             ))}
           </div>
-        )}
-
-        {/* Send All Proofs Button */}
-        {uploadedFiles.filter(f => f.kind === 'VENDOR_PROOF').length > 0 && job.customer?.email && (
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedProofFiles(uploadedFiles.filter(f => f.kind === 'VENDOR_PROOF'));
-              setShowSendProofModal(true);
-            }}
-            className="mt-2 w-full px-3 py-2 bg-primary/10 text-primary text-sm font-medium rounded hover:bg-primary/20 flex items-center justify-center gap-2"
-          >
-            <Send className="w-4 h-4" />
-            Send {uploadedFiles.filter(f => f.kind === 'VENDOR_PROOF').length} Proof{uploadedFiles.filter(f => f.kind === 'VENDOR_PROOF').length !== 1 ? 's' : ''} to Customer
-          </button>
+        ) : (
+          <div className="px-3 py-4 text-center text-xs text-gray-400">
+            Drop files here or click Upload
+          </div>
         )}
       </div>
-
-      {/* Paper Details - Condensed */}
-      {job.paperData && (
-        <div className="bg-card border border-border rounded-lg p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-[10px] font-semibold text-muted-foreground uppercase">Paper Details</span>
-            {job.sizeName && <span className="text-[10px] text-muted-foreground">({job.sizeName})</span>}
-          </div>
-          <div className="grid grid-cols-4 gap-3 text-sm">
-            <div>
-              <span className="text-[10px] text-muted-foreground">Type</span>
-              <p className="font-medium text-foreground">{job.paperData.paperType}</p>
-            </div>
-            <div>
-              <span className="text-[10px] text-muted-foreground">Wt/1000</span>
-              <p className="font-medium text-foreground">{job.paperData.lbsPerThousand} lbs</p>
-            </div>
-            <div>
-              <span className="text-[10px] text-muted-foreground">Paper Cost</span>
-              <p className="font-medium text-foreground">{job.paperData.rawTotal ? formatCurrency(job.paperData.rawTotal) : '—'}</p>
-            </div>
-            <div>
-              <span className="text-[10px] text-muted-foreground">Markup ({job.paperData.markupPercent}%)</span>
-              <p className="font-semibold text-primary">{job.paperData.markupAmount ? formatCurrency(job.paperData.markupAmount) : '—'}</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* References - Compact inline */}
-      {(createdDate || job.bradfordRefNumber || job.customerPONumber) && (
-        <div className="flex items-center gap-4 text-xs text-muted-foreground px-1">
-          {createdDate && (
-            <span>Created {new Date(createdDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-          )}
-          {job.bradfordRefNumber && (
-            <span>JD Ref: <span className="text-primary font-medium">{job.bradfordRefNumber}</span></span>
-          )}
-          {job.invoiceNumber && <span>Invoice #{job.invoiceNumber}</span>}
-          {job.quoteNumber && <span>Quote #{job.quoteNumber}</span>}
-        </div>
-      )}
     </div>
   );
   };
@@ -3161,6 +2836,7 @@ export function JobDetailModal({
   const tabs: { id: TabType; label: string; badge?: number }[] = [
     { id: 'details', label: 'Job Details' },
     { id: 'financials', label: 'Financials & Comms', badge: pendingCommCount },
+    { id: 'change-orders', label: 'Change Orders', badge: changeOrders?.length || 0 },
   ];
 
   return (
@@ -3197,7 +2873,18 @@ export function JobDetailModal({
             )}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3 flex-1 min-w-0">
-                <h2 className="text-xl font-bold text-gray-900 flex-shrink-0">{jobNumber}</h2>
+                {/* Job Number + Base Job ID */}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <h2 className="text-xl font-bold text-gray-900">{jobNumber}</h2>
+                  {job.baseJobId && (
+                    <>
+                      <span className="text-gray-300">|</span>
+                      <span className="text-sm font-mono text-gray-500" title="Canonical Job ID">
+                        {job.baseJobId}
+                      </span>
+                    </>
+                  )}
+                </div>
                 <span className="text-gray-400 flex-shrink-0">•</span>
                 {isEditMode ? (
                   <input
@@ -3210,14 +2897,35 @@ export function JobDetailModal({
                 ) : (
                   <span className="text-gray-600 truncate">{job.title}</span>
                 )}
+                {/* Pathway Badge */}
+                {job.pathway && PATHWAY_STYLES[job.pathway] && (
+                  <span
+                    className={`px-2 py-0.5 ${PATHWAY_STYLES[job.pathway].bg} ${PATHWAY_STYLES[job.pathway].text} text-xs font-bold rounded flex-shrink-0`}
+                    title={`Pathway ${job.pathway}`}
+                  >
+                    {PATHWAY_STYLES[job.pathway].label}
+                  </span>
+                )}
               </div>
-              <button
-                onClick={onClose}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors ml-2"
-                aria-label="Close modal"
-              >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
+              <div className="flex items-center">
+                {onDelete && (
+                  <button
+                    onClick={onDelete}
+                    className="p-2 hover:bg-red-50 rounded-lg transition-colors text-gray-400 hover:text-red-600"
+                    aria-label="Delete job"
+                    title="Delete job"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                )}
+                <button
+                  onClick={onClose}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors ml-1"
+                  aria-label="Close modal"
+                >
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
             </div>
 
             {/* Edit Mode Controls */}
@@ -3401,6 +3109,13 @@ export function JobDetailModal({
 
           </div>
 
+          {/* Job Readiness Banner */}
+          {job?.id && (
+            <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 flex-shrink-0">
+              <JobReadinessCard jobId={job.id} onStatusChange={onRefresh} compact />
+            </div>
+          )}
+
           {/* Tab Navigation */}
           <div className="bg-white border-b border-gray-200 px-6 flex-shrink-0">
             <div className="flex gap-1">
@@ -3443,175 +3158,6 @@ export function JobDetailModal({
                   )}
                 </div>
 
-                {/* QC Status Controls */}
-                {job && (
-                  <div className="mt-6 pt-6 border-t border-gray-200">
-                    <details className="group">
-                      <summary className="flex items-center justify-between cursor-pointer text-sm font-semibold text-gray-700 hover:text-gray-900 py-2">
-                        <span>QC Status Controls (Manual Override)</span>
-                        <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
-                      </summary>
-                      <div className="pt-4 space-y-4">
-                        {/* Art Override */}
-                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <div>
-                            <span className="text-sm font-medium text-gray-700">Artwork</span>
-                            <p className="text-xs text-gray-500">Mark as sent without uploading files</p>
-                          </div>
-                          <label className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={job.artOverride || false}
-                              onChange={async (e) => {
-                                try {
-                                  await jobsApi.updateQCOverrides(job.id, {
-                                    artOverride: e.target.checked
-                                  });
-                                  onRefresh?.();
-                                } catch (err) {
-                                  console.error('Failed to update art override:', err);
-                                }
-                              }}
-                              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                            />
-                            <span className="text-sm text-gray-600">Sent</span>
-                          </label>
-                        </div>
-
-                        {/* Data Override */}
-                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <div>
-                            <span className="text-sm font-medium text-gray-700">Data Files</span>
-                            <p className="text-xs text-gray-500">Mark data status manually</p>
-                          </div>
-                          <select
-                            value={job.dataOverride || ''}
-                            onChange={async (e) => {
-                              try {
-                                const value = e.target.value === '' ? null : e.target.value;
-                                await jobsApi.updateQCOverrides(job.id, {
-                                  dataOverride: value as 'SENT' | 'NA' | null
-                                });
-                                onRefresh?.();
-                              } catch (err) {
-                                console.error('Failed to update data override:', err);
-                              }
-                            }}
-                            className="text-sm border border-gray-300 rounded-md px-2 py-1 focus:ring-blue-500 focus:border-blue-500"
-                          >
-                            <option value="">Auto</option>
-                            <option value="SENT">Sent</option>
-                            <option value="NA">N/A</option>
-                          </select>
-                        </div>
-
-                        {/* Vendor Override */}
-                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <div>
-                            <span className="text-sm font-medium text-gray-700">Vendor Confirmation</span>
-                            <p className="text-xs text-gray-500">Mark as confirmed without portal</p>
-                          </div>
-                          <label className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={job.vendorConfirmOverride || false}
-                              onChange={async (e) => {
-                                try {
-                                  await jobsApi.updateQCOverrides(job.id, {
-                                    vendorConfirmOverride: e.target.checked
-                                  });
-                                  onRefresh?.();
-                                } catch (err) {
-                                  console.error('Failed to update vendor override:', err);
-                                }
-                              }}
-                              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                            />
-                            <span className="text-sm text-gray-600">Confirmed</span>
-                          </label>
-                        </div>
-
-                        {/* Proof Override */}
-                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <div>
-                            <span className="text-sm font-medium text-gray-700">Proof Status</span>
-                            <p className="text-xs text-gray-500">Set proof approval status manually</p>
-                          </div>
-                          <select
-                            value={job.proofOverride || ''}
-                            onChange={async (e) => {
-                              try {
-                                const value = e.target.value === '' ? null : e.target.value;
-                                await jobsApi.updateQCOverrides(job.id, {
-                                  proofOverride: value as 'PENDING' | 'APPROVED' | 'CHANGES_REQUESTED' | null
-                                });
-                                onRefresh?.();
-                              } catch (err) {
-                                console.error('Failed to update proof override:', err);
-                              }
-                            }}
-                            className="text-sm border border-gray-300 rounded-md px-2 py-1 focus:ring-blue-500 focus:border-blue-500"
-                          >
-                            <option value="">Auto</option>
-                            <option value="PENDING">Pending</option>
-                            <option value="APPROVED">Approved</option>
-                            <option value="CHANGES_REQUESTED">Changes Requested</option>
-                          </select>
-                        </div>
-
-                        {/* Tracking Override */}
-                        <div className="p-3 bg-gray-50 rounded-lg">
-                          <div className="flex items-center justify-between mb-2">
-                            <div>
-                              <span className="text-sm font-medium text-gray-700">Tracking</span>
-                              <p className="text-xs text-gray-500">Enter tracking number manually</p>
-                            </div>
-                          </div>
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              placeholder="Tracking number"
-                              defaultValue={job.trackingOverride || ''}
-                              onBlur={async (e) => {
-                                const value = e.target.value.trim();
-                                if (value !== (job.trackingOverride || '')) {
-                                  try {
-                                    await jobsApi.updateQCOverrides(job.id, {
-                                      trackingOverride: value || null
-                                    });
-                                    onRefresh?.();
-                                  } catch (err) {
-                                    console.error('Failed to update tracking:', err);
-                                  }
-                                }
-                              }}
-                              className="flex-1 text-sm border border-gray-300 rounded-md px-2 py-1 focus:ring-blue-500 focus:border-blue-500"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Carrier"
-                              defaultValue={job.trackingCarrierOverride || ''}
-                              onBlur={async (e) => {
-                                const value = e.target.value.trim();
-                                if (value !== (job.trackingCarrierOverride || '')) {
-                                  try {
-                                    await jobsApi.updateQCOverrides(job.id, {
-                                      trackingCarrierOverride: value || undefined
-                                    });
-                                    onRefresh?.();
-                                  } catch (err) {
-                                    console.error('Failed to update carrier:', err);
-                                  }
-                                }
-                              }}
-                              className="w-24 text-sm border border-gray-300 rounded-md px-2 py-1 focus:ring-blue-500 focus:border-blue-500"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </details>
-                  </div>
-                )}
               </>
             )}
             {activeTab === 'financials' && job && (
@@ -3660,9 +3206,38 @@ export function JobDetailModal({
                 </details>
               </div>
             )}
+            {activeTab === 'change-orders' && job && (
+              <ChangeOrderList
+                changeOrders={changeOrders || []}
+                isLoading={isLoadingCOs}
+                effectiveCOVersion={(job as any).effectiveCOVersion}
+                onSelectCO={(co) => {
+                  setSelectedCO(co);
+                  setShowCOModal(true);
+                }}
+                onCreateCO={() => {
+                  setSelectedCO(undefined);
+                  setShowCOModal(true);
+                }}
+              />
+            )}
           </div>
         </div>
       </div>
+
+      {/* Change Order Modal */}
+      {showCOModal && job && (
+        <ChangeOrderModal
+          isOpen={showCOModal}
+          onClose={() => {
+            setShowCOModal(false);
+            setSelectedCO(undefined);
+          }}
+          jobId={job.id}
+          changeOrder={selectedCO}
+          onSuccess={handleCOSuccess}
+        />
+      )}
 
       {/* Email Invoice Modal */}
       {showEmailInvoiceModal && job && (

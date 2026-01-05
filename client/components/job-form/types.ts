@@ -2,6 +2,13 @@
 
 export type RoutingType = 'BRADFORD_JD' | 'THIRD_PARTY_VENDOR';
 export type JobType = 'single' | 'multipart';
+export type JobMetaType = 'MAILING' | 'JOB';
+export type MailFormat = 'SELF_MAILER' | 'POSTCARD' | 'ENVELOPE';
+
+export interface EnvelopeComponentDetail {
+  name: string;
+  size: string;
+}
 
 export interface JobFormData {
   title: string;
@@ -17,6 +24,11 @@ export interface JobFormData {
   routingType: RoutingType;
   jobType: JobType;
   dataIncludedWithArtwork: boolean;
+  // Mailing type fields
+  jobMetaType: JobMetaType;
+  mailFormat: MailFormat | '';
+  envelopeComponents: number;
+  envelopeComponentList: EnvelopeComponentDetail[];
 }
 
 export interface Specs {
@@ -66,6 +78,7 @@ export interface LineItem {
   unitCost: number;
   markupPercent: number;
   unitPrice: number;
+  vendorId?: string;  // Optional per-line vendor override
 }
 
 export interface BradfordFinancials {
@@ -86,7 +99,7 @@ export interface Vendor {
   isPartner?: boolean;
 }
 
-export type JobFormTab = 'basics' | 'specs' | 'pricing' | 'files' | 'mailing';
+export type JobFormTab = 'basics' | 'specs' | 'pricing' | 'files' | 'mailing' | 'qc';
 
 // Mailing-specific types for Lahlouh → Three Z flow
 export interface MailingVersion {

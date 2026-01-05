@@ -284,6 +284,40 @@ model Job {
   trackingOverrideAt        DateTime?
   trackingOverrideBy        String?
 
+  // === JOB READINESS & QC STATUS ===
+  readinessStatus           ReadinessStatus           @default(INCOMPLETE)
+  readinessCalculatedAt     DateTime?
+
+  // QC Flags - what's the status of each requirement
+  qcArtwork                 QcArtworkStatus           @default(PENDING)
+  qcDataFiles               QcDataFilesStatus         @default(NA)
+  qcMailing                 QcMailingStatus           @default(NA)
+  qcSuppliedMaterials       QcSuppliedMaterialsStatus @default(NA)
+  qcVersions                QcVersionsStatus          @default(NA)
+
+  // QC Notes - why something is flagged
+  qcArtworkNote             String?
+  qcDataFilesNote           String?
+  qcMailingNote             String?
+  qcSuppliedMaterialsNote   String?
+  qcVersionsNote            String?
+
+  // === PATHWAY SYSTEM ===
+  pathway                   Pathway?            // P1 (Bradford Partner), P2 (Single Vendor), P3 (Multi-Vendor)
+  baseJobId                 String?   @unique   // Vendor-agnostic ID: ME2-3000
+  masterSeq                 Int?      @unique   // Raw sequence number for debugging
+  jobTypeCode               String?             // MS, MP, ME2, FJ, HJ, BJ
+  vendorCount               Int?                // Computed/cached from execution map
+  effectiveCOVersion        Int?                // Cached: latest approved Change Order version (null = base job)
+
+  // Pathway Meta Flags
+  jobMetaType               JobMetaType?        // MAILING or JOB
+  mailFormat                MailFormat?         // SELF_MAILER, POSTCARD, ENVELOPE
+  envelopeComponents        Int?                // Number of components for envelope mailings
+  hasData                   Boolean   @default(false)
+  hasSamples                Boolean   @default(false)
+  hasVersions               Boolean   @default(false)
+
   File                      File[]
   Invoice                   Invoice[]
   Company                   Company          @relation(fields: [customerId], references: [id])
@@ -303,8 +337,12 @@ model Job {
   VendorRFQs                VendorRFQ[]      // RFQs linked to this job
   JobPortal                 JobPortal?       // Shareable portal for vendor access
   EmailLog                  EmailLog[]       // Email send history for deduplication
+  JobComponent              JobComponent[]   // Multi-component tracking
+  ChangeOrder               ChangeOrder[]    // Change orders for this job
 
   @@index([customerId])
+  @@index([pathway])
+  @@index([baseJobId])
   @@index([paperSource])
   @@index([deletedAt])
   @@index([jobNo])
@@ -314,6 +352,7 @@ model Job {
   @@index([status])
   @@index([vendorId])
   @@index([mailingVendorId])
+  @@index([readinessStatus])
 }
 
 model JobActivity {
@@ -605,6 +644,9 @@ model PurchaseOrder {
   createdAt                                      DateTime  @default(now())
   updatedAt                                      DateTime
 
+  // === PATHWAY SYSTEM ===
+  executionId                                    String?   @unique  // Vendor-specific: ME2-3000-4198.3
+
   // === NEW SIMPLIFIED FIELDS ===
   description                                    String?   // What this PO is for: "Covers", "Bodies", "Diecutting"
   buyCost                                        Decimal?  // Total cost we pay vendor
@@ -784,6 +826,7 @@ model Vendor {
   phone         String?
   isActive      Boolean         @default(true)
   isPartner     Boolean         @default(false)
+  isInternal    Boolean         @default(false)  // True for Bradford/partner facilities (P1 routing)
   createdAt     DateTime        @default(now())
   updatedAt     DateTime
   city          String?
@@ -798,9 +841,11 @@ model Vendor {
   contacts      VendorContact[]
   rfqAssignments VendorRFQVendor[]
   vendorQuotes   VendorQuote[]
+  JobComponent  JobComponent[]  // Components assigned to this vendor
 
   @@index([isActive])
   @@index([name])
+  @@index([isInternal])
 }
 
 model VendorContact {
@@ -917,6 +962,60 @@ enum PaperSource {
   BRADFORD        // Bradford supplies paper (gets 18% markup)
   VENDOR          // Vendor (JD or third party) supplies paper
   CUSTOMER        // Customer supplies paper (no paper cost)
+}
+
+// ========================================
+// PATHWAY SYSTEM - P1/P2/P3 Routing
+// ========================================
+
+enum Pathway {
+  P1  // Bradford Partner (Impact→Bradford→JD), 50/50 split
+  P2  // Single External Vendor, 65/35 split
+  P3  // Multi-Vendor, 65/35 split
+}
+
+enum JobMetaType {
+  MAILING   // Mailing job (postcards, letters, etc.)
+  JOB       // Non-mailing print job
+}
+
+enum MailFormat {
+  SELF_MAILER   // Self-mailer
+  POSTCARD      // Postcard mailing
+  ENVELOPE      // Envelope package mailing
+}
+
+enum ComponentType {
+  PRINT       // Print production
+  FINISHING   // Finishing (cutting, folding, etc.)
+  BINDERY     // Bindery work
+  DATA        // Data processing
+  PROOF       // Proof approval
+  MAILING     // Mailing services
+  SHIPPING    // Shipping/fulfillment
+  SAMPLES     // Sample production
+  OTHER       // Other services
+}
+
+enum ComponentOwner {
+  INTERNAL    // Bradford/JD handles internally
+  VENDOR      // External vendor handles
+  CUSTOMER    // Customer supplies
+}
+
+enum ComponentStatus {
+  NOT_READY   // Not ready for production
+  READY       // Ready for production
+  SENT        // Sent to vendor/production
+  APPROVED    // Approved/complete
+  COMPLETE    // Fully complete
+}
+
+enum ChangeOrderStatus {
+  DRAFT             // Draft, not yet submitted
+  PENDING_APPROVAL  // Awaiting approval
+  APPROVED          // Approved
+  REJECTED          // Rejected
 }
 
 enum SyncTrigger {
@@ -1086,4 +1185,168 @@ enum DropStatus {
   IN_PRODUCTION
   MAILED
   COMPLETED
+}
+
+// ========================================
+// JOB READINESS & QC SYSTEM
+// ========================================
+
+enum ReadinessStatus {
+  INCOMPLETE    // Missing required info, PO blocked
+  READY         // All requirements met, PO can send
+  SENT          // PO sent to vendor
+}
+
+enum QcArtworkStatus {
+  RECEIVED      // Artwork files/links received
+  PENDING       // Waiting for artwork
+  NA            // Not applicable
+}
+
+enum QcDataFilesStatus {
+  IN_ARTWORK    // Data included in artwork link
+  SEPARATE_FILE // Data received as separate file
+  PENDING       // Waiting for data files
+  NA            // Not applicable (not a variable/mailing job)
+}
+
+enum QcMailingStatus {
+  COMPLETE      // All mailing info captured
+  INCOMPLETE    // Missing mailing details
+  NA            // Not a mailing job
+}
+
+enum QcSuppliedMaterialsStatus {
+  RECEIVED          // All supplied materials received
+  TRACKING_RECEIVED // Tracking info received, in transit
+  PENDING           // Waiting for materials
+  NA                // No supplied materials
+}
+
+enum QcVersionsStatus {
+  COMPLETE      // All versions captured
+  INCOMPLETE    // Missing version details
+  NA            // Single version job
+}
+
+// ========================================
+// JOB COMPONENT - Track multi-piece jobs
+// ========================================
+
+enum ComponentSupplier {
+  JD            // JD Graphic produces
+  LAHLOUH       // Lahlouh supplies
+  THIRD_PARTY   // Third party supplier
+}
+
+enum ComponentArtworkStatus {
+  RECEIVED      // Artwork received
+  PENDING       // Waiting for artwork
+  NA            // No artwork needed (supplied item)
+}
+
+enum ComponentMaterialStatus {
+  RECEIVED      // Physical material received
+  IN_TRANSIT    // Tracking received, on the way
+  PENDING       // Waiting for material
+  NA            // JD produces, no material needed
+}
+
+model JobComponent {
+  id                String                  @id @default(cuid())
+  jobId             String
+  name              String                  // e.g., "Letter", "Buckslip", "#10 Envelope", "Magnet"
+  description       String?                 // Additional details
+  quantity          Int?                    // Component quantity if different from job
+
+  // Who supplies this component (LEGACY - kept for backward compat)
+  supplier          ComponentSupplier       @default(JD)
+  supplierName      String?                 // Name if THIRD_PARTY
+
+  // === PATHWAY SYSTEM FIELDS (NEW) ===
+  componentType     ComponentType?          // PRINT, FINISHING, BINDERY, DATA, PROOF, MAILING, SHIPPING, SAMPLES, OTHER
+  owner             ComponentOwner?         // INTERNAL, VENDOR, CUSTOMER (replaces supplier concept)
+  vendorId          String?                 // Required for P2/P3 vendor-owned components
+  status            ComponentStatus         @default(NOT_READY)  // NOT_READY, READY, SENT, APPROVED, COMPLETE
+  artworkRequired   Boolean?                // null = inherit from component type defaults
+  dataRequired      Boolean?                // null = inherit from component type defaults
+  dueDate           DateTime?               // Due date for this component
+
+  // Artwork tracking
+  artworkStatus     ComponentArtworkStatus  @default(PENDING)
+  artworkLink       String?                 // ShareFile, Dropbox, etc.
+  artworkReceivedAt DateTime?
+
+  // Physical material tracking (for supplied items)
+  materialStatus    ComponentMaterialStatus @default(NA)
+  trackingNumber    String?
+  trackingCarrier   String?
+  expectedArrival   DateTime?
+  receivedAt        DateTime?
+
+  // Specs for this component
+  specs             Json?                   // Size, paper, ink, finishing, etc.
+
+  notes             String?
+  sortOrder         Int                     @default(0)
+
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  Job               Job                     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  Vendor            Vendor?                 @relation(fields: [vendorId], references: [id])
+
+  @@index([jobId])
+  @@index([supplier])
+  @@index([vendorId])
+  @@index([componentType])
+  @@index([owner])
+}
+
+// ========================================
+// CHANGE ORDER - Immutable revision tracking
+// ========================================
+
+model ChangeOrder {
+  id              String            @id @default(cuid())
+  jobId           String
+  changeOrderNo   String            @unique  // Format: {baseJobId}-CO{N} e.g., ME2-3000-CO1
+  version         Int                        // 1, 2, 3...
+
+  // What changed
+  summary         String                     // Brief description of changes
+  changes         Json                       // Structured change details
+
+  // Approvals
+  status          ChangeOrderStatus @default(DRAFT)  // DRAFT, PENDING_APPROVAL, APPROVED, REJECTED
+  approvedAt      DateTime?
+  approvedBy      String?
+  rejectionReason String?
+
+  // Vendor impact (for P3 multi-vendor jobs)
+  affectsVendors  String[]                   // Vendor IDs affected by this change
+  requiresNewPO   Boolean           @default(false)
+  requiresReprice Boolean           @default(false)
+
+  // Files & proofs - stored in changes JSON or linked via File model
+  // Future: Add File[] relation if needed
+
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  Job             Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, version])
+  @@index([jobId])
+  @@index([status])
+}
+
+// ========================================
+// MASTER SEQUENCE - Atomic ID generation
+// ========================================
+
+model MasterSequence {
+  id           String   @id @default("master-seq")
+  currentValue Int      @default(3000)  // Starts at 3000 (fresh namespace)
+  updatedAt    DateTime @updatedAt
 }

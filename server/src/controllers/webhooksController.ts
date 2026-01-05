@@ -5,6 +5,7 @@ import { RoutingType, PaperSource, CampaignFrequency, DropStatus } from '@prisma
 import { sendThreeZPOEmail, sendEmailImportNotification } from '../services/emailService';
 import { parsePrintSpecs, parseEmailToJobSpecs } from '../services/openaiService';
 import { parsePurchaseOrder } from '../services/geminiService';
+import { createJobUnified } from '../services/jobCreationService';
 
 /**
  * Webhook payload from Impact Customer Portal or Inventory Release App
@@ -275,16 +276,42 @@ export async function receiveJobWebhook(req: Request, res: Response) {
       });
       console.log(`✅ Updated existing job ${job.jobNo} (${job.id})`);
     } else {
-      // Create new job with ImpactD122's own job number format
-      const newJobNo = await generateJobNumber();
-      job = await prisma.job.create({
+      // === PATHWAY SYSTEM: Use unified job creation service ===
+      // This ensures atomic sequence increment + pathway assignment
+      const { job: createdJob, jobNo, baseJobId, pathway } = await createJobUnified({
+        title: jobTitle,
+        customerId,
+        vendorId: specs.vendorName ? null : null, // Vendor linked later after lookup
+        quantity: payload.quantity || specs.totalUnits || 0,
+        sellPrice: specs.sellPrice || 0,
+        specs: jobSpecs,
+        customerPONumber: payload.customerPONumber || payload.jobNo,
+        dueDate: payload.deliveryDate ? new Date(payload.deliveryDate) : null,
+        routingType: specs.vendorName ? 'THIRD_PARTY_VENDOR' : 'BRADFORD_JD',
+        source: 'WEBHOOK',
+      });
+
+      // Update with additional webhook-specific fields
+      job = await prisma.job.update({
+        where: { id: createdJob.id },
         data: {
-          id: crypto.randomUUID(),
-          jobNo: newJobNo,  // Use generated J-XXXX format
-          ...jobData,
-          createdAt: payload.createdAt ? new Date(payload.createdAt) : new Date(),
+          externalJobId: payload.externalJobId,
+          externalSource,
+          description: jobDescription,
+          sizeName: payload.sizeName,
+          status: mapStatus(payload.status),
+          // Vendor ship-to fields for release app
+          ...(isFromReleaseApp && specs.shippingLocation ? {
+            vendorShipToName: specs.shippingLocation,
+            vendorShipToAddress: specs.shippingAddress?.address,
+            vendorShipToCity: specs.shippingAddress?.city,
+            vendorShipToState: specs.shippingAddress?.state,
+            vendorShipToZip: specs.shippingAddress?.zip,
+          } : {}),
         },
       });
+
+      console.log(`🛤️ [receiveJobWebhook] Created via unified service: pathway=${pathway} | baseJobId=${baseJobId}`);
       console.log(`✅ Created new job ${job.jobNo} (${job.id}) from external ${payload.jobNo}`);
     }
 
@@ -592,7 +619,6 @@ export async function receiveCampaignWebhook(req: Request, res: Response) {
         });
 
         // Create a Job for each drop
-        const jobNo = await generateJobNumber();
         const dropDateStr = mailDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
         // Calculate sell price: quantity * pricePerM / 1000
@@ -603,32 +629,39 @@ export async function receiveCampaignWebhook(req: Request, res: Response) {
           ? `${payload.customerPONumber}-${dropIndex}`
           : null;
 
-        const job = await prisma.job.create({
+        // === PATHWAY SYSTEM: Use unified job creation service ===
+        const { job: createdJob, baseJobId, pathway } = await createJobUnified({
+          title: `${payload.name} - ${dropDateStr}`,
+          customerId,
+          quantity: payload.quantity,
+          sellPrice,
+          sizeName: payload.sizeName,
+          customerPONumber: jobCustomerPO,
+          mailDate,
+          specs: {
+            campaignId: campaign.id,
+            externalCampaignId: payload.externalCampaignId,
+            frequency: payload.frequency,
+            source: 'campaign-webhook',
+            productType: payload.specs?.productType,
+            paperStock: payload.specs?.paperStock,
+            printColors: payload.specs?.printColors,
+          },
+          jobMetaType: 'MAILING', // Campaign drops are mailings
+          routingType: 'BRADFORD_JD', // Default to Bradford routing
+          source: 'WEBHOOK',
+        });
+
+        // Update with campaign-specific fields
+        const job = await prisma.job.update({
+          where: { id: createdJob.id },
           data: {
-            id: crypto.randomUUID(),
-            jobNo,
-            customerId,
-            title: `${payload.name} - ${dropDateStr}`,
             description: `Campaign drop for ${payload.companyName}`,
-            sizeName: payload.sizeName,
-            quantity: payload.quantity,
-            sellPrice,
-            mailDate,
-            customerPONumber: jobCustomerPO,
-            status: 'ACTIVE',
-            specs: {
-              campaignId: campaign.id,
-              externalCampaignId: payload.externalCampaignId,
-              frequency: payload.frequency,
-              source: 'campaign-webhook',
-              productType: payload.specs?.productType,
-              paperStock: payload.specs?.paperStock,
-              printColors: payload.specs?.printColors,
-            },
             externalSource: 'impact-customer-portal',
-            updatedAt: new Date(),
           },
         });
+
+        console.log(`🛤️ [receiveCampaignWebhook] Drop job created: pathway=${pathway} | baseJobId=${baseJobId}`);
 
         // Create PO from customer (the order/agreement)
         // Find Impact company as the origin for the PO
@@ -923,42 +956,43 @@ export async function receiveEmailToJobWebhook(req: Request, res: Response) {
       customerId = await findOrCreateCustomer(companyName);
     }
 
-    // Generate job number
-    const jobNo = await generateJobNumber();
-
     // Build job title
     const jobTitle = parsedData.title || payload.subject || `Email Import - ${new Date().toLocaleDateString()}`;
 
-    // Create the job
-    const job = await prisma.job.create({
-      data: {
-        id: crypto.randomUUID(),
-        jobNo,
-        customerId,
-        title: jobTitle,
-        description: parsedData.description || null,
-        customerPONumber: parsedData.customerPONumber || null,
-        quantity: parsedData.quantity || null,
-        sizeName: parsedData.specs?.finishedSize || null,
-        sellPrice: parsedData.poTotal || null,
-        deliveryDate: parsedData.dueDate ? new Date(parsedData.dueDate) : null,
-        mailDate: parsedData.mailDate ? new Date(parsedData.mailDate) : null,
-        notes: buildJobNotes(parsedData, payload),
-        specs: {
-          ...parsedData.specs,
-          originalEmail: {
-            from: payload.from,
-            subject: payload.subject,
-            receivedAt: new Date().toISOString(),
-          },
-          requiresReview: true,
+    // === PATHWAY SYSTEM: Use unified job creation service ===
+    const { job: createdJob, jobNo, baseJobId, pathway } = await createJobUnified({
+      title: jobTitle,
+      customerId,
+      quantity: parsedData.quantity || 0,
+      sellPrice: parsedData.poTotal || 0,
+      sizeName: parsedData.specs?.finishedSize || null,
+      customerPONumber: parsedData.customerPONumber || null,
+      dueDate: parsedData.dueDate ? new Date(parsedData.dueDate) : null,
+      mailDate: parsedData.mailDate ? new Date(parsedData.mailDate) : null,
+      notes: buildJobNotes(parsedData, payload),
+      specs: {
+        ...parsedData.specs,
+        originalEmail: {
+          from: payload.from,
+          subject: payload.subject,
+          receivedAt: new Date().toISOString(),
         },
-        status: 'ACTIVE',
+        requiresReview: true,
+      },
+      routingType: 'THIRD_PARTY_VENDOR', // Email imports typically use external vendors
+      source: 'EMAIL',
+    });
+
+    // Update with email-specific fields
+    const job = await prisma.job.update({
+      where: { id: createdJob.id },
+      data: {
+        description: parsedData.description || null,
         externalSource: 'email-import',
-        updatedAt: new Date(),
       },
     });
 
+    console.log(`🛤️ [receiveEmailToJobWebhook] Created via unified service: pathway=${pathway} | baseJobId=${baseJobId}`);
     console.log(`✅ Created job ${job.jobNo} from email import`);
 
     // Save the PO PDF attachment to the file system and database

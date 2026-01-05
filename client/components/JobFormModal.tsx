@@ -189,6 +189,15 @@ export function JobFormModal({
       paperLbs: specs.paperLbs ? parseFloat(specs.paperLbs as any) : null,
     } : null;
 
+    // Build components array for envelope mailings
+    const components = formData.jobMetaType === 'MAILING' && formData.mailFormat === 'ENVELOPE'
+      ? formData.envelopeComponentList.map((comp, idx) => ({
+          name: comp.name || `Component ${idx + 1}`,
+          specs: { size: comp.size },
+          sortOrder: idx
+        }))
+      : undefined;
+
     onSubmit({
       ...formData,
       // Clear vendorId for multipart jobs (vendors assigned per component)
@@ -199,6 +208,8 @@ export function JobFormModal({
       bradfordCut: !isBradfordVendor && bradfordCut > 0 ? bradfordCut : null,
       bradfordPaperLbs: specs.paperLbs ? parseFloat(specs.paperLbs as any) : null,
       pendingFiles: pendingFiles.length > 0 ? pendingFiles : undefined,
+      // Mailing fields
+      components,
     });
     onClose();
   };

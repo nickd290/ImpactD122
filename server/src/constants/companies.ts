@@ -183,3 +183,26 @@ export function calculateProfitShares(spreadAmount: number, paperMarkup: number 
 
   return { bradfordShare, impactShare, bradfordTotal };
 }
+
+// ============================================================================
+// TEST IDS (for verification scripts)
+// ============================================================================
+
+/**
+ * Test identifiers for verification and development testing.
+ * IMPORTANT: Replace with actual IDs from your database before running tests.
+ *
+ * To find valid IDs, run:
+ *   SELECT id, name FROM "Company" WHERE type = 'CUSTOMER' LIMIT 5;
+ *   SELECT id, name, "vendorCode" FROM "Vendor" WHERE "isActive" = true LIMIT 5;
+ */
+export const TEST_IDS = {
+  /** ABT customer */
+  CUSTOMER_ID: 'c718e0f5-5b43-4511-af57-5e941ec6b726',
+
+  /** JD Graphic vendor (code: 3670) */
+  VENDOR_ID: '608d96f7-d4e7-4768-a05e-683538c33418',
+
+  /** Integrated Mail Industries (for P3 multi-vendor testing) */
+  VENDOR_ID_2: '0fb48e61-4c8f-4ab3-9303-25b252c32205',
+} as const;

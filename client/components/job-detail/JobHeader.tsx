@@ -1,9 +1,36 @@
 import React, { useState } from 'react';
 import { X, Edit2, Save, MoreHorizontal, Mail, FileText, Receipt, Send, Download } from 'lucide-react';
+import type { ChangeOrderStatus } from '../../types';
+
+// Pathway badge styling
+const PATHWAY_STYLES = {
+  P1: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'P1' },
+  P2: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'P2' },
+  P3: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'P3' },
+} as const;
+
+// CO badge styling
+const CO_STATUS_STYLES = {
+  DRAFT: { bg: 'bg-gray-100', text: 'text-gray-600' },
+  PENDING_APPROVAL: { bg: 'bg-yellow-100', text: 'text-yellow-700' },
+  APPROVED: { bg: 'bg-green-100', text: 'text-green-700' },
+  REJECTED: { bg: 'bg-red-100', text: 'text-red-600' },
+} as const;
+
+type Pathway = 'P1' | 'P2' | 'P3';
+
+interface LatestCOInfo {
+  version: number;
+  status: ChangeOrderStatus;
+}
 
 interface JobHeaderProps {
   jobNumber: string;
   title: string;
+  baseJobId?: string | null;  // Canonical job ID (e.g., ME2-3000)
+  pathway?: Pathway | null;   // P1, P2, or P3
+  effectiveCOVersion?: number | null;  // Latest approved CO version
+  latestCO?: LatestCOInfo | null;      // Latest CO (any status)
   isPartner?: boolean;
   isEditMode: boolean;
   isSaving: boolean;
@@ -19,9 +46,94 @@ interface JobHeaderProps {
   onSendEmail?: (type: 'invoice' | 'po') => void;
 }
 
+// Helper to render CO badge
+function COBadge({ effectiveCOVersion, latestCO }: { effectiveCOVersion?: number | null; latestCO?: LatestCOInfo | null }) {
+  // No COs at all
+  if (!latestCO) {
+    return (
+      <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 text-[10px] font-medium rounded" title="No Change Orders">
+        No CO
+      </span>
+    );
+  }
+
+  const { version: latestVersion, status: latestStatus } = latestCO;
+  const effective = effectiveCOVersion ?? 0;
+
+  // Latest is APPROVED and is the effective version
+  if (latestStatus === 'APPROVED' && latestVersion === effective) {
+    const style = CO_STATUS_STYLES.APPROVED;
+    return (
+      <span className={`px-1.5 py-0.5 ${style.bg} ${style.text} text-[10px] font-bold rounded`} title="Approved Change Order">
+        CO{effective} Approved
+      </span>
+    );
+  }
+
+  // Latest is PENDING_APPROVAL and newer than effective
+  if (latestStatus === 'PENDING_APPROVAL' && latestVersion > effective) {
+    const style = CO_STATUS_STYLES.PENDING_APPROVAL;
+    const effectiveLabel = effective > 0 ? `CO${effective}` : 'Base';
+    return (
+      <span className={`px-1.5 py-0.5 ${style.bg} ${style.text} text-[10px] font-bold rounded`} title={`Pending approval, effective: ${effectiveLabel}`}>
+        CO{latestVersion} Pending <span className="font-normal">(eff: {effectiveLabel})</span>
+      </span>
+    );
+  }
+
+  // Latest is DRAFT and newer than effective
+  if (latestStatus === 'DRAFT' && latestVersion > effective) {
+    const style = CO_STATUS_STYLES.DRAFT;
+    const effectiveLabel = effective > 0 ? `CO${effective}` : 'Base';
+    return (
+      <span className={`px-1.5 py-0.5 ${style.bg} ${style.text} text-[10px] font-medium rounded`} title={`Draft change order, effective: ${effectiveLabel}`}>
+        CO{latestVersion} Draft <span className="text-gray-400">(eff: {effectiveLabel})</span>
+      </span>
+    );
+  }
+
+  // Latest is REJECTED - show effective if exists, otherwise base
+  if (latestStatus === 'REJECTED') {
+    if (effective > 0) {
+      const style = CO_STATUS_STYLES.APPROVED;
+      return (
+        <span className={`px-1.5 py-0.5 ${style.bg} ${style.text} text-[10px] font-bold rounded`} title="Latest CO rejected, showing effective">
+          CO{effective} Approved
+        </span>
+      );
+    }
+    return (
+      <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 text-[10px] font-medium rounded" title="Latest CO rejected, no approved CO">
+        No CO
+      </span>
+    );
+  }
+
+  // Fallback: show effective if exists
+  if (effective > 0) {
+    const style = CO_STATUS_STYLES.APPROVED;
+    return (
+      <span className={`px-1.5 py-0.5 ${style.bg} ${style.text} text-[10px] font-bold rounded`}>
+        CO{effective} Approved
+      </span>
+    );
+  }
+
+  // No effective, show "No CO"
+  return (
+    <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 text-[10px] font-medium rounded">
+      No CO
+    </span>
+  );
+}
+
 export function JobHeader({
   jobNumber,
   title,
+  baseJobId,
+  pathway,
+  effectiveCOVersion,
+  latestCO,
   isPartner,
   isEditMode,
   isSaving,
@@ -49,9 +161,20 @@ export function JobHeader({
       )}
 
       <div className="flex items-center justify-between gap-4">
-        {/* Job Title */}
+        {/* Job Title + IDs */}
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <span className="text-lg font-semibold text-gray-900 flex-shrink-0">{jobNumber}</span>
+          {/* Job Number + Base Job ID */}
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <span className="text-lg font-semibold text-gray-900">{jobNumber}</span>
+            {baseJobId && (
+              <>
+                <span className="text-gray-300">|</span>
+                <span className="text-sm font-mono text-gray-500" title="Canonical Job ID">
+                  {baseJobId}
+                </span>
+              </>
+            )}
+          </div>
           <span className="text-gray-300">·</span>
           {isEditMode ? (
             <input
@@ -64,11 +187,23 @@ export function JobHeader({
           ) : (
             <span className="text-gray-600 text-sm truncate">{title}</span>
           )}
-          {isPartner && (
-            <span className="px-1.5 py-0.5 bg-orange-500 text-white text-[10px] font-bold rounded flex-shrink-0">
-              PARTNER
-            </span>
-          )}
+          {/* Badges: Pathway + CO + Partner */}
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {pathway && PATHWAY_STYLES[pathway] && (
+              <span
+                className={`px-1.5 py-0.5 ${PATHWAY_STYLES[pathway].bg} ${PATHWAY_STYLES[pathway].text} text-[10px] font-bold rounded`}
+                title={`Pathway ${pathway}`}
+              >
+                {PATHWAY_STYLES[pathway].label}
+              </span>
+            )}
+            <COBadge effectiveCOVersion={effectiveCOVersion} latestCO={latestCO} />
+            {isPartner && (
+              <span className="px-1.5 py-0.5 bg-orange-500 text-white text-[10px] font-bold rounded">
+                PARTNER
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Actions */}

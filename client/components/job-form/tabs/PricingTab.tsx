@@ -1,6 +1,6 @@
 import React from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import { JobFormData, LineItem } from '../types';
+import { JobFormData, LineItem, Vendor } from '../types';
 
 interface PricingTabProps {
   formData: JobFormData;
@@ -13,6 +13,8 @@ interface PricingTabProps {
   setBradfordCut: (value: number) => void;
   useBradford35Percent: boolean;
   setUseBradford35Percent: (value: boolean) => void;
+  vendors: Vendor[];
+  defaultVendorId: string;
 }
 
 export function PricingTab({
@@ -26,6 +28,8 @@ export function PricingTab({
   setBradfordCut,
   useBradford35Percent,
   setUseBradford35Percent,
+  vendors,
+  defaultVendorId,
 }: PricingTabProps) {
 
   const addLineItem = () => {
@@ -151,8 +155,25 @@ export function PricingTab({
                 />
               </div>
 
-              {/* Quantity */}
+              {/* Vendor */}
               <div className="col-span-2">
+                <label className="block text-xs text-gray-500 mb-1">Vendor</label>
+                <select
+                  value={item.vendorId || defaultVendorId || ''}
+                  onChange={(e) => updateLineItem(index, 'vendorId', e.target.value || undefined)}
+                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded"
+                >
+                  <option value="">Select vendor...</option>
+                  {vendors.map((vendor) => (
+                    <option key={vendor.id} value={vendor.id}>
+                      {vendor.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Quantity */}
+              <div className="col-span-1">
                 <label className="block text-xs text-gray-500 mb-1">Qty</label>
                 <input
                   type="number"
@@ -164,8 +185,8 @@ export function PricingTab({
               </div>
 
               {/* Unit Cost */}
-              <div className="col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">Cost/ea</label>
+              <div className="col-span-1">
+                <label className="block text-xs text-gray-500 mb-1">Cost</label>
                 <input
                   type="number"
                   step="0.01"
@@ -188,7 +209,7 @@ export function PricingTab({
 
               {/* Unit Price */}
               <div className="col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">Price/ea</label>
+                <label className="block text-xs text-gray-500 mb-1">Price</label>
                 <input
                   type="number"
                   step="0.01"

@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { User, Settings, DollarSign, Paperclip, Mail } from 'lucide-react';
+import { User, Settings, DollarSign, Paperclip, Mail, ClipboardCheck } from 'lucide-react';
 import { JobFormData, Specs, LineItem, JobFormTab, Customer, Vendor, MailingData } from './types';
 import { BasicsTab } from './tabs/BasicsTab';
 import { SpecsTab } from './tabs/SpecsTab';
 import { PricingTab } from './tabs/PricingTab';
 import { FilesTab } from './tabs/FilesTab';
 import { MailingTab } from './tabs/MailingTab';
+import { QcTab } from './tabs/QcTab';
 
 interface ParsedCustomer {
   name: string;
@@ -45,6 +46,7 @@ const baseTabs: { id: JobFormTab; label: string; icon: React.ComponentType<{ cla
 ];
 
 const mailingTab = { id: 'mailing' as JobFormTab, label: 'Mailing', icon: Mail };
+const qcTab = { id: 'qc' as JobFormTab, label: 'QC', icon: ClipboardCheck };
 
 const getInitialMailingData = (data: any): MailingData => ({
   mailingVendorId: data?.mailingVendorId || '',
@@ -72,6 +74,11 @@ const getInitialFormData = (data: any): JobFormData => ({
   routingType: data?.routingType || 'BRADFORD_JD',
   jobType: data?.jobType || 'single',
   dataIncludedWithArtwork: data?.dataIncludedWithArtwork || false,
+  // Mailing type fields
+  jobMetaType: data?.jobMetaType || 'JOB',
+  mailFormat: data?.mailFormat || '',
+  envelopeComponents: data?.envelopeComponents || 2,
+  envelopeComponentList: data?.envelopeComponentList || [{ name: '', size: '' }, { name: '', size: '' }],
 });
 
 const getInitialSpecs = (data: any): Specs => ({
@@ -146,8 +153,13 @@ export function TabbedJobForm({
   const hasMailingVendor = !!initialData?.mailingVendorId;
   const showMailingTab = isLahlouhJob || hasMailingVendor;
 
+  // Show QC tab for existing jobs (jobs that have an ID)
+  const isExistingJob = !!initialData?.id;
+
   // Build tabs array conditionally
-  const tabs = showMailingTab ? [...baseTabs, mailingTab] : baseTabs;
+  let tabs = [...baseTabs];
+  if (showMailingTab) tabs.push(mailingTab);
+  if (isExistingJob) tabs.push(qcTab);
 
   const [useCustomSize, setUseCustomSize] = useState(false);
   const [customSizeValue, setCustomSizeValue] = useState('');
@@ -265,6 +277,8 @@ export function TabbedJobForm({
             setBradfordCut={setBradfordCut}
             useBradford35Percent={useBradford35Percent}
             setUseBradford35Percent={setUseBradford35Percent}
+            vendors={vendors}
+            defaultVendorId={formData.vendorId}
           />
         )}
 
@@ -295,6 +309,10 @@ export function TabbedJobForm({
             customerJobNumber={initialData?.customerJobNumber}
             poNumber={initialData?.customerPONumber}
           />
+        )}
+
+        {activeTab === 'qc' && isExistingJob && (
+          <QcTab jobId={initialData?.id} />
         )}
       </div>
     </div>
