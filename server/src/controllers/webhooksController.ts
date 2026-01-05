@@ -63,6 +63,8 @@ interface PortalJobPayload {
   deliveryDate?: string;
   createdAt?: string;
   externalJobId: string; // The portal's job ID or release ID
+  artworkUrl?: string | null; // Direct link to artwork file
+  dataFileUrl?: string | null; // Direct link to data file
 }
 
 /**
@@ -206,6 +208,9 @@ export async function receiveJobWebhook(req: Request, res: Response) {
     const jobSpecs = {
       ...specs,
       externalJobNo: payload.jobNo,  // Store external job/release number in specs
+      // Include artwork and data file URLs from customer portal
+      ...(payload.artworkUrl ? { artworkUrl: payload.artworkUrl } : {}),
+      ...(payload.dataFileUrl ? { dataFileUrl: payload.dataFileUrl } : {}),
     };
 
     // Determine if this is from inventory-release-app
