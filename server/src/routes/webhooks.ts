@@ -4,6 +4,7 @@ import {
   receiveCampaignWebhook,
   receiveEmailToJobWebhook,
   webhookHealth,
+  linkExternalJob,
 } from '../controllers/webhooksController';
 
 const router = Router();
@@ -19,5 +20,8 @@ router.post('/campaigns', receiveCampaignWebhook);
 
 // Email-to-Job import (from n8n/Zapier email forwarding)
 router.post('/email-to-job', receiveEmailToJobWebhook);
+
+// Link an existing job to external job ID (for syncing jobs created separately)
+router.post('/link-job', linkExternalJob);
 
 export default router;

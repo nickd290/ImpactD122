@@ -205,9 +205,40 @@ export async function receiveJobWebhook(req: Request, res: Response) {
     const customerId = await findOrCreateCustomer(payload.companyName, payload.companyId);
 
     // Check if job already exists by externalJobId
-    const existingJob = await prisma.job.findUnique({
+    let existingJob = await prisma.job.findUnique({
       where: { externalJobId: payload.externalJobId },
     });
+
+    // Fallback: If no match by externalJobId, try matching by customerPONumber (the portal's jobNo)
+    // This handles cases where jobs were created before linking was established
+    if (!existingJob && payload.jobNo) {
+      const matchByPO = await prisma.job.findFirst({
+        where: {
+          customerPONumber: payload.jobNo,
+          externalJobId: null, // Only match unlinked jobs
+        },
+      });
+      if (matchByPO) {
+        console.log(`🔗 Found unlinked job ${matchByPO.jobNo} by customerPONumber=${payload.jobNo}, will link it`);
+        existingJob = matchByPO;
+      }
+    }
+
+    // Second fallback: Try matching by title for jobs that might have different PO numbers
+    if (!existingJob && payload.title) {
+      const matchByTitle = await prisma.job.findFirst({
+        where: {
+          title: payload.title,
+          customerId,
+          externalJobId: null, // Only match unlinked jobs
+        },
+        orderBy: { createdAt: 'desc' }, // Get most recent if multiple
+      });
+      if (matchByTitle) {
+        console.log(`🔗 Found unlinked job ${matchByTitle.jobNo} by title="${payload.title}", will link it`);
+        existingJob = matchByTitle;
+      }
+    }
 
     let job;
 
@@ -1145,6 +1176,85 @@ export async function receiveEmailToJobWebhook(req: Request, res: Response) {
     return res.status(500).json({
       error: 'Internal Server Error',
       message: process.env.NODE_ENV === 'development' ? error.message : 'Failed to process email webhook',
+    });
+  }
+}
+
+/**
+ * Link an external job by setting externalJobId
+ * This allows syncing jobs created separately in ImpactD122 and Customer Portal
+ */
+export async function linkExternalJob(req: Request, res: Response) {
+  try {
+    // Validate webhook secret
+    if (!validateWebhookSecret(req)) {
+      return res.status(401).json({ error: 'Invalid webhook secret' });
+    }
+
+    const { jobId, externalJobId, jobNo } = req.body;
+
+    // Require either jobId or jobNo to identify the target job
+    if (!jobId && !jobNo) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Either jobId or jobNo required to identify job',
+      });
+    }
+
+    if (!externalJobId) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'externalJobId is required',
+      });
+    }
+
+    // Find the job
+    let job;
+    if (jobId) {
+      job = await prisma.job.findUnique({ where: { id: jobId } });
+    } else if (jobNo) {
+      job = await prisma.job.findFirst({ where: { jobNo } });
+    }
+
+    if (!job) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: `Job not found: ${jobId || jobNo}`,
+      });
+    }
+
+    // Check if already linked
+    if (job.externalJobId && job.externalJobId !== externalJobId) {
+      return res.status(409).json({
+        error: 'Conflict',
+        message: `Job is already linked to external ID: ${job.externalJobId}`,
+        currentExternalId: job.externalJobId,
+      });
+    }
+
+    // Update the job with externalJobId
+    const updatedJob = await prisma.job.update({
+      where: { id: job.id },
+      data: {
+        externalJobId,
+        updatedAt: new Date(),
+      },
+    });
+
+    console.log(`🔗 Linked job ${job.jobNo} to external ID: ${externalJobId}`);
+
+    return res.json({
+      success: true,
+      jobId: updatedJob.id,
+      jobNo: updatedJob.jobNo,
+      externalJobId: updatedJob.externalJobId,
+    });
+
+  } catch (error: any) {
+    console.error('❌ Link job error:', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Failed to link job',
     });
   }
 }
