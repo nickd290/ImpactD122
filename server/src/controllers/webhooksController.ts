@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { prisma } from '../utils/prisma';
-import { RoutingType, PaperSource, CampaignFrequency, DropStatus } from '@prisma/client';
+import { RoutingType, PaperSource, CampaignFrequency, DropStatus, FileKind } from '@prisma/client';
 import { sendThreeZPOEmail, sendEmailImportNotification } from '../services/emailService';
 import { parsePrintSpecs, parseEmailToJobSpecs } from '../services/openaiService';
 import { parsePurchaseOrder } from '../services/geminiService';
@@ -63,6 +63,14 @@ interface PortalJobPayload {
   deliveryDate?: string;
   createdAt?: string;
   externalJobId: string; // The portal's job ID or release ID
+  // Files from Portal
+  files?: Array<{
+    id: string;
+    fileName: string;
+    kind: string;
+    size: number;
+    downloadUrl: string;
+  }>;
   artworkUrl?: string | null; // Direct link to artwork file
   dataFileUrl?: string | null; // Direct link to data file
 }
@@ -338,6 +346,51 @@ export async function receiveJobWebhook(req: Request, res: Response) {
         changedByRole: 'BROKER_ADMIN',
       },
     });
+
+    // Create File records for files sent via webhook from Portal
+    if (payload.files && payload.files.length > 0) {
+      console.log(`📎 Processing ${payload.files.length} files from webhook...`);
+      for (const file of payload.files) {
+        try {
+          // Check if file already exists for this job
+          const existingFile = await prisma.file.findFirst({
+            where: {
+              jobId: job.id,
+              fileName: file.fileName,
+            },
+          });
+
+          if (!existingFile) {
+            // Map Portal FileKind to ImpactD122 FileKind
+            let fileKind: FileKind = FileKind.ARTWORK;
+            if (file.kind === 'ARTWORK') fileKind = FileKind.ARTWORK;
+            else if (file.kind === 'DATA_FILE') fileKind = FileKind.DATA_FILE;
+            else if (file.kind === 'PROOF') fileKind = FileKind.PROOF;
+            else if (file.kind === 'INVOICE') fileKind = FileKind.INVOICE;
+
+            await prisma.file.create({
+              data: {
+                id: crypto.randomUUID(),
+                jobId: job.id,
+                kind: fileKind,
+                objectKey: file.downloadUrl, // Store the portal download URL
+                fileName: file.fileName,
+                mimeType: 'application/octet-stream',
+                size: file.size || 0,
+                checksum: `portal:${file.id}`, // Track the portal file ID
+                uploadedBy: `webhook:${externalSource}`,
+              },
+            });
+            console.log(`  ✅ Created file record: ${file.fileName} (${file.kind})`);
+          } else {
+            console.log(`  ⏭️ File already exists: ${file.fileName}`);
+          }
+        } catch (fileError) {
+          console.error(`  ⚠️ Failed to create file record for ${file.fileName}:`, fileError);
+          // Don't fail the webhook if file creation fails
+        }
+      }
+    }
 
     // Create PurchaseOrder to vendor if buyCost is provided (for third-party vendor jobs)
     let purchaseOrder = null;
