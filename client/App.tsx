@@ -142,14 +142,33 @@ function App() {
   const handleSubmitJobForm = async (jobData: any) => {
     try {
       // Extract pending files before creating job
-      const { pendingFiles, ...jobDataWithoutFiles } = jobData;
+      const { pendingFiles, pendingCustomerPOFile, ...jobDataWithoutFiles } = jobData;
 
       // Create the job
       const newJob = await jobsApi.create(jobDataWithoutFiles);
       setJobs([newJob, ...jobs]);
       setSelectedJob(newJob);
 
-      // Upload any pending files after job creation
+      let filesUploaded = false;
+
+      // Upload customer PO file if provided (new simplified form)
+      if (pendingCustomerPOFile) {
+        try {
+          const formData = new FormData();
+          formData.append('file', pendingCustomerPOFile);
+          formData.append('kind', 'CUSTOMER_PO');
+          await fetch(`/api/jobs/${newJob.id}/files`, {
+            method: 'POST',
+            body: formData,
+          });
+          filesUploaded = true;
+          console.log('✅ Customer PO file uploaded successfully');
+        } catch (error) {
+          console.error('Failed to upload customer PO file:', error);
+        }
+      }
+
+      // Upload any pending files after job creation (legacy support)
       if (pendingFiles && pendingFiles.length > 0) {
         let uploadedCount = 0;
         for (const file of pendingFiles) {
@@ -168,12 +187,8 @@ function App() {
           }
         }
         if (uploadedCount > 0) {
-          toast.success(`Job created with ${uploadedCount} file(s) uploaded`);
-        } else {
-          toast.success('Job created successfully');
+          filesUploaded = true;
         }
-      } else {
-        toast.success('Job created successfully');
       }
 
       // Upload original PO file if this job was created from parsed PO
@@ -186,6 +201,7 @@ function App() {
             method: 'POST',
             body: formData,
           });
+          filesUploaded = true;
           console.log('✅ Original PO file uploaded successfully');
         } catch (error) {
           console.error('Failed to upload original PO file:', error);
@@ -193,6 +209,8 @@ function App() {
         // Clear the original PO file reference
         setOriginalPOFile(null);
       }
+
+      toast.success(filesUploaded ? 'Job created with file(s) uploaded' : 'Job created successfully');
     } catch (error) {
       console.error('Failed to create job:', error);
       toast.error('Failed to create job. Please try again.');

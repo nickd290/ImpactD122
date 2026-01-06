@@ -617,6 +617,234 @@ export const sendProofToCustomer = async (req: Request, res: Response) => {
   }
 };
 
+// Email vendor with customer's PO PDF attached (simplified job flow)
+export const emailVendorWithCustomerPO = async (req: Request, res: Response) => {
+  try {
+    const { jobId } = req.params;
+    const { recipientEmail } = req.body;
+
+    console.log('📧 Sending customer PO to vendor:', { jobId, recipientEmail });
+
+    // Fetch job with customer PO file
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      include: {
+        Company: true,
+        Vendor: {
+          include: {
+            contacts: true,
+          },
+        },
+        File: {
+          where: { kind: 'CUSTOMER_PO' },
+        },
+      },
+    });
+
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    if (!job.Vendor) {
+      return res.status(400).json({ error: 'Job has no vendor assigned' });
+    }
+
+    // Find customer PO file
+    const customerPOFile = job.File[0];
+    if (!customerPOFile) {
+      return res.status(400).json({ error: 'No customer PO file attached to this job' });
+    }
+
+    // Collect vendor emails
+    const vendorEmails: string[] = [];
+    if (recipientEmail) {
+      vendorEmails.push(recipientEmail);
+    } else if (job.Vendor.email) {
+      vendorEmails.push(job.Vendor.email);
+    }
+    if (job.Vendor.contacts) {
+      for (const contact of job.Vendor.contacts) {
+        if (contact.email && !vendorEmails.includes(contact.email)) {
+          vendorEmails.push(contact.email);
+        }
+      }
+    }
+
+    if (vendorEmails.length === 0) {
+      return res.status(400).json({ error: 'Vendor has no email addresses' });
+    }
+
+    // Read the customer PO file
+    const filePath = `uploads/${customerPOFile.objectKey}`;
+    let fileContent: string | null = null;
+
+    if (fs.existsSync(filePath)) {
+      try {
+        const fileBuffer = fs.readFileSync(filePath);
+        fileContent = fileBuffer.toString('base64');
+      } catch (err) {
+        console.error('Failed to read customer PO file:', err);
+        return res.status(500).json({ error: 'Failed to read customer PO file' });
+      }
+    } else {
+      return res.status(404).json({ error: 'Customer PO file not found on disk' });
+    }
+
+    // Build email
+    const vendorName = job.Vendor.name || 'Vendor';
+    const customerName = job.Company?.name || 'Customer';
+    const jobNo = job.jobNo;
+    const jobTitle = job.title || 'Print Job';
+    const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'brandon@impactdirectprinting.com';
+    const jobEmail = getJobEmailAddress(jobNo);
+
+    // Determine branding based on routing type
+    const isBradfordRouting = job.routingType === 'BRADFORD_JD';
+    const companyName = isBradfordRouting ? 'Bradford Exchange Ltd.' : 'Impact Direct Printing';
+    const headerColor = isBradfordRouting ? '#003366' : '#2563eb';
+    const accentColor = isBradfordRouting ? '#CC9900' : '#2563eb';
+
+    // Format due date
+    const dueDate = job.deliveryDate
+      ? new Date(job.deliveryDate).toLocaleDateString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        })
+      : 'TBD';
+
+    const body = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background-color: ${headerColor}; padding: 20px; text-align: center;${isBradfordRouting ? ' border-bottom: 4px solid ' + accentColor + ';' : ''}">
+          <h1 style="color: white; margin: 0; font-size: 22px;">📋 Purchase Order - Job #${jobNo}</h1>
+        </div>
+
+        <div style="padding: 20px; border: 1px solid #e5e7eb; border-top: none;">
+          <p style="font-size: 16px;">Dear ${vendorName},</p>
+
+          <p style="font-size: 16px;">Please find attached the customer's purchase order for the following job.</p>
+
+          <div style="background: #f3f4f6; padding: 16px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="margin: 0 0 12px 0; color: ${headerColor};">Job Summary</h3>
+            <table style="width: 100%;">
+              <tr>
+                <td style="padding: 8px 0; color: #6b7280; width: 120px;">Job #:</td>
+                <td style="padding: 8px 0; font-weight: 600;">${jobNo}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #6b7280;">Title:</td>
+                <td style="padding: 8px 0; font-weight: 600;">${jobTitle}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #6b7280;">Customer:</td>
+                <td style="padding: 8px 0; font-weight: 600;">${customerName}</td>
+              </tr>
+              ${job.customerPONumber ? `
+              <tr>
+                <td style="padding: 8px 0; color: #6b7280;">Customer PO#:</td>
+                <td style="padding: 8px 0; font-weight: 600;">${job.customerPONumber}</td>
+              </tr>
+              ` : ''}
+              ${job.quantity ? `
+              <tr>
+                <td style="padding: 8px 0; color: #6b7280;">Quantity:</td>
+                <td style="padding: 8px 0; font-weight: 600;">${job.quantity.toLocaleString()}</td>
+              </tr>
+              ` : ''}
+              <tr>
+                <td style="padding: 8px 0; color: #6b7280;">Due Date:</td>
+                <td style="padding: 8px 0; font-weight: 600;">${dueDate}</td>
+              </tr>
+            </table>
+          </div>
+
+          ${job.description ? `
+          <div style="background: #fffbeb; padding: 16px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f59e0b;">
+            <h4 style="margin: 0 0 8px 0; color: #92400e;">Job Description</h4>
+            <p style="margin: 0; color: #78350f; white-space: pre-wrap;">${job.description}</p>
+          </div>
+          ` : ''}
+
+          <div style="background: #dbeafe; padding: 16px; border-radius: 8px; margin: 20px 0; text-align: center;">
+            <p style="margin: 0; color: #1e40af; font-weight: 600;">📎 Customer PO attached to this email</p>
+          </div>
+
+          <p style="color: #6b7280; font-size: 14px;">
+            Please review the attached PO and confirm receipt. If you have any questions, reply to this email.
+          </p>
+
+          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;" />
+
+          <p style="color: #9ca3af; font-size: 12px;">
+            ${companyName}<br/>
+            This email was sent regarding Job #${jobNo}.
+          </p>
+        </div>
+      </div>
+    `;
+
+    // Send email with attachment
+    try {
+      await sgMail.send({
+        to: vendorEmails,
+        cc: ['brandon@impactdirectprinting.com', 'nick@jdgraphic.com'],
+        from: { email: fromEmail, name: companyName },
+        subject: `📋 PO from ${customerName} - Job #${jobNo}`,
+        html: body,
+        replyTo: jobEmail,
+        attachments: [
+          {
+            content: fileContent,
+            filename: customerPOFile.fileName,
+            type: customerPOFile.mimeType || 'application/pdf',
+            disposition: 'attachment',
+          },
+        ],
+      });
+
+      console.log(`📧 Customer PO sent to vendor: ${vendorEmails.join(', ')}`);
+    } catch (emailError: any) {
+      console.error('Failed to send customer PO email:', emailError);
+      return res.status(500).json({ error: 'Failed to send email' });
+    }
+
+    // Update job tracking
+    const emailedAt = new Date();
+    await prisma.job.update({
+      where: { id: jobId },
+      data: {
+        poEmailedAt: emailedAt,
+        poEmailedTo: vendorEmails.join(', '),
+      },
+    });
+
+    // Log activity
+    await prisma.jobActivity.create({
+      data: {
+        id: crypto.randomUUID(),
+        jobId,
+        action: 'CUSTOMER_PO_SENT_TO_VENDOR',
+        field: 'poEmailedTo',
+        oldValue: null,
+        newValue: `Sent to ${vendorEmails.join(', ')}`,
+        changedBy: 'admin',
+        changedByRole: 'BROKER_ADMIN',
+      },
+    });
+
+    res.json({
+      success: true,
+      message: `Customer PO sent to ${vendorEmails.length} recipient(s)`,
+      emailedAt,
+      recipients: vendorEmails,
+    });
+  } catch (error: any) {
+    console.error('Error sending customer PO to vendor:', error);
+    res.status(500).json({ error: error.message || 'Failed to send customer PO' });
+  }
+};
+
 // Notify vendor that customer approved proof - proceed to production
 export const notifyVendorApproval = async (req: Request, res: Response) => {
   try {

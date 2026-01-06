@@ -318,6 +318,9 @@ export function JobDetailModal({
   const [proofMessage, setProofMessage] = useState('');
   const [isSendingProof, setIsSendingProof] = useState(false);
 
+  // Send customer PO to vendor state
+  const [isSendingCustomerPO, setIsSendingCustomerPO] = useState(false);
+
   // File upload state
   const [uploadedFiles, setUploadedFiles] = useState<any[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -536,6 +539,38 @@ export function JobDetailModal({
       }
     } catch (error) {
       console.error('Failed to delete file:', error);
+    }
+  };
+
+  // Send customer PO to vendor handler
+  const handleSendCustomerPO = async () => {
+    if (!job?.id) return;
+
+    const customerPOFile = uploadedFiles.find(f => f.kind === 'CUSTOMER_PO');
+    if (!customerPOFile) {
+      alert('No customer PO file attached to this job');
+      return;
+    }
+
+    if (!job.vendor?.email) {
+      alert('Vendor has no email address');
+      return;
+    }
+
+    if (!confirm(`Send customer PO to ${job.vendor.name} (${job.vendor.email})?`)) {
+      return;
+    }
+
+    setIsSendingCustomerPO(true);
+    try {
+      await emailApi.sendVendorWithCustomerPO(job.id);
+      alert('Customer PO sent to vendor successfully!');
+      onRefresh?.();
+    } catch (error: any) {
+      console.error('Failed to send customer PO:', error);
+      alert(error.message || 'Failed to send customer PO');
+    } finally {
+      setIsSendingCustomerPO(false);
     }
   };
 
@@ -1319,6 +1354,9 @@ export function JobDetailModal({
                   {file.kind === 'VENDOR_PROOF' && (
                     <span className="px-1 py-0.5 bg-purple-100 text-purple-700 text-[10px] rounded">PROOF</span>
                   )}
+                  {file.kind === 'CUSTOMER_PO' && (
+                    <span className="px-1 py-0.5 bg-blue-100 text-blue-700 text-[10px] rounded">CUST PO</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-1">
                   {file.kind === 'VENDOR_PROOF' && job.customer?.email && (
@@ -1326,6 +1364,16 @@ export function JobDetailModal({
                       onClick={() => { setSelectedProofFiles([file]); setShowSendProofModal(true); }}
                       className="p-1 text-blue-600 hover:bg-blue-50 rounded"
                       title="Send to customer"
+                    >
+                      <Send className="w-3 h-3" />
+                    </button>
+                  )}
+                  {file.kind === 'CUSTOMER_PO' && job.vendor?.email && (
+                    <button
+                      onClick={handleSendCustomerPO}
+                      disabled={isSendingCustomerPO}
+                      className="p-1 text-blue-600 hover:bg-blue-50 rounded disabled:opacity-50"
+                      title="Send to vendor"
                     >
                       <Send className="w-3 h-3" />
                     </button>

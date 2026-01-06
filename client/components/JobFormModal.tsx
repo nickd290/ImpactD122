@@ -1,24 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Loader2 } from 'lucide-react';
-import { TabbedJobForm } from './job-form/TabbedJobForm';
-import { JobFormData, Specs, LineItem } from './job-form/types';
-
-interface ParsedCustomer {
-  name: string;
-  contactName?: string;
-  email?: string;
-  phone?: string;
-  address?: string;
-}
+import { SimpleJobForm, SimpleJobFormData, defaultSimpleJobFormData, Customer, Vendor } from './job-form/SimpleJobForm';
 
 interface JobFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (jobData: any) => void;
-  customers: any[];
-  vendors: any[];
+  customers: Customer[];
+  vendors: Vendor[];
   initialData?: any;
-  onCustomerCreated?: (newCustomer: any) => void;
+  onCustomerCreated?: (newCustomer: Customer) => void;
 }
 
 export function JobFormModal({
@@ -30,187 +21,128 @@ export function JobFormModal({
   initialData,
   onCustomerCreated,
 }: JobFormModalProps) {
-  // Extract parsedCustomer from initialData if present
-  const parsedCustomer: ParsedCustomer | null = initialData?.parsedCustomer || null;
-  // Form data managed by TabbedJobForm - we track it here for submission
-  const [formState, setFormState] = useState<{
-    formData: JobFormData;
-    specs: Specs;
-    lineItems: LineItem[];
-    sellPrice: string;
-    bradfordCut: number;
-  } | null>(null);
+  // Form data state
+  const [formData, setFormData] = useState<SimpleJobFormData>(defaultSimpleJobFormData);
 
-  // File upload state - managed here and passed to TabbedJobForm
-  const [uploadedFiles, setUploadedFiles] = useState<any[]>([]);
-  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  // Customer PO file state
+  const [pendingPOFile, setPendingPOFile] = useState<File | null>(null);
+  const [uploadedPOFile, setUploadedPOFile] = useState<any | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string>('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Fetch existing files when editing a job
+  // Initialize form when modal opens
   useEffect(() => {
-    if (isOpen && initialData?.id) {
-      fetch(`/api/jobs/${initialData.id}/files`)
-        .then(res => res.json())
-        .then(files => setUploadedFiles(files || []))
-        .catch(() => setUploadedFiles([]));
-    } else {
-      setUploadedFiles([]);
-    }
-    // Clear pending files when modal opens/closes
-    setPendingFiles([]);
-    setUploadError('');
-  }, [isOpen, initialData?.id]);
-
-  // File selection handler
-  const handleFileSelect = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    setUploadError('');
-
-    if (initialData?.id) {
-      // Existing job: upload immediately
-      setIsUploading(true);
-      for (const file of Array.from(files)) {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('kind', 'ARTWORK');
-
-        try {
-          const response = await fetch(`/api/jobs/${initialData.id}/files`, {
-            method: 'POST',
-            body: formData,
-          });
-
-          if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Upload failed');
-          }
-
-          const result = await response.json();
-          setUploadedFiles(prev => [...prev, result.file]);
-        } catch (error: any) {
-          setUploadError(error.message || 'Failed to upload file');
-        }
+    if (isOpen) {
+      if (initialData) {
+        // Editing existing job
+        setFormData({
+          title: initialData.title || '',
+          customerId: initialData.customerId || '',
+          vendorId: initialData.vendorId || '',
+          routingType: initialData.routingType || 'THIRD_PARTY_VENDOR',
+          customerPONumber: initialData.customerPONumber || '',
+          description: initialData.description || '',
+          sellPrice: initialData.sellPrice?.toString() || '',
+          dueDate: initialData.dueDate ? new Date(initialData.dueDate).toISOString().split('T')[0] : '',
+        });
+        // Fetch existing customer PO file
+        fetchExistingPOFile(initialData.id);
+      } else {
+        // New job - reset form
+        setFormData(defaultSimpleJobFormData);
+        setUploadedPOFile(null);
       }
-      setIsUploading(false);
-    } else {
-      // New job: queue files for later upload
-      setPendingFiles(prev => [...prev, ...Array.from(files)]);
+      setPendingPOFile(null);
+      setUploadError('');
     }
+  }, [isOpen, initialData]);
 
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+  // Fetch existing customer PO file for a job
+  const fetchExistingPOFile = async (jobId: string) => {
+    try {
+      const response = await fetch(`/api/jobs/${jobId}/files`);
+      if (response.ok) {
+        const files = await response.json();
+        const customerPO = files.find((f: any) => f.kind === 'CUSTOMER_PO');
+        setUploadedPOFile(customerPO || null);
+      }
+    } catch (error) {
+      console.error('Failed to fetch files:', error);
     }
   };
 
-  // Delete file handler
-  const handleDeleteFile = async (fileId: string) => {
-    if (initialData?.id) {
+  // Delete uploaded PO file
+  const handleDeletePOFile = async () => {
+    if (uploadedPOFile && initialData?.id) {
       try {
-        const response = await fetch(`/api/jobs/${initialData.id}/files/${fileId}`, {
+        const response = await fetch(`/api/jobs/${initialData.id}/files/${uploadedPOFile.id}`, {
           method: 'DELETE',
         });
         if (response.ok) {
-          setUploadedFiles(prev => prev.filter(f => f.id !== fileId));
+          setUploadedPOFile(null);
         }
       } catch (error) {
         console.error('Failed to delete file:', error);
       }
+    } else if (pendingPOFile) {
+      setPendingPOFile(null);
     }
   };
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
 
-    if (!formState) {
-      alert('Form not ready');
-      return;
-    }
-
-    const { formData, specs, lineItems, sellPrice, bradfordCut } = formState;
-
+    // Validation
     if (!formData.title.trim()) {
       alert('Please enter a job title');
+      setIsSubmitting(false);
       return;
     }
 
     if (!formData.customerId) {
       alert('Please select a customer');
+      setIsSubmitting(false);
       return;
     }
 
-    // Vendor only required for single-vendor jobs
-    if (formData.jobType !== 'multipart' && !formData.vendorId) {
+    if (!formData.vendorId) {
       alert('Please select a vendor');
+      setIsSubmitting(false);
       return;
     }
 
-    // Validate sell price
-    const parsedSellPrice = parseFloat(sellPrice);
-    if (!sellPrice || isNaN(parsedSellPrice)) {
-      alert('Sell price is required');
-      return;
-    }
-    if (parsedSellPrice <= 0) {
-      alert('Sell price must be greater than $0');
+    const parsedSellPrice = parseFloat(formData.sellPrice);
+    if (!formData.sellPrice || isNaN(parsedSellPrice) || parsedSellPrice <= 0) {
+      alert('Please enter a valid sell price greater than $0');
+      setIsSubmitting(false);
       return;
     }
 
-    // Validate line items
-    const validLineItems = lineItems.filter(item => item.description.trim());
-    if (validLineItems.length === 0) {
-      alert('Please add at least one line item with a description');
-      return;
-    }
-
-    // Check if any line item has negative pricing
-    const hasInvalidPricing = validLineItems.some(item => item.unitPrice < 0 || item.unitCost < 0);
-    if (hasInvalidPricing) {
-      alert('Pricing cannot be negative (Price >= $0, Cost >= $0)');
-      return;
-    }
-
-    // Check if vendor is Bradford partner
+    // Get vendor info for routing calculation
     const selectedVendor = vendors.find(v => v.id === formData.vendorId);
-    const isBradfordVendor = selectedVendor?.isPartner === true;
 
-    // Prepare specs object
-    const hasSpecs = specs.productType !== 'OTHER' ||
-      specs.paperType || specs.colors || specs.coating ||
-      specs.finishing || specs.flatSize || specs.finishedSize || specs.paperLbs ||
-      specs.artworkUrl;
-
-    const specsData = hasSpecs ? {
-      ...specs,
-      pageCount: specs.pageCount ? parseInt(specs.pageCount as any) : null,
-      paperLbs: specs.paperLbs ? parseFloat(specs.paperLbs as any) : null,
-    } : null;
-
-    // Build components array for envelope mailings
-    const components = formData.jobMetaType === 'MAILING' && formData.mailFormat === 'ENVELOPE'
-      ? formData.envelopeComponentList.map((comp, idx) => ({
-          name: comp.name || `Component ${idx + 1}`,
-          specs: { size: comp.size },
-          sortOrder: idx
-        }))
-      : undefined;
-
-    onSubmit({
-      ...formData,
-      // Clear vendorId for multipart jobs (vendors assigned per component)
-      vendorId: formData.jobType === 'multipart' ? undefined : formData.vendorId,
+    // Build submission data
+    const submitData = {
+      title: formData.title.trim(),
+      customerId: formData.customerId,
+      vendorId: formData.vendorId,
+      routingType: formData.routingType,
+      customerPONumber: formData.customerPONumber.trim() || null,
+      description: formData.description.trim() || null,
       sellPrice: parsedSellPrice,
-      specs: specsData,
-      lineItems: validLineItems,
-      bradfordCut: !isBradfordVendor && bradfordCut > 0 ? bradfordCut : null,
-      bradfordPaperLbs: specs.paperLbs ? parseFloat(specs.paperLbs as any) : null,
-      pendingFiles: pendingFiles.length > 0 ? pendingFiles : undefined,
-      // Mailing fields
-      components,
-    });
+      dueDate: formData.dueDate || null,
+      // Include pending PO file for upload after job creation
+      pendingCustomerPOFile: pendingPOFile,
+      // For editing: flag if we should upload a new file
+      hasExistingPOFile: !!uploadedPOFile,
+    };
+
+    onSubmit(submitData);
+    setIsSubmitting(false);
     onClose();
   };
 
@@ -224,7 +156,7 @@ export function JobFormModal({
 
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
           {/* Header */}
           <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
             <h2 className="text-2xl font-bold text-gray-900">
@@ -240,19 +172,17 @@ export function JobFormModal({
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="p-6">
-            <TabbedJobForm
+            <SimpleJobForm
+              formData={formData}
+              setFormData={setFormData}
               customers={customers}
               vendors={vendors}
-              initialData={initialData}
-              onFormDataChange={setFormState}
-              uploadedFiles={uploadedFiles}
-              pendingFiles={pendingFiles}
-              setPendingFiles={setPendingFiles}
+              pendingPOFile={pendingPOFile}
+              setPendingPOFile={setPendingPOFile}
+              uploadedPOFile={uploadedPOFile}
+              onDeletePOFile={handleDeletePOFile}
               isUploading={isUploading}
               uploadError={uploadError}
-              onFileSelect={handleFileSelect}
-              onDeleteFile={handleDeleteFile}
-              parsedCustomer={parsedCustomer}
               onCustomerCreated={onCustomerCreated}
             />
 
@@ -267,10 +197,10 @@ export function JobFormModal({
               </button>
               <button
                 type="submit"
-                disabled={isUploading}
+                disabled={isUploading || isSubmitting}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
               >
-                {isUploading && <Loader2 className="w-4 h-4 animate-spin" />}
+                {(isUploading || isSubmitting) && <Loader2 className="w-4 h-4 animate-spin" />}
                 {initialData ? 'Update Job' : 'Create Job'}
               </button>
             </div>

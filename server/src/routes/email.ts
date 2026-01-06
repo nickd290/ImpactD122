@@ -7,9 +7,13 @@ import {
   emailVendorPOWithPortal,
   sendProofToCustomer,
   notifyVendorApproval,
+  emailVendorWithCustomerPO,
 } from '../controllers/emailController';
 
 const router = Router();
+
+// Email vendor with customer's PO PDF attached
+router.post('/vendor-customer-po/:jobId', emailVendorWithCustomerPO);
 
 // Email invoice to customer
 router.post('/invoice/:jobId', emailInvoice);

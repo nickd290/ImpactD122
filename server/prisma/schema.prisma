@@ -882,6 +882,7 @@ enum FileKind {
   INVOICE
   PO_PDF
   VENDOR_PROOF
+  CUSTOMER_PO   // Customer's uploaded PO to forward to vendor
 }
 
 enum JobStatus {

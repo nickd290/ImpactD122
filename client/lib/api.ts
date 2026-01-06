@@ -284,6 +284,12 @@ export const emailApi = {
       method: 'POST',
       body: JSON.stringify({ recipientEmail, fileIds, message }),
     }),
+  // Send customer's PO PDF to vendor (simplified job flow)
+  sendVendorWithCustomerPO: (jobId: string, recipientEmail?: string) =>
+    apiFetch(`/email/vendor-customer-po/${jobId}`, {
+      method: 'POST',
+      body: JSON.stringify({ recipientEmail }),
+    }),
 };
 
 // Financials API
