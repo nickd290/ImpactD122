@@ -1223,13 +1223,25 @@ export async function linkExternalJob(req: Request, res: Response) {
       });
     }
 
-    // Check if already linked
+    // Check if target job is already linked to a different external ID
     if (job.externalJobId && job.externalJobId !== externalJobId) {
       return res.status(409).json({
         error: 'Conflict',
         message: `Job is already linked to external ID: ${job.externalJobId}`,
         currentExternalId: job.externalJobId,
       });
+    }
+
+    // Clear externalJobId from any other job that has it (to avoid unique constraint)
+    const existingWithExternalId = await prisma.job.findUnique({
+      where: { externalJobId },
+    });
+    if (existingWithExternalId && existingWithExternalId.id !== job.id) {
+      await prisma.job.update({
+        where: { id: existingWithExternalId.id },
+        data: { externalJobId: null },
+      });
+      console.log(`🔗 Cleared externalJobId from job ${existingWithExternalId.jobNo} to reassign it`);
     }
 
     // Update the job with externalJobId
