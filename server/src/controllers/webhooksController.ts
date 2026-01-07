@@ -1,79 +1,99 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { prisma } from '../utils/prisma';
-import { RoutingType, PaperSource, CampaignFrequency, DropStatus, FileKind } from '@prisma/client';
+import { RoutingType, PaperSource, CampaignFrequency, DropStatus, FileKind, WebhookSource } from '@prisma/client';
 import { sendThreeZPOEmail, sendEmailImportNotification } from '../services/emailService';
 import { parsePrintSpecs, parseEmailToJobSpecs } from '../services/openaiService';
 import { parsePurchaseOrder } from '../services/geminiService';
 import { createJobUnified } from '../services/jobCreationService';
+import {
+  portalJobPayloadSchema,
+  portalCampaignPayloadSchema,
+  emailToJobPayloadSchema,
+  linkJobPayloadSchema,
+  validatePayload,
+  type PortalJobPayload,
+  type PortalCampaignPayload,
+  type EmailToJobPayload,
+} from '../schemas/webhookSchemas';
+import {
+  badRequest,
+  unauthorized,
+  notFound,
+  conflict,
+  unprocessable,
+  serverError,
+  validationError,
+  accepted,
+  created,
+  handlePrismaError,
+} from '../utils/apiErrors';
+
+// ============================================
+// WEBHOOK IDEMPOTENCY SYSTEM
+// ============================================
 
 /**
- * Webhook payload from Impact Customer Portal or Inventory Release App
+ * Generate a hash of the webhook payload for deduplication
  */
-interface PortalJobPayload {
-  jobNo: string;
-  title?: string;
-  companyId?: string;
-  companyName: string;
-  customerPONumber?: string;
-  sizeName?: string;
-  quantity?: number;
-  specs?: {
-    // Common fields
-    source?: string;
-    externalJobNo?: string;
-
-    // Inventory Release App specific fields
-    releaseId?: string;
-    partNumber?: string;
-    partDescription?: string;
-    pallets?: number;
-    boxes?: number;
-    totalUnits?: number;
-    unitsPerBox?: number;
-    boxesPerSkid?: number;
-    shippingLocation?: string;
-    shippingAddress?: {
-      address?: string;
-      city?: string;
-      state?: string;
-      zip?: string;
-    };
-    ticketNumber?: string;
-    batchNumber?: string;
-    manufactureDate?: string;
-    shipVia?: string;
-    freightTerms?: string;
-    sellPrice?: number;
-
-    // Cost basis and vendor info (from inventory-release-app)
-    costBasisPerUnit?: number;
-    buyCost?: number;
-    vendorName?: string;
-    paperSource?: 'BRADFORD' | 'VENDOR' | 'CUSTOMER';
-
-    // PDFs for ThreeZ email (base64 encoded)
-    packingSlipPdf?: string;
-    boxLabelsPdf?: string;
-
-    // Any additional fields
-    [key: string]: any;
-  };
-  status?: string;
-  deliveryDate?: string;
-  createdAt?: string;
-  externalJobId: string; // The portal's job ID or release ID
-  // Files from Portal
-  files?: Array<{
-    id: string;
-    fileName: string;
-    kind: string;
-    size: number;
-    downloadUrl: string;
-  }>;
-  artworkUrl?: string | null; // Direct link to artwork file
-  dataFileUrl?: string | null; // Direct link to data file
+function generatePayloadHash(payload: unknown): string {
+  const normalized = JSON.stringify(payload, Object.keys(payload as object).sort());
+  return crypto.createHash('sha256').update(normalized).digest('hex').substring(0, 32);
 }
+
+/**
+ * Check if this webhook has already been processed (idempotency)
+ */
+async function checkWebhookIdempotency(
+  source: WebhookSource,
+  payload: unknown,
+  idempotencyKey?: string
+): Promise<{ isDuplicate: boolean; existingEventId?: string }> {
+  const key = idempotencyKey || generatePayloadHash(payload);
+
+  // Check for existing event with same key in last 24 hours
+  const existing = await prisma.webhookEvent.findFirst({
+    where: {
+      source,
+      processed: true,
+      payload: {
+        path: ['_idempotencyKey'],
+        equals: key,
+      },
+      createdAt: {
+        gte: new Date(Date.now() - 24 * 60 * 60 * 1000), // Last 24 hours
+      },
+    },
+  });
+
+  return { isDuplicate: !!existing, existingEventId: existing?.id };
+}
+
+/**
+ * Record a webhook event for idempotency tracking
+ */
+async function recordWebhookEvent(
+  source: WebhookSource,
+  payload: unknown,
+  processed: boolean,
+  idempotencyKey?: string
+): Promise<string> {
+  const key = idempotencyKey || generatePayloadHash(payload);
+
+  const event = await prisma.webhookEvent.create({
+    data: {
+      id: crypto.randomUUID(),
+      source,
+      payload: { ...(payload as object), _idempotencyKey: key },
+      processed,
+      updatedAt: new Date(),
+    },
+  });
+
+  return event.id;
+}
+
+// PortalJobPayload type is imported from '../schemas/webhookSchemas'
 
 /**
  * Validate webhook secret from header
@@ -183,19 +203,33 @@ export async function receiveJobWebhook(req: Request, res: Response) {
     // Validate webhook secret
     if (!validateWebhookSecret(req)) {
       console.warn('Webhook authentication failed - invalid or missing X-Webhook-Secret');
-      return res.status(401).json({
-        error: 'Unauthorized',
-        message: 'Invalid or missing webhook secret'
-      });
+      return unauthorized(res, 'Invalid or missing webhook secret');
     }
 
-    const payload: PortalJobPayload = req.body;
+    // Validate payload with Zod schema
+    const validation = validatePayload(portalJobPayloadSchema, req.body);
+    if (!validation.success) {
+      console.warn('Webhook payload validation failed:', validation.errors);
+      return validationError(res, validation.errors!);
+    }
 
-    // Validate required fields
-    if (!payload.jobNo || !payload.companyName || !payload.externalJobId) {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: 'Missing required fields: jobNo, companyName, externalJobId',
+    const payload = validation.data!;
+
+    // Check idempotency - skip if already processed
+    const idempotencyKey = req.headers['x-idempotency-key'] as string;
+    const { isDuplicate, existingEventId } = await checkWebhookIdempotency(
+      'ZAPIER', // Using ZAPIER as source for portal webhooks
+      payload,
+      idempotencyKey
+    );
+
+    if (isDuplicate) {
+      console.log(`⏭️ Duplicate webhook detected, skipping (event: ${existingEventId})`);
+      return res.status(200).json({
+        success: true,
+        action: 'skipped',
+        reason: 'duplicate',
+        existingEventId,
       });
     }
 
@@ -519,7 +553,12 @@ export async function receiveJobWebhook(req: Request, res: Response) {
       }
     }
 
-    return res.status(existingJob ? 200 : 201).json({
+    // Record successful webhook processing for idempotency
+    await recordWebhookEvent('ZAPIER', payload, true, idempotencyKey);
+
+    // Return 202 Accepted for new jobs (async processing), 200 for updates
+    const statusCode = existingJob ? 200 : 202;
+    return res.status(statusCode).json({
       success: true,
       action: existingJob ? 'updated' : 'created',
       jobId: job.id,
@@ -536,18 +575,12 @@ export async function receiveJobWebhook(req: Request, res: Response) {
   } catch (error: any) {
     console.error('❌ Webhook error:', error);
 
-    // Handle unique constraint violation (duplicate jobNo)
-    if (error.code === 'P2002') {
-      return res.status(409).json({
-        error: 'Conflict',
-        message: `Job with number ${req.body.jobNo} already exists`,
-      });
+    // Handle Prisma errors with proper status codes
+    if (error.code?.startsWith('P')) {
+      return handlePrismaError(res, error, 'job');
     }
 
-    return res.status(500).json({
-      error: 'Internal Server Error',
-      message: process.env.NODE_ENV === 'development' ? error.message : 'Failed to process webhook',
-    });
+    return serverError(res, error.message, error);
   }
 }
 
@@ -568,36 +601,7 @@ export async function webhookHealth(req: Request, res: Response) {
 // ============================================
 // CAMPAIGN WEBHOOK
 // ============================================
-
-interface CampaignDropPayload {
-  mailDate: string;
-  uploadDeadline: string;
-  status: string;
-}
-
-interface PortalCampaignPayload {
-  externalCampaignId: string;
-  name: string;
-  companyId: string;
-  companyName: string;
-  sizeName: string;
-  quantity: number;
-  pricePerM: number;
-  specs?: {
-    productType?: string;
-    paperStock?: string;
-    printColors?: string;
-    [key: string]: any;
-  } | null;
-  customerPONumber?: string | null;
-  frequency: 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY';
-  mailDay: number;
-  startDate: string;
-  endDate?: string | null;
-  isActive: boolean;
-  createdAt: string;
-  drops: CampaignDropPayload[];
-}
+// PortalCampaignPayload type is imported from '../schemas/webhookSchemas'
 
 /**
  * Map drop status from portal to ImpactD122
@@ -623,19 +627,33 @@ export async function receiveCampaignWebhook(req: Request, res: Response) {
     // Validate webhook secret
     if (!validateWebhookSecret(req)) {
       console.warn('Campaign webhook authentication failed - invalid or missing X-Webhook-Secret');
-      return res.status(401).json({
-        error: 'Unauthorized',
-        message: 'Invalid or missing webhook secret'
-      });
+      return unauthorized(res, 'Invalid or missing webhook secret');
     }
 
-    const payload: PortalCampaignPayload = req.body;
+    // Validate payload with Zod schema
+    const validation = validatePayload(portalCampaignPayloadSchema, req.body);
+    if (!validation.success) {
+      console.warn('Campaign webhook payload validation failed:', validation.errors);
+      return validationError(res, validation.errors!);
+    }
 
-    // Validate required fields
-    if (!payload.externalCampaignId || !payload.name || !payload.companyName) {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: 'Missing required fields: externalCampaignId, name, companyName',
+    const payload = validation.data!;
+
+    // Check idempotency
+    const idempotencyKey = req.headers['x-idempotency-key'] as string;
+    const { isDuplicate, existingEventId } = await checkWebhookIdempotency(
+      'ZAPIER',
+      payload,
+      idempotencyKey
+    );
+
+    if (isDuplicate) {
+      console.log(`⏭️ Duplicate campaign webhook detected, skipping (event: ${existingEventId})`);
+      return res.status(200).json({
+        success: true,
+        action: 'skipped',
+        reason: 'duplicate',
+        existingEventId,
       });
     }
 
@@ -787,7 +805,12 @@ export async function receiveCampaignWebhook(req: Request, res: Response) {
       console.log(`  📅 Created ${payload.drops.length} drops with jobs`);
     }
 
-    return res.status(existingCampaign ? 200 : 201).json({
+    // Record successful webhook processing
+    await recordWebhookEvent('ZAPIER', payload, true, idempotencyKey);
+
+    // Return 202 for new campaigns, 200 for updates
+    const statusCode = existingCampaign ? 200 : 202;
+    return res.status(statusCode).json({
       success: true,
       action: existingCampaign ? 'updated' : 'created',
       campaignId: campaign.id,
@@ -798,32 +821,19 @@ export async function receiveCampaignWebhook(req: Request, res: Response) {
 
   } catch (error: any) {
     console.error('❌ Campaign webhook error:', error);
-    return res.status(500).json({
-      error: 'Internal Server Error',
-      message: process.env.NODE_ENV === 'development' ? error.message : 'Failed to process campaign webhook',
-    });
+
+    if (error.code?.startsWith('P')) {
+      return handlePrismaError(res, error, 'campaign');
+    }
+
+    return serverError(res, error.message, error);
   }
 }
 
 // ============================================
 // EMAIL-TO-JOB WEBHOOK
 // ============================================
-
-/**
- * Payload from n8n/Zapier when email is forwarded
- */
-interface EmailToJobPayload {
-  from: string;           // Sender email
-  subject: string;        // Email subject
-  textBody: string;       // Plain text content
-  htmlBody?: string;      // HTML content (optional)
-  attachments?: Array<{
-    filename: string;
-    content: string;      // Base64 encoded
-    mimeType: string;
-  }>;
-  forwardedBy?: string;   // Who forwarded the email (for audit)
-}
+// EmailToJobPayload type is imported from '../schemas/webhookSchemas'
 
 /**
  * Validate email import webhook secret
@@ -966,19 +976,33 @@ export async function receiveEmailToJobWebhook(req: Request, res: Response) {
     // Validate webhook secret
     if (!validateEmailImportSecret(req)) {
       console.warn('Email import webhook authentication failed - invalid or missing X-Webhook-Secret');
-      return res.status(401).json({
-        error: 'Unauthorized',
-        message: 'Invalid or missing webhook secret'
-      });
+      return unauthorized(res, 'Invalid or missing webhook secret');
     }
 
-    const payload: EmailToJobPayload = req.body;
+    // Validate payload with Zod schema
+    const validation = validatePayload(emailToJobPayloadSchema, req.body);
+    if (!validation.success) {
+      console.warn('Email import webhook payload validation failed:', validation.errors);
+      return validationError(res, validation.errors!);
+    }
 
-    // Validate required fields
-    if (!payload.textBody && !payload.htmlBody) {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: 'Missing required field: textBody or htmlBody',
+    const payload = validation.data!;
+
+    // Check idempotency
+    const idempotencyKey = req.headers['x-idempotency-key'] as string;
+    const { isDuplicate, existingEventId } = await checkWebhookIdempotency(
+      'EMAIL',
+      payload,
+      idempotencyKey
+    );
+
+    if (isDuplicate) {
+      console.log(`⏭️ Duplicate email webhook detected, skipping (event: ${existingEventId})`);
+      return res.status(200).json({
+        success: true,
+        action: 'skipped',
+        reason: 'duplicate',
+        existingEventId,
       });
     }
 
@@ -1004,9 +1028,7 @@ export async function receiveEmailToJobWebhook(req: Request, res: Response) {
     }
 
     if (!parsedData || Object.keys(parsedData).length === 0) {
-      return res.status(422).json({
-        error: 'Processing Error',
-        message: 'Could not parse job details from email',
+      return unprocessable(res, 'Could not parse job details from email', {
         rawSubject: payload.subject,
       });
     }
@@ -1157,7 +1179,11 @@ export async function receiveEmailToJobWebhook(req: Request, res: Response) {
       // Don't fail the webhook if notification fails
     }
 
-    return res.status(201).json({
+    // Record successful webhook processing
+    await recordWebhookEvent('EMAIL', payload, true, idempotencyKey);
+
+    // Return 202 Accepted (job created, may need review)
+    return res.status(202).json({
       success: true,
       jobId: job.id,
       jobNo: job.jobNo,
@@ -1173,10 +1199,12 @@ export async function receiveEmailToJobWebhook(req: Request, res: Response) {
 
   } catch (error: any) {
     console.error('❌ Email-to-job webhook error:', error);
-    return res.status(500).json({
-      error: 'Internal Server Error',
-      message: process.env.NODE_ENV === 'development' ? error.message : 'Failed to process email webhook',
-    });
+
+    if (error.code?.startsWith('P')) {
+      return handlePrismaError(res, error, 'job');
+    }
+
+    return serverError(res, error.message, error);
   }
 }
 
@@ -1188,25 +1216,16 @@ export async function linkExternalJob(req: Request, res: Response) {
   try {
     // Validate webhook secret
     if (!validateWebhookSecret(req)) {
-      return res.status(401).json({ error: 'Invalid webhook secret' });
+      return unauthorized(res, 'Invalid webhook secret');
     }
 
-    const { jobId, externalJobId, jobNo } = req.body;
-
-    // Require either jobId or jobNo to identify the target job
-    if (!jobId && !jobNo) {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: 'Either jobId or jobNo required to identify job',
-      });
+    // Validate payload with Zod schema
+    const validation = validatePayload(linkJobPayloadSchema, req.body);
+    if (!validation.success) {
+      return validationError(res, validation.errors!);
     }
 
-    if (!externalJobId) {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: 'externalJobId is required',
-      });
-    }
+    const { jobId, externalJobId, jobNo } = validation.data!;
 
     // Find the job
     let job;
@@ -1217,17 +1236,12 @@ export async function linkExternalJob(req: Request, res: Response) {
     }
 
     if (!job) {
-      return res.status(404).json({
-        error: 'Not Found',
-        message: `Job not found: ${jobId || jobNo}`,
-      });
+      return notFound(res, `Job ${jobId || jobNo}`);
     }
 
     // Check if target job is already linked to a different external ID
     if (job.externalJobId && job.externalJobId !== externalJobId) {
-      return res.status(409).json({
-        error: 'Conflict',
-        message: `Job is already linked to external ID: ${job.externalJobId}`,
+      return conflict(res, `Job is already linked to external ID: ${job.externalJobId}`, {
         currentExternalId: job.externalJobId,
       });
     }
@@ -1264,9 +1278,11 @@ export async function linkExternalJob(req: Request, res: Response) {
 
   } catch (error: any) {
     console.error('❌ Link job error:', error);
-    return res.status(500).json({
-      error: 'Internal Server Error',
-      message: process.env.NODE_ENV === 'development' ? error.message : 'Failed to link job',
-    });
+
+    if (error.code?.startsWith('P')) {
+      return handlePrismaError(res, error, 'job');
+    }
+
+    return serverError(res, error.message, error);
   }
 }

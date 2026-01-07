@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { SimpleJobForm, SimpleJobFormData, defaultSimpleJobFormData, Customer, Vendor } from './job-form/SimpleJobForm';
 
 interface JobFormModalProps {
@@ -81,12 +82,17 @@ export function JobFormModal({
         });
         if (response.ok) {
           setUploadedPOFile(null);
+          toast.success('File deleted');
+        } else {
+          toast.error('Failed to delete file');
         }
       } catch (error) {
         console.error('Failed to delete file:', error);
+        toast.error('Failed to delete file');
       }
     } else if (pendingPOFile) {
       setPendingPOFile(null);
+      toast.success('File removed');
     }
   };
 
@@ -98,26 +104,26 @@ export function JobFormModal({
 
     // Validation
     if (!formData.title.trim()) {
-      alert('Please enter a job title');
+      toast.error('Please enter a job title');
       setIsSubmitting(false);
       return;
     }
 
     if (!formData.customerId) {
-      alert('Please select a customer');
+      toast.error('Please select a customer');
       setIsSubmitting(false);
       return;
     }
 
     if (!formData.vendorId) {
-      alert('Please select a vendor');
+      toast.error('Please select a vendor');
       setIsSubmitting(false);
       return;
     }
 
     const parsedSellPrice = parseFloat(formData.sellPrice);
     if (!formData.sellPrice || isNaN(parsedSellPrice) || parsedSellPrice <= 0) {
-      alert('Please enter a valid sell price greater than $0');
+      toast.error('Please enter a valid sell price greater than $0');
       setIsSubmitting(false);
       return;
     }

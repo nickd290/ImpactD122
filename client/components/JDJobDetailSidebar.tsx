@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Download, Send, FileText, Check, Clock, AlertCircle } from 'lucide-react';
+import { toast } from 'sonner';
 import { jobsApi } from '../lib/api';
 
 interface Job {
@@ -77,8 +78,13 @@ export function JDJobDetailSidebar({ job, isOpen, onClose, onInvoiceSent }: JDJo
   const profit = job.profit || {};
   const hasBeenEmailed = !!job.jdInvoiceEmailedAt;
 
-  const handleDownloadPDF = () => {
-    jobsApi.downloadJDInvoicePDF(job.id);
+  const handleDownloadPDF = async () => {
+    const success = await jobsApi.downloadJDInvoicePDF(job.id);
+    if (!success) {
+      toast.error('JD Invoice PDF not available', {
+        description: 'Please generate the invoice first',
+      });
+    }
   };
 
   const handleSendInvoice = async () => {

@@ -204,6 +204,8 @@ model Job {
   invoiceEmailedCount       Int              @default(0)  // How many times invoice was emailed
   artworkEmailedAt          DateTime?        // Last time artwork notification was emailed
   artworkEmailedTo          String?          // Email address artwork notification was sent to
+  poEmailedAt               DateTime?        // Last time customer PO was emailed to vendor
+  poEmailedTo               String?          // Email address(es) customer PO was sent to
 
   // === MAILING VENDOR TRACKING (Lahlouh → Three Z flow) ===
   mailingVendorId           String?          // Link to mailing vendor (e.g., Three Z)

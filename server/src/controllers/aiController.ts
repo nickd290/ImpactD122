@@ -91,13 +91,24 @@ export const parsePO = async (req: Request, res: Response) => {
         createdAt: fileRecord.createdAt,
       } : null,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Parse PO error:', error);
     // Clean up file on error
     if (req.file?.path && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
-    res.status(500).json({ error: 'Failed to parse purchase order' });
+
+    // Return specific error type for debugging
+    const message = error.message || 'Failed to parse purchase order';
+    const errorType = message.includes('API key') || message.includes('configured') ? 'config'
+      : message.includes('PDF conversion') ? 'pdf'
+      : message.includes('OpenAI') || message.includes('API') ? 'ai'
+      : 'unknown';
+
+    res.status(500).json({
+      error: message,
+      errorType,
+    });
   }
 };
 

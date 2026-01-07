@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { FileText, Check, Circle, ArrowUpDown, Search, Download, Send } from 'lucide-react';
+import { toast } from 'sonner';
 import { JDJobDetailSidebar } from './JDJobDetailSidebar';
 import { jobsApi } from '../lib/api';
 
@@ -72,9 +73,14 @@ export function JDView({ jobs, onRefresh }: JDViewProps) {
     }
   };
 
-  const handleDownloadPDF = (e: React.MouseEvent, job: Job) => {
+  const handleDownloadPDF = async (e: React.MouseEvent, job: Job) => {
     e.stopPropagation();
-    jobsApi.downloadJDInvoicePDF(job.id);
+    const success = await jobsApi.downloadJDInvoicePDF(job.id);
+    if (!success) {
+      toast.error('JD Invoice PDF not available', {
+        description: 'Please generate the invoice first',
+      });
+    }
   };
 
   const handleSendInvoice = async (e: React.MouseEvent, job: Job) => {

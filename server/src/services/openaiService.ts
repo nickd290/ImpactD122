@@ -5,11 +5,11 @@ let openai: OpenAI | null = null;
 
 function getOpenAIClient(): OpenAI {
   if (!openai) {
-    const apiKey = process.env.OPENAI_API_KEY || '';
-    console.log(`🔑 OpenAI API Key present: ${apiKey ? 'YES (' + apiKey.substring(0, 10) + '...)' : 'NO'}`);
+    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      console.error('❌ OPENAI_API_KEY environment variable is not set!');
+      throw new Error('OPENAI_API_KEY not configured - add it to your .env file');
     }
+    console.log(`🔑 OpenAI API Key: ${apiKey.substring(0, 10)}...`);
     openai = new OpenAI({ apiKey });
   }
   return openai;
@@ -18,21 +18,31 @@ function getOpenAIClient(): OpenAI {
 // Helper to convert PDF buffer to base64 images
 // Uses dynamic import for ESM-only pdf-to-img package
 async function convertPdfToImages(pdfBuffer: Buffer): Promise<string[]> {
-  const images: string[] = [];
-  // Use Function constructor to preserve dynamic import at runtime
-  // (prevents TypeScript from transpiling import() to require())
-  const importDynamic = new Function('modulePath', 'return import(modulePath)');
-  const pdfToImg = await importDynamic('pdf-to-img');
-  const { pdf } = pdfToImg;
-  const document = await pdf(pdfBuffer, { scale: 2 });
+  try {
+    const images: string[] = [];
+    // Use Function constructor to preserve dynamic import at runtime
+    // (prevents TypeScript from transpiling import() to require())
+    const importDynamic = new Function('modulePath', 'return import(modulePath)');
+    const pdfToImg = await importDynamic('pdf-to-img');
+    const { pdf } = pdfToImg;
+    const document = await pdf(pdfBuffer, { scale: 2 });
 
-  for await (const image of document) {
-    // image is a Buffer of PNG data
-    const base64 = image.toString('base64');
-    images.push(base64);
+    for await (const image of document) {
+      // image is a Buffer of PNG data
+      const base64 = image.toString('base64');
+      images.push(base64);
+    }
+
+    if (images.length === 0) {
+      throw new Error('PDF has no pages');
+    }
+
+    console.log(`✅ PDF converted: ${images.length} page(s)`);
+    return images;
+  } catch (error: any) {
+    console.error('❌ PDF to Image conversion failed:', error.message);
+    throw new Error(`PDF conversion failed: ${error.message}`);
   }
-
-  return images;
 }
 
 export const parsePrintSpecs = async (text: string): Promise<any> => {

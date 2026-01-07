@@ -166,21 +166,46 @@ export function SendEmailModal({
       if (type === 'invoice' && jobId) {
         // Invoice only supports single recipient for now
         await emailApi.sendInvoice(jobId, selectedEmails[0]);
+        setSuccess(true);
+        toast.success(`${documentLabel} sent successfully`, {
+          description: `Sent to ${selectedEmails[0]}`,
+        });
       } else if (type === 'po' && jobId && poId) {
-        // Send PO with portal link - one email per recipient
+        // Send PO with portal link - track success/failure per recipient
+        const successfulEmails: string[] = [];
+        const failedEmails: string[] = [];
+
         for (const email of selectedEmails) {
-          await emailApi.sendPO(jobId, poId, email, {
-            specialInstructions: specialInstructions || undefined,
+          try {
+            await emailApi.sendPO(jobId, poId, email, {
+              specialInstructions: specialInstructions || undefined,
+            });
+            successfulEmails.push(email);
+          } catch (err) {
+            console.error(`Failed to send PO to ${email}:`, err);
+            failedEmails.push(email);
+          }
+        }
+
+        // Show appropriate feedback based on results
+        if (failedEmails.length === 0) {
+          setSuccess(true);
+          toast.success(`${documentLabel} sent successfully`, {
+            description: `Sent to ${successfulEmails.length} recipient${successfulEmails.length > 1 ? 's' : ''}`,
+          });
+        } else if (successfulEmails.length === 0) {
+          throw new Error(`Failed to send to: ${failedEmails.join(', ')}`);
+        } else {
+          // Partial success
+          setSuccess(true);
+          toast.warning(`${documentLabel} partially sent`, {
+            description: `Sent to ${successfulEmails.length}, failed for: ${failedEmails.join(', ')}`,
           });
         }
       } else {
         throw new Error('Invalid configuration - jobId required for PO emails');
       }
 
-      setSuccess(true);
-      toast.success(`${documentLabel} sent successfully`, {
-        description: `Sent to ${selectedEmails.length} recipient${selectedEmails.length > 1 ? 's' : ''}`,
-      });
       setTimeout(() => {
         onSuccess?.();
         onClose();

@@ -113,7 +113,7 @@ export function PaymentStageDropdown({
           });
           if (!isCompleted && result.jdInvoiceSent) {
             toast.success('Bradford Payment Recorded', {
-              description: 'JD Invoice Email Sent to steve.gustafson@bgeltd.com',
+              description: `JD Invoice Email Sent to ${result.emailedTo || 'Bradford'}`,
               duration: 5000,
             });
           } else {

@@ -554,6 +554,7 @@ export const sendProofToCustomer = async (req: Request, res: Response) => {
 
     // Read file contents and prepare attachments
     const attachments: Array<{ content: string; filename: string; mimeType: string }> = [];
+    const failedFiles: string[] = [];
 
     for (const file of job.File) {
       // Try to find file in uploads directory
@@ -568,14 +569,19 @@ export const sendProofToCustomer = async (req: Request, res: Response) => {
           });
         } catch (err) {
           console.warn(`Could not read file ${file.fileName}:`, err);
+          failedFiles.push(file.fileName);
         }
       } else {
         console.warn(`File not found on disk: ${filePath}`);
+        failedFiles.push(file.fileName);
       }
     }
 
     if (attachments.length === 0) {
-      return res.status(500).json({ error: 'Could not read any of the selected files' });
+      return res.status(500).json({
+        error: 'Could not read any of the selected files',
+        failedFiles,
+      });
     }
 
     // Send the email
@@ -610,6 +616,7 @@ export const sendProofToCustomer = async (req: Request, res: Response) => {
       message: `Proof sent to ${recipientEmail}`,
       emailedAt: result.emailedAt,
       fileCount: attachments.length,
+      ...(failedFiles.length > 0 && { failedFiles }),
     });
   } catch (error: any) {
     console.error('Error sending proof to customer:', error);

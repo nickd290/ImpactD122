@@ -149,7 +149,8 @@ function App() {
       setJobs([newJob, ...jobs]);
       setSelectedJob(newJob);
 
-      let filesUploaded = false;
+      let uploadedCount = 0;
+      const failedFiles: string[] = [];
 
       // Upload customer PO file if provided (new simplified form)
       if (pendingCustomerPOFile) {
@@ -157,37 +158,36 @@ function App() {
           const formData = new FormData();
           formData.append('file', pendingCustomerPOFile);
           formData.append('kind', 'CUSTOMER_PO');
-          await fetch(`/api/jobs/${newJob.id}/files`, {
+          const response = await fetch(`/api/jobs/${newJob.id}/files`, {
             method: 'POST',
             body: formData,
           });
-          filesUploaded = true;
-          console.log('✅ Customer PO file uploaded successfully');
+          if (!response.ok) throw new Error('Upload failed');
+          uploadedCount++;
         } catch (error) {
           console.error('Failed to upload customer PO file:', error);
+          failedFiles.push(pendingCustomerPOFile.name || 'Customer PO');
         }
       }
 
       // Upload any pending files after job creation (legacy support)
       if (pendingFiles && pendingFiles.length > 0) {
-        let uploadedCount = 0;
         for (const file of pendingFiles) {
           const formData = new FormData();
           formData.append('file', file);
           formData.append('kind', 'ARTWORK');
 
           try {
-            await fetch(`/api/jobs/${newJob.id}/files`, {
+            const response = await fetch(`/api/jobs/${newJob.id}/files`, {
               method: 'POST',
               body: formData,
             });
+            if (!response.ok) throw new Error('Upload failed');
             uploadedCount++;
           } catch (error) {
             console.error('Failed to upload file:', file.name, error);
+            failedFiles.push(file.name);
           }
-        }
-        if (uploadedCount > 0) {
-          filesUploaded = true;
         }
       }
 
@@ -197,20 +197,30 @@ function App() {
           const formData = new FormData();
           formData.append('file', originalPOFile);
           formData.append('kind', 'PO_PDF');
-          await fetch(`/api/jobs/${newJob.id}/files`, {
+          const response = await fetch(`/api/jobs/${newJob.id}/files`, {
             method: 'POST',
             body: formData,
           });
-          filesUploaded = true;
-          console.log('✅ Original PO file uploaded successfully');
+          if (!response.ok) throw new Error('Upload failed');
+          uploadedCount++;
         } catch (error) {
           console.error('Failed to upload original PO file:', error);
+          failedFiles.push(originalPOFile.name || 'Original PO');
         }
         // Clear the original PO file reference
         setOriginalPOFile(null);
       }
 
-      toast.success(filesUploaded ? 'Job created with file(s) uploaded' : 'Job created successfully');
+      // Show appropriate toast based on results
+      if (failedFiles.length > 0 && uploadedCount > 0) {
+        toast.warning(`Job created. ${uploadedCount} file(s) uploaded, but failed: ${failedFiles.join(', ')}`);
+      } else if (failedFiles.length > 0) {
+        toast.warning(`Job created, but file upload failed: ${failedFiles.join(', ')}`);
+      } else if (uploadedCount > 0) {
+        toast.success(`Job created with ${uploadedCount} file(s) uploaded`);
+      } else {
+        toast.success('Job created successfully');
+      }
     } catch (error) {
       console.error('Failed to create job:', error);
       toast.error('Failed to create job. Please try again.');

@@ -314,12 +314,14 @@ export async function determineSenderType(
       };
     }
 
-    for (const contact of job.Vendor.contacts) {
-      if (fromEmailLower.includes(contact.email.toLowerCase())) {
-        return {
-          senderType: SenderType.VENDOR,
-          direction: CommunicationDirection.VENDOR_TO_CUSTOMER
-        };
+    if (job.Vendor.contacts) {
+      for (const contact of job.Vendor.contacts) {
+        if (fromEmailLower.includes(contact.email.toLowerCase())) {
+          return {
+            senderType: SenderType.VENDOR,
+            direction: CommunicationDirection.VENDOR_TO_CUSTOMER
+          };
+        }
       }
     }
   }
@@ -334,12 +336,14 @@ export async function determineSenderType(
         };
       }
 
-      for (const contact of po.Vendor.contacts) {
-        if (fromEmailLower.includes(contact.email.toLowerCase())) {
-          return {
-            senderType: SenderType.VENDOR,
-            direction: CommunicationDirection.VENDOR_TO_CUSTOMER
-          };
+      if (po.Vendor.contacts) {
+        for (const contact of po.Vendor.contacts) {
+          if (fromEmailLower.includes(contact.email.toLowerCase())) {
+            return {
+              senderType: SenderType.VENDOR,
+              direction: CommunicationDirection.VENDOR_TO_CUSTOMER
+            };
+          }
         }
       }
     }
@@ -1269,7 +1273,7 @@ export async function initiateVendorThread(
     if (job.Vendor?.email) {
       vendorEmail = job.Vendor.email;
       vendorName = job.Vendor.name;
-    } else if (job.Vendor?.contacts.length) {
+    } else if (job.Vendor?.contacts?.length) {
       const primary = job.Vendor.contacts.find(c => c.isPrimary);
       const contact = primary || job.Vendor.contacts[0];
       vendorEmail = contact.email;

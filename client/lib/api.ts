@@ -87,9 +87,20 @@ export const jobsApi = {
     method: 'PATCH',
     body: JSON.stringify(data || {}),
   }),
-  // Download JD Invoice PDF
-  downloadJDInvoicePDF: (id: string) => {
-    window.open(`${API_BASE_URL}/jobs/${id}/jd-invoice-pdf`, '_blank');
+  // Download JD Invoice PDF - checks if PDF exists first
+  downloadJDInvoicePDF: async (id: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/jobs/${id}/jd-invoice-pdf`, {
+        method: 'HEAD',
+      });
+      if (!response.ok) {
+        return false;
+      }
+      window.open(`${API_BASE_URL}/jobs/${id}/jd-invoice-pdf`, '_blank');
+      return true;
+    } catch {
+      return false;
+    }
   },
   // Bulk generate JD invoice numbers (one-time operation)
   bulkGenerateJDInvoices: () => apiFetch('/jobs/bulk-generate-jd-invoices', {
