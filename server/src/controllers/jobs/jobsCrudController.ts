@@ -281,6 +281,26 @@ export const createJob = async (req: Request, res: Response) => {
       }
     }
 
+    // Validate required fields - check for both null/undefined AND empty strings
+    if (!customerId || customerId.trim() === '') {
+      return res.status(400).json({ error: 'Customer is required' });
+    }
+    if (!vendorId || (typeof vendorId === 'string' && vendorId.trim() === '')) {
+      return res.status(400).json({ error: 'Vendor is required' });
+    }
+    if (!title?.trim()) {
+      return res.status(400).json({ error: 'Job title is required' });
+    }
+
+    // Validate UUIDs are properly formatted
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(customerId)) {
+      return res.status(400).json({ error: 'Invalid customer ID format' });
+    }
+    if (vendorId && !uuidRegex.test(vendorId)) {
+      return res.status(400).json({ error: 'Invalid vendor ID format' });
+    }
+
     // Calculate quantity from line items or use provided quantity
     const quantity =
       inputQuantity ||
@@ -516,9 +536,33 @@ export const createJob = async (req: Request, res: Response) => {
     });
 
     res.status(201).json(transformJob(jobWithIncludes));
-  } catch (error) {
+  } catch (error: any) {
     console.error('Create job error:', error);
-    res.status(500).json({ error: 'Failed to create job' });
+    console.error('Create job error stack:', error.stack);
+    console.error('Create job error code:', error.code);
+    console.error('Create job error meta:', JSON.stringify(error.meta));
+
+    // Return specific error for Prisma foreign key failures
+    if (error.code === 'P2003') {
+      return res.status(400).json({
+        error: 'Invalid customer or vendor ID',
+        details: error.meta?.field_name,
+      });
+    }
+    if (error.code === 'P2025') {
+      return res.status(400).json({ error: 'Customer or vendor not found' });
+    }
+
+    // Return detailed error in development, generic in production
+    const errorMessage = process.env.NODE_ENV === 'production'
+      ? 'Failed to create job'
+      : error.message || 'Failed to create job';
+
+    res.status(500).json({
+      error: errorMessage,
+      code: error.code || undefined,
+      details: process.env.NODE_ENV !== 'production' ? error.stack : undefined,
+    });
   }
 };
 

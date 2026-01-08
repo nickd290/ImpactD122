@@ -431,7 +431,7 @@ export function JobDetailModal({
   // Fetch uploaded files when job changes
   useEffect(() => {
     if (job?.id) {
-      fetch(`/api/jobs/${job.id}/files`)
+      fetch(`/api/files/jobs/${job.id}/files`)
         .then(res => res.json())
         .then(files => setUploadedFiles(files || []))
         .catch(() => setUploadedFiles([]));
@@ -505,7 +505,7 @@ export function JobDetailModal({
       formData.append('kind', 'ARTWORK');
 
       try {
-        const response = await fetch(`/api/jobs/${job.id}/files`, {
+        const response = await fetch(`/api/files/jobs/${job.id}/files`, {
           method: 'POST',
           body: formData,
         });
@@ -531,7 +531,7 @@ export function JobDetailModal({
   const handleDeleteFile = async (fileId: string) => {
     if (!job?.id) return;
     try {
-      const response = await fetch(`/api/jobs/${job.id}/files/${fileId}`, {
+      const response = await fetch(`/api/files/jobs/${job.id}/files/${fileId}`, {
         method: 'DELETE',
       });
       if (response.ok) {

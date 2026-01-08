@@ -158,7 +158,7 @@ function App() {
           const formData = new FormData();
           formData.append('file', pendingCustomerPOFile);
           formData.append('kind', 'CUSTOMER_PO');
-          const response = await fetch(`/api/jobs/${newJob.id}/files`, {
+          const response = await fetch(`/api/files/jobs/${newJob.id}/files`, {
             method: 'POST',
             body: formData,
           });
@@ -178,7 +178,7 @@ function App() {
           formData.append('kind', 'ARTWORK');
 
           try {
-            const response = await fetch(`/api/jobs/${newJob.id}/files`, {
+            const response = await fetch(`/api/files/jobs/${newJob.id}/files`, {
               method: 'POST',
               body: formData,
             });
@@ -197,7 +197,7 @@ function App() {
           const formData = new FormData();
           formData.append('file', originalPOFile);
           formData.append('kind', 'PO_PDF');
-          const response = await fetch(`/api/jobs/${newJob.id}/files`, {
+          const response = await fetch(`/api/files/jobs/${newJob.id}/files`, {
             method: 'POST',
             body: formData,
           });
@@ -221,9 +221,9 @@ function App() {
       } else {
         toast.success('Job created successfully');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to create job:', error);
-      toast.error('Failed to create job. Please try again.');
+      toast.error(error.message || 'Failed to create job');
     }
   };
 

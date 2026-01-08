@@ -36,7 +36,7 @@ export function JobFormModal({
   useEffect(() => {
     if (isOpen) {
       if (initialData) {
-        // Editing existing job
+        // Editing existing job or pre-filling from parsed data
         setFormData({
           title: initialData.title || '',
           customerId: initialData.customerId || '',
@@ -47,8 +47,10 @@ export function JobFormModal({
           sellPrice: initialData.sellPrice?.toString() || '',
           dueDate: initialData.dueDate ? new Date(initialData.dueDate).toISOString().split('T')[0] : '',
         });
-        // Fetch existing customer PO file
-        fetchExistingPOFile(initialData.id);
+        // Only fetch existing files if this is an existing job (has an ID)
+        if (initialData.id) {
+          fetchExistingPOFile(initialData.id);
+        }
       } else {
         // New job - reset form
         setFormData(defaultSimpleJobFormData);
@@ -62,7 +64,7 @@ export function JobFormModal({
   // Fetch existing customer PO file for a job
   const fetchExistingPOFile = async (jobId: string) => {
     try {
-      const response = await fetch(`/api/jobs/${jobId}/files`);
+      const response = await fetch(`/api/files/jobs/${jobId}/files`);
       if (response.ok) {
         const files = await response.json();
         const customerPO = files.find((f: any) => f.kind === 'CUSTOMER_PO');
@@ -77,7 +79,7 @@ export function JobFormModal({
   const handleDeletePOFile = async () => {
     if (uploadedPOFile && initialData?.id) {
       try {
-        const response = await fetch(`/api/jobs/${initialData.id}/files/${uploadedPOFile.id}`, {
+        const response = await fetch(`/api/files/jobs/${initialData.id}/files/${uploadedPOFile.id}`, {
           method: 'DELETE',
         });
         if (response.ok) {
