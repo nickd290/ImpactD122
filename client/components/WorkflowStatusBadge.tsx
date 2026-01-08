@@ -5,9 +5,55 @@ interface WorkflowStatusBadgeProps {
   status: JobWorkflowStatus | string;
   size?: 'sm' | 'md' | 'lg';
   showLabel?: boolean;
+  simplified?: boolean; // Use 5-stage simplified display
 }
 
-// Ordered workflow stages for checklist display
+// ============================================
+// SIMPLIFIED 5-STAGE WORKFLOW (for production)
+// ============================================
+export const SIMPLIFIED_STAGES = [
+  { stage: 'NEW', label: 'New', statuses: ['NEW_JOB'] },
+  { stage: 'PROOFING', label: 'Proofing', statuses: ['AWAITING_PROOF_FROM_VENDOR', 'PROOF_RECEIVED', 'PROOF_SENT_TO_CUSTOMER', 'AWAITING_CUSTOMER_RESPONSE'] },
+  { stage: 'APPROVED', label: 'Approved', statuses: ['APPROVED_PENDING_VENDOR'] },
+  { stage: 'PRODUCTION', label: 'Production', statuses: ['IN_PRODUCTION'] },
+  { stage: 'SHIPPED', label: 'Shipped', statuses: ['COMPLETED'] },
+] as const;
+
+// Map detailed status to simplified stage
+export function getSimplifiedStage(status: string): { stage: string; label: string; subLabel?: string } {
+  // Financial stages (hide from production views)
+  if (status === 'INVOICED' || status === 'PAID') {
+    return { stage: 'COMPLETE', label: 'Complete', subLabel: status === 'PAID' ? 'Paid' : 'Invoiced' };
+  }
+  if (status === 'CANCELLED') {
+    return { stage: 'CANCELLED', label: 'Cancelled' };
+  }
+
+  for (const simplified of SIMPLIFIED_STAGES) {
+    if (simplified.statuses.includes(status as any)) {
+      // Add sub-label for proofing stages
+      let subLabel: string | undefined;
+      if (simplified.stage === 'PROOFING') {
+        if (status === 'AWAITING_PROOF_FROM_VENDOR') subLabel = 'Waiting for proof';
+        else if (status === 'PROOF_RECEIVED') subLabel = 'Proof received';
+        else if (status === 'PROOF_SENT_TO_CUSTOMER') subLabel = 'Sent to customer';
+        else if (status === 'AWAITING_CUSTOMER_RESPONSE') subLabel = 'Awaiting response';
+      }
+      return { stage: simplified.stage, label: simplified.label, subLabel };
+    }
+  }
+  return { stage: 'NEW', label: 'New' };
+}
+
+// Get simplified stage index (for progress dots)
+export function getSimplifiedStageIndex(status: string): number {
+  const simplified = getSimplifiedStage(status);
+  return SIMPLIFIED_STAGES.findIndex(s => s.stage === simplified.stage);
+}
+
+// ============================================
+// FULL 10-STAGE WORKFLOW (legacy, for detailed views)
+// ============================================
 export const WORKFLOW_STAGES = [
   { status: 'NEW_JOB', label: 'New Job' },
   { status: 'AWAITING_PROOF_FROM_VENDOR', label: 'PO Sent / Awaiting Proof' },
@@ -96,13 +142,44 @@ export const STATUS_CONFIG: Record<string, { label: string; bgColor: string; tex
   },
 };
 
+// Simplified stage colors (5 stages)
+export const SIMPLIFIED_STAGE_CONFIG: Record<string, { label: string; bgColor: string; textColor: string; emoji: string }> = {
+  NEW: { label: 'New', bgColor: 'bg-yellow-100', textColor: 'text-yellow-800', emoji: '🆕' },
+  PROOFING: { label: 'Proofing', bgColor: 'bg-purple-100', textColor: 'text-purple-800', emoji: '📋' },
+  APPROVED: { label: 'Approved', bgColor: 'bg-green-100', textColor: 'text-green-800', emoji: '✓' },
+  PRODUCTION: { label: 'Production', bgColor: 'bg-blue-100', textColor: 'text-blue-800', emoji: '⚙️' },
+  SHIPPED: { label: 'Shipped', bgColor: 'bg-emerald-100', textColor: 'text-emerald-800', emoji: '📦' },
+  COMPLETE: { label: 'Complete', bgColor: 'bg-gray-100', textColor: 'text-gray-600', emoji: '✅' },
+  CANCELLED: { label: 'Cancelled', bgColor: 'bg-red-100', textColor: 'text-red-700', emoji: '❌' },
+};
+
 const SIZE_CLASSES = {
   sm: 'text-xs px-2 py-0.5',
   md: 'text-sm px-2.5 py-1',
   lg: 'text-base px-3 py-1.5',
 };
 
-export function WorkflowStatusBadge({ status, size = 'md', showLabel = true }: WorkflowStatusBadgeProps) {
+export function WorkflowStatusBadge({ status, size = 'md', showLabel = true, simplified = false }: WorkflowStatusBadgeProps) {
+  // Use simplified display if requested
+  if (simplified) {
+    const simplifiedInfo = getSimplifiedStage(status);
+    const simpleConfig = SIMPLIFIED_STAGE_CONFIG[simplifiedInfo.stage] || SIMPLIFIED_STAGE_CONFIG.NEW;
+
+    return (
+      <span
+        className={`inline-flex items-center gap-1.5 font-medium rounded-full ${simpleConfig.bgColor} ${simpleConfig.textColor} ${SIZE_CLASSES[size]}`}
+        title={simplifiedInfo.subLabel} // Show detailed status on hover
+      >
+        <span className="text-xs">{simpleConfig.emoji}</span>
+        {showLabel && <span>{simpleConfig.label}</span>}
+        {simplifiedInfo.subLabel && showLabel && (
+          <span className="text-[10px] opacity-70">({simplifiedInfo.subLabel})</span>
+        )}
+      </span>
+    );
+  }
+
+  // Original detailed display
   const config = STATUS_CONFIG[status] || {
     label: status,
     bgColor: 'bg-gray-100',

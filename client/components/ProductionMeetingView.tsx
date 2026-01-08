@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, AlertCircle, CheckCircle2, Clock, Package, ChevronDown, ChevronRight, Truck, FileText, X, Check, ClipboardList, MessageSquare } from 'lucide-react';
+import { RefreshCw, AlertCircle, CheckCircle2, Clock, Package, ChevronDown, ChevronRight, Truck, FileText, X, Check, ClipboardList, MessageSquare, LayoutGrid, Calendar } from 'lucide-react';
 import { Button, Badge } from './ui';
 import { cn } from '../lib/utils';
 import { jobsApi } from '../lib/api';
+import { getSimplifiedStage, SIMPLIFIED_STAGES, SIMPLIFIED_STAGE_CONFIG } from './WorkflowStatusBadge';
+import { WhatsMissing } from './WhatsMissing';
 
 interface MaterialStatus {
   type: string;
@@ -177,6 +179,7 @@ export function ProductionMeetingView({ onSelectJob }: ProductionMeetingViewProp
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [expandedJobs, setExpandedJobs] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<'all' | 'missing' | 'issues' | 'components'>('all');
+  const [viewMode, setViewMode] = useState<'stage' | 'urgency'>('stage'); // Default to stage view
 
   // Fetch data
   const fetchData = async () => {
@@ -250,13 +253,40 @@ export function ProductionMeetingView({ onSelectJob }: ProductionMeetingViewProp
     );
   }
 
-  const sections = [
-    { key: 'overdue', label: 'Overdue', jobs: grouped.overdue || [], color: 'border-red-500', bgColor: 'bg-red-50' },
-    { key: 'today', label: 'Due Today', jobs: grouped.today || [], color: 'border-red-400', bgColor: 'bg-red-50' },
-    { key: 'this_week', label: 'Due This Week', jobs: grouped.this_week || [], color: 'border-amber-400', bgColor: 'bg-amber-50' },
-    { key: 'later', label: 'Later', jobs: grouped.later || [], color: 'border-gray-300', bgColor: 'bg-gray-50' },
-    { key: 'no_date', label: 'No Due Date', jobs: grouped.no_date || [], color: 'border-gray-200', bgColor: 'bg-gray-50' },
-  ];
+  // Group jobs by simplified stage
+  const jobsByStage = React.useMemo(() => {
+    const byStage: Record<string, MeetingJob[]> = {};
+    SIMPLIFIED_STAGES.forEach(s => { byStage[s.stage] = []; });
+
+    jobs.forEach(job => {
+      const simplified = getSimplifiedStage(job.workflowStatus);
+      if (byStage[simplified.stage]) {
+        byStage[simplified.stage].push(job);
+      } else {
+        byStage['NEW'].push(job);
+      }
+    });
+
+    return byStage;
+  }, [jobs]);
+
+  // Sections based on view mode
+  const sections = viewMode === 'stage'
+    ? SIMPLIFIED_STAGES.map(stage => ({
+        key: stage.stage,
+        label: stage.label,
+        jobs: jobsByStage[stage.stage] || [],
+        color: `border-l-4 ${SIMPLIFIED_STAGE_CONFIG[stage.stage]?.bgColor || 'border-gray-300'}`,
+        bgColor: SIMPLIFIED_STAGE_CONFIG[stage.stage]?.bgColor || 'bg-gray-50',
+        emoji: SIMPLIFIED_STAGE_CONFIG[stage.stage]?.emoji || '',
+      }))
+    : [
+        { key: 'overdue', label: 'Overdue', jobs: grouped.overdue || [], color: 'border-red-500', bgColor: 'bg-red-50', emoji: '🔴' },
+        { key: 'today', label: 'Due Today', jobs: grouped.today || [], color: 'border-red-400', bgColor: 'bg-red-50', emoji: '🔴' },
+        { key: 'this_week', label: 'Due This Week', jobs: grouped.this_week || [], color: 'border-amber-400', bgColor: 'bg-amber-50', emoji: '🟡' },
+        { key: 'later', label: 'Later', jobs: grouped.later || [], color: 'border-gray-300', bgColor: 'bg-gray-50', emoji: '⚪' },
+        { key: 'no_date', label: 'No Due Date', jobs: grouped.no_date || [], color: 'border-gray-200', bgColor: 'bg-gray-50', emoji: '❓' },
+      ];
 
   return (
     <div className="h-full flex flex-col">
@@ -267,10 +297,35 @@ export function ProductionMeetingView({ onSelectJob }: ProductionMeetingViewProp
             <h1 className="text-xl font-semibold text-gray-900">Production Meeting</h1>
             <p className="text-sm text-gray-500 mt-1">ThreeZ Daily Review - Material Readiness</p>
           </div>
-          <Button variant="outline" size="sm" onClick={fetchData}>
-            <RefreshCw className="w-4 h-4 mr-1" />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* View Toggle */}
+            <div className="flex items-center bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('stage')}
+                className={cn(
+                  'flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                  viewMode === 'stage' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                )}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                By Stage
+              </button>
+              <button
+                onClick={() => setViewMode('urgency')}
+                className={cn(
+                  'flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                  viewMode === 'urgency' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                )}
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                By Due Date
+              </button>
+            </div>
+            <Button variant="outline" size="sm" onClick={fetchData}>
+              <RefreshCw className="w-4 h-4 mr-1" />
+              Refresh
+            </Button>
+          </div>
         </div>
 
         {/* Stats Row */}

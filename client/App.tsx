@@ -39,7 +39,7 @@ const IMPACT_DIRECT_ENTITY = {
 };
 
 function App() {
-  const [currentView, setCurrentView] = useState<View>('DASHBOARD');
+  const [currentView, setCurrentView] = useState<View>('PRODUCTION_MEETING');
   const [jobs, setJobs] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [vendors, setVendors] = useState<any[]>([]);

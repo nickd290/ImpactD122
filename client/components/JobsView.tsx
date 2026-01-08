@@ -8,6 +8,7 @@ import { StatusBadge } from './ui/StatusBadge';
 import { JobDetailModal } from './JobDetailModal';
 import { InlineEditableCell } from './InlineEditableCell';
 import { StatusDropdown } from './StatusDropdown';
+import { MissingCount } from './WhatsMissing';
 import { cn } from '../lib/utils';
 import { pdfApi, jobsApi } from '../lib/api';
 
@@ -547,6 +548,7 @@ export function JobsView({
                   <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Job</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Customer</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Vendor</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-zinc-500 w-16" title="What's Missing">Needs</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Status</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">PO #</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Due</th>
@@ -607,6 +609,17 @@ export function JobsView({
                       ) : (
                         <span className="text-sm text-zinc-400">—</span>
                       )}
+                    </td>
+                    {/* Needs (What's Missing) */}
+                    <td className="px-4 py-3 text-center">
+                      <MissingCount job={{
+                        hasPO: ((job as any).purchaseOrders || []).length > 0,
+                        poSent: ((job as any).purchaseOrders || []).some((po: any) => po.emailedAt),
+                        qcArtwork: (job as any).qcArtwork,
+                        qcDataFiles: (job as any).qcDataFiles,
+                        artOverride: (job as any).artOverride,
+                        dataOverride: (job as any).dataOverride,
+                      }} />
                     </td>
                     {/* Status */}
                     <td className="px-4 py-3">
