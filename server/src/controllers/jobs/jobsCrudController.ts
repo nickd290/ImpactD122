@@ -409,6 +409,15 @@ export const getProductionMeetingView = async (req: Request, res: Response) => {
 
         // Workflow
         workflowStatus: job.workflowStatus || 'NEW_JOB',
+
+        // Shipping info
+        inHomesDate: job.inHomesDate?.toISOString() || null,
+        shipToAddress: job.vendorShipToAddress || null,
+        shipToCity: job.vendorShipToCity || null,
+        shipToState: job.vendorShipToState || null,
+        shipToZip: job.vendorShipToZip || null,
+        shipToName: job.vendorShipToName || null,
+        shippingMethod: job.trackingCarrierOverride || null,
       };
     });
 

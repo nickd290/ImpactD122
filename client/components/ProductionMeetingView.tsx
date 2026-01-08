@@ -53,6 +53,14 @@ interface MeetingJob {
   activeTask?: string;
   proofStatus?: string;
   workflowStatus: string;
+  // Shipping info
+  inHomesDate?: string;
+  shipToAddress?: string;
+  shipToCity?: string;
+  shipToState?: string;
+  shipToZip?: string;
+  shipToName?: string;
+  shippingMethod?: string;
 }
 
 interface MeetingStats {
@@ -442,6 +450,8 @@ export function ProductionMeetingView({ onSelectJob }: ProductionMeetingViewProp
                           <th className="px-4 py-2 text-left font-medium">Customer / Title</th>
                           <th className="px-4 py-2 text-left font-medium w-28">Customer PO</th>
                           <th className="px-4 py-2 text-left font-medium w-24">Due</th>
+                          <th className="px-4 py-2 text-left font-medium w-28">Ship Date</th>
+                          <th className="px-4 py-2 text-left font-medium w-32">Ship To</th>
                           <th className="px-4 py-2 text-left font-medium">What's Needed</th>
                           <th className="px-4 py-2 text-left font-medium">Status</th>
                         </tr>
@@ -508,6 +518,29 @@ export function ProductionMeetingView({ onSelectJob }: ProductionMeetingViewProp
                                   <UrgencyBadge urgency={job.urgency} daysUntilDue={job.daysUntilDue} />
                                 </td>
 
+                                {/* Ship Date */}
+                                <td className="px-4 py-3">
+                                  {job.inHomesDate ? (
+                                    <span className="text-gray-700 text-xs">{formatDate(job.inHomesDate)}</span>
+                                  ) : (
+                                    <span className="text-gray-400 text-xs">-</span>
+                                  )}
+                                </td>
+
+                                {/* Ship To */}
+                                <td className="px-4 py-3">
+                                  {job.shipToCity || job.shipToState ? (
+                                    <div className="text-xs">
+                                      <span className="text-gray-700">{[job.shipToCity, job.shipToState].filter(Boolean).join(', ')}</span>
+                                      {job.shippingMethod && (
+                                        <div className="text-gray-500 text-[10px] mt-0.5">{job.shippingMethod}</div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-gray-400 text-xs">-</span>
+                                  )}
+                                </td>
+
                                 {/* What's Needed */}
                                 <td className="px-4 py-3">
                                   {job.missing.length > 0 ? (
@@ -544,7 +577,7 @@ export function ProductionMeetingView({ onSelectJob }: ProductionMeetingViewProp
                               {/* Expanded components */}
                               {isExpanded && job.hasComponents && (
                                 <tr>
-                                  <td colSpan={6} className="bg-gray-50 px-8 py-3 border-l-4 border-l-blue-300">
+                                  <td colSpan={8} className="bg-gray-50 px-8 py-3 border-l-4 border-l-blue-300">
                                     <div className="text-xs text-gray-600 font-medium mb-2">Components:</div>
                                     {job.components.map(comp => (
                                       <ComponentRow key={comp.id} component={comp} />
