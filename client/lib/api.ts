@@ -29,6 +29,7 @@ export const jobsApi = {
     return apiFetch(`/jobs${query}`);
   },
   getWorkflowView: () => apiFetch('/jobs/workflow-view'),
+  getProductionMeeting: () => apiFetch('/jobs/production-meeting'),
   getById: (id: string) => apiFetch(`/jobs/${id}`),
   create: (data: any) => apiFetch('/jobs', {
     method: 'POST',

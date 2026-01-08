@@ -209,6 +209,242 @@ export const getJobsWorkflowView = async (req: Request, res: Response) => {
 };
 
 /**
+ * Get jobs formatted for Production Meeting with ThreeZ
+ * Focused on material readiness: what's received, what's missing, what has issues
+ * Groups by urgency (overdue → due soon → later)
+ */
+export const getProductionMeetingView = async (req: Request, res: Response) => {
+  try {
+    // Get all active jobs with QC data, components, and files
+    const jobs = await prisma.job.findMany({
+      where: {
+        deletedAt: null,
+        status: 'ACTIVE',
+        // Exclude jobs that are already shipped/invoiced/paid
+        workflowStatus: {
+          notIn: ['COMPLETED', 'INVOICED', 'PAID', 'CANCELLED'],
+        },
+      },
+      include: {
+        Company: true,
+        Vendor: true,
+        JobComponent: {
+          orderBy: { sortOrder: 'asc' },
+        },
+        File: {
+          select: {
+            id: true,
+            kind: true,
+            fileName: true,
+            createdAt: true,
+          },
+        },
+        Proof: {
+          select: {
+            id: true,
+            status: true,
+            version: true,
+          },
+          orderBy: { version: 'desc' },
+          take: 1,
+        },
+        PurchaseOrder: {
+          where: {
+            originCompanyId: 'impact-direct',
+          },
+          select: {
+            id: true,
+            poNumber: true,
+            status: true,
+            emailedAt: true,
+          },
+        },
+      },
+      orderBy: [
+        { deliveryDate: 'asc' },
+        { createdAt: 'desc' },
+      ],
+    });
+
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
+    // Transform jobs for production meeting
+    const transformedJobs = jobs.map(job => {
+      // Calculate days until due
+      let daysUntilDue: number | null = null;
+      let urgency: 'overdue' | 'today' | 'this_week' | 'later' | 'no_date' = 'no_date';
+
+      if (job.deliveryDate) {
+        const dueDate = new Date(job.deliveryDate);
+        dueDate.setHours(0, 0, 0, 0);
+        const diffTime = dueDate.getTime() - now.getTime();
+        daysUntilDue = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (daysUntilDue < 0) urgency = 'overdue';
+        else if (daysUntilDue === 0) urgency = 'today';
+        else if (daysUntilDue <= 7) urgency = 'this_week';
+        else urgency = 'later';
+      }
+
+      // Build material status summary
+      const materials: {
+        type: string;
+        status: 'received' | 'pending' | 'issue' | 'na';
+        note?: string;
+        receivedAt?: string;
+      }[] = [];
+
+      // Art status
+      if (job.qcArtwork !== 'NA') {
+        materials.push({
+          type: 'Art',
+          status: job.qcArtwork === 'RECEIVED'
+            ? (job.artOverride ? 'received' : 'received')
+            : 'pending',
+          note: job.qcArtworkNote || undefined,
+        });
+      }
+
+      // Data status
+      if (job.qcDataFiles !== 'NA') {
+        materials.push({
+          type: 'Data',
+          status: job.qcDataFiles === 'PENDING' ? 'pending'
+            : (job.qcDataFiles === 'IN_ARTWORK' || job.qcDataFiles === 'SEPARATE_FILE') ? 'received'
+            : 'na',
+          note: job.qcDataFilesNote || undefined,
+        });
+      }
+
+      // Supplied materials
+      if (job.qcSuppliedMaterials !== 'NA') {
+        materials.push({
+          type: 'Materials',
+          status: job.qcSuppliedMaterials === 'RECEIVED' ? 'received'
+            : job.qcSuppliedMaterials === 'TRACKING_RECEIVED' ? 'pending'
+            : 'pending',
+          note: job.qcSuppliedMaterialsNote || undefined,
+        });
+      }
+
+      // Build issues list (notes that indicate problems)
+      const issues: string[] = [];
+      if (job.qcArtworkNote) issues.push(`Art: ${job.qcArtworkNote}`);
+      if (job.qcDataFilesNote) issues.push(`Data: ${job.qcDataFilesNote}`);
+      if (job.qcMailingNote) issues.push(`Mailing: ${job.qcMailingNote}`);
+      if (job.qcSuppliedMaterialsNote) issues.push(`Materials: ${job.qcSuppliedMaterialsNote}`);
+
+      // Component tracking for multi-component jobs
+      const components = job.JobComponent.map(comp => ({
+        id: comp.id,
+        name: comp.name,
+        artworkStatus: comp.artworkStatus,
+        artworkLink: comp.artworkLink,
+        materialStatus: comp.materialStatus,
+        trackingNumber: comp.trackingNumber,
+        trackingCarrier: comp.trackingCarrier,
+        expectedArrival: comp.expectedArrival?.toISOString() || null,
+        receivedAt: comp.receivedAt?.toISOString() || null,
+        notes: comp.notes,
+        dueDate: comp.dueDate?.toISOString() || null,
+      }));
+
+      // Determine what's missing
+      const missing: string[] = [];
+      if (job.qcArtwork === 'PENDING' && !job.artOverride) missing.push('Art');
+      if (job.qcDataFiles === 'PENDING' && !job.dataOverride) missing.push('Data');
+      if (job.qcSuppliedMaterials === 'PENDING') missing.push('Materials');
+
+      // Check components for missing items
+      components.forEach(comp => {
+        if (comp.artworkStatus === 'PENDING') missing.push(`${comp.name} Art`);
+        if (comp.materialStatus === 'PENDING') missing.push(`${comp.name}`);
+      });
+
+      // PO status
+      const hasPO = job.PurchaseOrder.length > 0;
+      const poSent = job.PurchaseOrder.some(po => po.emailedAt !== null);
+
+      return {
+        id: job.id,
+        jobNo: job.jobNo || job.baseJobId || `J-${job.id.slice(0, 6)}`,
+        title: job.title,
+        customerName: job.Company?.name || 'Unknown',
+        customerId: job.Company?.id,
+        vendorName: job.Vendor?.name || 'TBD',
+        vendorId: job.vendorId,
+        customerPONumber: job.customerPONumber,
+
+        // Dates
+        deliveryDate: job.deliveryDate?.toISOString() || null,
+        mailDate: job.mailDate?.toISOString() || null,
+        daysUntilDue,
+        urgency,
+
+        // Material readiness
+        materials,
+        missing,
+        issues,
+        hasIssues: issues.length > 0,
+
+        // Components (for multi-piece jobs)
+        components,
+        hasComponents: components.length > 0,
+
+        // PO status
+        hasPO,
+        poSent,
+        poNumber: job.PurchaseOrder[0]?.poNumber || null,
+
+        // Quick status indicators
+        artReceived: job.qcArtwork === 'RECEIVED' || job.artOverride,
+        dataReceived: job.qcDataFiles !== 'PENDING' && job.qcDataFiles !== 'NA',
+
+        // Active task
+        activeTask: job.activeTask,
+
+        // Proof status
+        proofStatus: job.Proof[0]?.status || null,
+
+        // Workflow
+        workflowStatus: job.workflowStatus || 'NEW_JOB',
+      };
+    });
+
+    // Group by urgency
+    const grouped = {
+      overdue: transformedJobs.filter(j => j.urgency === 'overdue'),
+      today: transformedJobs.filter(j => j.urgency === 'today'),
+      this_week: transformedJobs.filter(j => j.urgency === 'this_week'),
+      later: transformedJobs.filter(j => j.urgency === 'later'),
+      no_date: transformedJobs.filter(j => j.urgency === 'no_date'),
+    };
+
+    // Summary stats
+    const stats = {
+      total: transformedJobs.length,
+      needsArt: transformedJobs.filter(j => j.missing.includes('Art')).length,
+      needsData: transformedJobs.filter(j => j.missing.includes('Data')).length,
+      hasIssues: transformedJobs.filter(j => j.hasIssues).length,
+      awaitingComponents: transformedJobs.filter(j =>
+        j.components.some(c => c.materialStatus === 'PENDING' || c.materialStatus === 'IN_TRANSIT')
+      ).length,
+      noPO: transformedJobs.filter(j => !j.hasPO).length,
+    };
+
+    res.json({
+      jobs: transformedJobs,
+      grouped,
+      stats,
+    });
+  } catch (error) {
+    console.error('Get production meeting view error:', error);
+    res.status(500).json({ error: 'Failed to fetch production meeting view' });
+  }
+};
+
+/**
  * Get single job by ID
  */
 export const getJob = async (req: Request, res: Response) => {

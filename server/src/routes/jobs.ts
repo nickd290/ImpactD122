@@ -3,6 +3,7 @@ import {
   getAllJobs,
   getJob,
   getJobsWorkflowView,
+  getProductionMeetingView,
   createJob,
   updateJob,
   deleteJob,
@@ -71,6 +72,7 @@ const router = Router();
 // Job CRUD
 router.get('/', getAllJobs);
 router.get('/workflow-view', getJobsWorkflowView); // Must be before /:id
+router.get('/production-meeting', getProductionMeetingView); // Production meeting view
 router.get('/:id', getJob);
 router.post('/', createJob);
 router.post('/from-email', createFromEmail); // Webhook for n8n email automation
