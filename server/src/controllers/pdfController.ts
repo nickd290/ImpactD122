@@ -25,7 +25,7 @@ function transformJobForPDF(job: any) {
     quantity: quantity,
     sizeName: job.sizeName || '',
     customerPONumber: job.customerPONumber || '',
-    vendorPONumber: job.customerPONumber || job.jobNo, // Use as PO number
+    vendorPONumber: job.jobNo, // PO number we send TO vendor
     invoiceNumber: job.jobNo, // Use job number as invoice number
     quoteNumber: job.jobNo,
     dueDate: job.deliveryDate,

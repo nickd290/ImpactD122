@@ -2945,6 +2945,26 @@ export function JobDetailModal({
                 ) : (
                   <span className="text-gray-600 truncate">{job.title}</span>
                 )}
+                {/* Customer PO# - Always Visible */}
+                {(job.customerPONumber || isEditMode) && (
+                  <>
+                    <span className="text-gray-300 flex-shrink-0">|</span>
+                    <div className="flex items-center gap-1 flex-shrink-0 bg-blue-50 px-2 py-1 rounded">
+                      <span className="text-xs text-blue-600 font-medium">PO:</span>
+                      {isEditMode ? (
+                        <input
+                          type="text"
+                          value={editedJob.customerPONumber ?? job.customerPONumber ?? ''}
+                          onChange={(e) => updateEditedField('customerPONumber', e.target.value)}
+                          className="w-32 px-1 py-0.5 text-sm text-blue-700 font-medium border border-blue-300 rounded"
+                          placeholder="PO #"
+                        />
+                      ) : (
+                        <span className="text-sm text-blue-700 font-medium">{job.customerPONumber}</span>
+                      )}
+                    </div>
+                  </>
+                )}
                 {/* Pathway Badge */}
                 {job.pathway && PATHWAY_STYLES[job.pathway] && (
                   <span

@@ -35,7 +35,7 @@ function transformJobForPDF(job: any) {
     status: job.status,
     notes: job.notes || '',
     customerPONumber: job.customerPONumber || '',
-    vendorPONumber: job.customerPONumber || job.jobNo,
+    vendorPONumber: job.jobNo, // PO number we send TO vendor (not customer's PO)
     invoiceNumber: job.jobNo,
     quoteNumber: job.jobNo,
     dueDate: job.deliveryDate,

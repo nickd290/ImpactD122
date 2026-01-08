@@ -251,7 +251,7 @@ export function toJobViewModel(job: JobWithRelations): JobViewModel {
     title: job.title || '',
     status: job.status,
     customerPONumber: job.customerPONumber || '',
-    vendorPONumber: job.customerPONumber || job.jobNo,
+    vendorPONumber: job.jobNo, // PO number we send TO vendor (not customer's PO)
     invoiceNumber: job.jobNo,
     quoteNumber: job.jobNo,
     quantity,

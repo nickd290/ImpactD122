@@ -94,7 +94,8 @@ export interface LineItem {
 
 export interface Job {
   id: string;
-  number: string; // J-1001
+  number: string; // J-1001 (legacy, prefer jobNo)
+  jobNo?: string; // J-1001 (canonical - matches server)
   title: string;
   customerId: string;
   vendorId: string; // Could be Bradford, Third Party
