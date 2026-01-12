@@ -512,6 +512,7 @@ export const getJob = async (req: Request, res: Response) => {
 
 // Create job
 export const createJob = async (req: Request, res: Response) => {
+  console.log('🔵 createJob called with body:', JSON.stringify(req.body, null, 2));
   try {
     const {
       lineItems,
@@ -664,9 +665,11 @@ export const createJob = async (req: Request, res: Response) => {
 
     // Final validation: ensure sellPrice is valid before saving
     if (!sellPrice || sellPrice <= 0) {
+      console.log('🔴 Validation failed: sellPrice is', sellPrice);
       return res.status(400).json({ error: 'Sell price is required and must be greater than 0' });
     }
 
+    console.log('🔵 About to create job:', { jobId, jobNo, customerId, vendorId, sellPrice, title });
     const job = await prisma.job.create({
       data: {
         id: jobId,
@@ -946,9 +949,18 @@ export const createJob = async (req: Request, res: Response) => {
     });
 
     res.status(201).json(transformJob(job));
-  } catch (error) {
-    console.error('Create job error:', error);
-    res.status(500).json({ error: 'Failed to create job' });
+  } catch (error: any) {
+    console.error('=== CREATE JOB ERROR ===');
+    console.error('Error message:', error.message);
+    console.error('Error code:', error.code);
+    console.error('Error meta:', JSON.stringify(error.meta));
+    console.error('Error stack:', error.stack);
+    console.error('Request body keys:', Object.keys(req.body || {}));
+    res.status(500).json({
+      error: 'Failed to create job',
+      details: error.message,
+      code: error.code
+    });
   }
 };
 

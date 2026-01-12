@@ -12,7 +12,11 @@ async function apiFetch(url: string, options?: RequestInit) {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(error.error || 'Request failed');
+    // Include details if available (helps debug production issues)
+    const message = error.details
+      ? `${error.error}: ${error.details}`
+      : (error.error || 'Request failed');
+    throw new Error(message);
   }
 
   if (response.status === 204) {
