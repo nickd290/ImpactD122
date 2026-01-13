@@ -91,29 +91,20 @@ export interface CreateJobUnifiedResult {
 
 /**
  * Generate the next job number (J-XXXX format).
+ * Uses atomic increment via JobSequence to prevent race conditions.
  * MUST be called within a transaction for atomicity.
  */
 async function generateJobNo(
   tx: PrismaClient | Parameters<Parameters<PrismaClient['$transaction']>[0]>[0]
 ): Promise<string> {
-  // Only consider jobs with J-XXXX format (filter out TEST- and other prefixes)
-  const lastJob = await tx.job.findFirst({
-    where: { jobNo: { startsWith: 'J-' } },
-    orderBy: { jobNo: 'desc' },
-    select: { jobNo: true },
+  // Use atomic upsert to prevent race conditions when multiple users create jobs simultaneously
+  const result = await tx.jobSequence.upsert({
+    where: { id: 'job-seq' },
+    update: { currentValue: { increment: 1 } },
+    create: { id: 'job-seq', currentValue: 1001 },  // First job gets J-1001
   });
 
-  if (!lastJob) {
-    return 'J-1001';
-  }
-
-  const match = lastJob.jobNo.match(/J-(\d+)/);
-  if (!match) {
-    return 'J-1001';
-  }
-
-  const lastNumber = parseInt(match[1], 10);
-  return `J-${(lastNumber + 1).toString().padStart(4, '0')}`;
+  return `J-${result.currentValue.toString().padStart(4, '0')}`;
 }
 
 /**

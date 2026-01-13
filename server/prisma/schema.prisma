@@ -1353,3 +1353,10 @@ model MasterSequence {
   currentValue Int      @default(3000)  // Starts at 3000 (fresh namespace)
   updatedAt    DateTime @updatedAt
 }
+
+// Atomic sequence for J-XXXX job numbers (prevents race conditions)
+model JobSequence {
+  id           String   @id @default("job-seq")
+  currentValue Int      @default(1000)  // First job gets J-1001
+  updatedAt    DateTime @updatedAt
+}
