@@ -16,6 +16,7 @@ import { EntitiesView } from './components/EntitiesView';
 import { UnifiedFinancialsView } from './components/financials/UnifiedFinancialsView';
 import { CommunicationsView } from './components/CommunicationsView';
 import { VendorRFQView } from './components/VendorRFQView';
+import { JobBoardView } from './components/JobBoardView';
 import { JobFormModal } from './components/JobFormModal';
 import { JobExcelImporter } from './components/JobExcelImporter';
 import { JobImportPreviewModal } from './components/JobImportPreviewModal';
@@ -23,7 +24,7 @@ import { NewJobChoiceModal } from './components/NewJobChoiceModal';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { AppLoadingSkeleton } from './components/LoadingSkeleton';
 
-type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
+type View = 'DASHBOARD' | 'JOBS' | 'JOB_BOARD' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
 
 // Impact Direct entity for PDF generation
 const IMPACT_DIRECT_ENTITY = {
@@ -637,6 +638,16 @@ function App() {
               onShowPOUploader={() => setShowPOUploader(true)}
               onShowEmailDraft={() => setShowEmailDraft(true)}
               onShowExcelImporter={() => setShowExcelImporter(true)}
+            />
+          )}
+
+          {currentView === 'JOB_BOARD' && (
+            <JobBoardView
+              jobs={jobs}
+              onJobClick={(job) => {
+                setSelectedJob(job);
+                setCurrentView('JOBS');
+              }}
             />
           )}
 

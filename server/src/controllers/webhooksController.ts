@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { prisma } from '../utils/prisma';
-import { RoutingType, PaperSource, CampaignFrequency, DropStatus, FileKind, WebhookSource } from '@prisma/client';
+import { RoutingType, PaperSource, CampaignFrequency, DropStatus, FileKind, WebhookSource, JobStatus, JobWorkflowStatus } from '@prisma/client';
+import { syncWorkflowFromStatus } from '../domain/jobStatusSync';
 import { sendThreeZPOEmail, sendEmailImportNotification } from '../services/emailService';
 import { parsePrintSpecs, parseEmailToJobSpecs } from '../services/openaiService';
 import { parsePurchaseOrder } from '../services/geminiService';
@@ -348,9 +349,19 @@ export async function receiveJobWebhook(req: Request, res: Response) {
 
     if (existingJob) {
       // Update existing job (keep existing jobNo)
+      // Sync workflowStatus when status changes to PAID or CANCELLED
+      const mappedStatus = mapStatus(payload.status) as JobStatus;
+      const syncedWorkflowStatus = syncWorkflowFromStatus(
+        mappedStatus,
+        existingJob.workflowStatus
+      );
+
       job = await prisma.job.update({
         where: { id: existingJob.id },
-        data: jobData,
+        data: {
+          ...jobData,
+          workflowStatus: syncedWorkflowStatus,
+        },
       });
       console.log(`✅ Updated existing job ${job.jobNo} (${job.id})`);
     } else {
@@ -370,6 +381,13 @@ export async function receiveJobWebhook(req: Request, res: Response) {
       });
 
       // Update with additional webhook-specific fields
+      // Sync workflowStatus when status changes to PAID or CANCELLED
+      const newMappedStatus = mapStatus(payload.status) as JobStatus;
+      const newSyncedWorkflowStatus = syncWorkflowFromStatus(
+        newMappedStatus,
+        createdJob.workflowStatus
+      );
+
       job = await prisma.job.update({
         where: { id: createdJob.id },
         data: {
@@ -377,7 +395,8 @@ export async function receiveJobWebhook(req: Request, res: Response) {
           externalSource,
           description: jobDescription,
           sizeName: payload.sizeName,
-          status: mapStatus(payload.status),
+          status: newMappedStatus,
+          workflowStatus: newSyncedWorkflowStatus,
           // Vendor ship-to fields for release app
           ...(isFromReleaseApp && specs.shippingLocation ? {
             vendorShipToName: specs.shippingLocation,

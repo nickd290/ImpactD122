@@ -1,3 +1,4 @@
+// Build version: 2026-01-07-v2 - Fixed job creation
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -16,6 +17,7 @@ import webhooksRouter from './routes/webhooks';
 import vendorRfqRouter from './routes/vendorRfq';
 import portalRouter from './routes/portal';
 import filesRouter from './routes/files';
+import proofsRouter from './routes/proofs';
 
 // Load environment variables
 // Use path relative to this file to find .env in the server directory
@@ -70,6 +72,7 @@ app.use('/api/webhooks', webhooksRouter);
 app.use('/api/vendor-rfqs', vendorRfqRouter);
 app.use('/api', portalRouter);
 app.use('/api', filesRouter);
+app.use('/api/proofs', proofsRouter);
 
 // Serve frontend in production
 if (process.env.NODE_ENV === 'production') {

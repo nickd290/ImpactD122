@@ -34,6 +34,10 @@ export const jobsApi = {
   },
   getWorkflowView: () => apiFetch('/jobs/workflow-view'),
   getById: (id: string) => apiFetch(`/jobs/${id}`),
+  getActivity: (id: string, limit?: number) => {
+    const query = limit ? `?limit=${limit}` : '';
+    return apiFetch(`/jobs/${id}/activity${query}`);
+  },
   create: (data: any) => apiFetch('/jobs', {
     method: 'POST',
     body: JSON.stringify(data),
@@ -531,4 +535,20 @@ export const vendorRfqApi = {
   convertToJob: (id: string) => apiFetch(`/vendor-rfqs/${id}/convert-to-job`, {
     method: 'POST',
   }),
+};
+
+// Proofs API - Proof approval workflow
+export const proofsApi = {
+  // Get all proofs for a job (with files and approval history)
+  getJobProofs: (jobId: string) => apiFetch(`/proofs/job/${jobId}`),
+
+  // Approve or request changes on a proof
+  approve: (proofId: string, approved: boolean, comments?: string, approvedBy?: string) =>
+    apiFetch(`/proofs/${proofId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ approved, comments, approvedBy }),
+    }),
+
+  // Get approval history for a proof
+  getApprovals: (proofId: string) => apiFetch(`/proofs/${proofId}/approvals`),
 };

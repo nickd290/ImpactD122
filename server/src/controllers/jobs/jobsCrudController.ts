@@ -49,6 +49,8 @@ import { determinePathway } from '../../services/pathwayService';
 import { generateBaseJobId, getTypeCode } from '../../services/jobIdService';
 import { createJobUnified, CreateJobUnifiedInput } from '../../services/jobCreationService';
 import { detectMailingType, MailingDetectionInput } from '../../services/mailingDetectionService';
+import { syncWorkflowFromStatus } from '../../domain/jobStatusSync';
+import { JobStatus } from '@prisma/client';
 
 // ============================================================================
 // READ OPERATIONS
@@ -853,10 +855,27 @@ export const updateJobStatus = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { status } = req.body;
 
+    // Fetch current job to get workflowStatus for sync
+    const currentJob = await prisma.job.findUnique({
+      where: { id },
+      select: { workflowStatus: true },
+    });
+
+    if (!currentJob) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    // Sync workflowStatus when status changes to PAID or CANCELLED
+    const newWorkflowStatus = syncWorkflowFromStatus(
+      status as JobStatus,
+      currentJob.workflowStatus
+    );
+
     const job = await prisma.job.update({
       where: { id },
       data: {
         status,
+        workflowStatus: newWorkflowStatus,
         updatedAt: new Date(),
       },
       include: {

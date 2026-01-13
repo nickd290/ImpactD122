@@ -23,20 +23,25 @@ export function Tabs({ tabs, activeTab, onTabChange, className }: TabsProps) {
             key={tab.id}
             onClick={() => onTabChange(tab.id)}
             className={cn(
-              'whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium transition-colors',
+              'whitespace-nowrap border-b-2 py-3 px-1 text-sm font-medium tracking-wide transition-colors',
               activeTab === tab.id
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-muted-foreground hover:border-gray-300 hover:text-foreground'
+                ? 'border-primary text-foreground'
+                : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
             )}
           >
-            {tab.label}
+            <span className={cn(
+              'uppercase text-[11px] tracking-[0.08em]',
+              activeTab === tab.id && 'font-semibold'
+            )}>
+              {tab.label}
+            </span>
             {tab.count !== undefined && (
               <span
                 className={cn(
-                  'ml-2 rounded-full py-0.5 px-2.5 text-xs font-medium',
+                  'ml-2 rounded-full py-0.5 px-2 text-[10px] font-medium tabular-nums',
                   activeTab === tab.id
-                    ? 'bg-blue-100 text-blue-600'
-                    : 'bg-gray-100 text-gray-600'
+                    ? 'bg-primary/10 text-foreground'
+                    : 'bg-muted text-muted-foreground'
                 )}
               >
                 {tab.count}

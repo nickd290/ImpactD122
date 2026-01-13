@@ -7,7 +7,8 @@ import { toDateInputValue } from '../lib/utils';
 import { EditableField } from './EditableField';
 import { InlineEditableCell } from './InlineEditableCell';
 import { LineItemRow } from './LineItemRow';
-import { pdfApi, emailApi, communicationsApi, invoiceApi, filesApi, jobsApi, changeOrdersApi } from '../lib/api';
+import { pdfApi, emailApi, communicationsApi, invoiceApi, filesApi, jobsApi, changeOrdersApi, proofsApi } from '../lib/api';
+import { ProofApprovalSection } from './ProofApprovalSection';
 import { ChangeOrderList } from './job-detail/ChangeOrderList';
 import { ChangeOrderModal } from './job-detail/ChangeOrderModal';
 import type { ChangeOrder, ChangeOrderStatus } from '../types';
@@ -18,11 +19,11 @@ import { WorkflowStatusBadge, getNextWorkflowStatuses, WORKFLOW_STAGES, getStage
 import { PDFPreviewModal } from './PDFPreviewModal';
 import { JobReadinessCard } from './job-form/JobReadinessCard';
 
-// Pathway badge styling
+// Pathway badge styling - uses design system colors
 const PATHWAY_STYLES = {
-  P1: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'P1' },
-  P2: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'P2' },
-  P3: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'P3' },
+  P1: { bg: 'bg-pathway-p1-bg', text: 'text-pathway-p1', label: 'P1 Direct' },
+  P2: { bg: 'bg-pathway-p2-bg', text: 'text-pathway-p2', label: 'P2 JD' },
+  P3: { bg: 'bg-pathway-p3-bg', text: 'text-pathway-p3', label: 'P3 Partner' },
 } as const;
 
 type Pathway = 'P1' | 'P2' | 'P3';
@@ -275,7 +276,7 @@ export function JobDetailModal({
 
   // Edit mode state
   const [isEditMode, setIsEditMode] = useState(false);
-  const [editedJob, setEditedJob] = useState<Partial<Job & { vendorId?: string; bradfordTotal?: number }>>({});
+  const [editedJob, setEditedJob] = useState<Partial<Job & { vendorId?: string; customerId?: string; bradfordTotal?: number }>>({});
   const [isSavingJob, setIsSavingJob] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
@@ -290,6 +291,10 @@ export function JobDetailModal({
   // Vendor list for dropdown
   const [vendors, setVendors] = useState<Array<{ id: string; name: string; isPartner?: boolean }>>([]);
   const [isLoadingVendors, setIsLoadingVendors] = useState(false);
+
+  // Customer list for dropdown
+  const [customers, setCustomers] = useState<Array<{ id: string; name: string }>>([]);
+  const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
 
   // Email modal state
   const [showEmailInvoiceModal, setShowEmailInvoiceModal] = useState(false);
@@ -343,6 +348,18 @@ export function JobDetailModal({
     }
   }, [isEditMode, isAddingPO, vendors.length]);
 
+  // Fetch customers when edit mode is enabled
+  useEffect(() => {
+    if (isEditMode && customers.length === 0) {
+      setIsLoadingCustomers(true);
+      fetch('/api/entities?type=CUSTOMER')
+        .then(res => res.json())
+        .then(data => setCustomers(data))
+        .catch(err => console.error('Failed to fetch customers:', err))
+        .finally(() => setIsLoadingCustomers(false));
+    }
+  }, [isEditMode, customers.length]);
+
   // Initialize editedJob when job changes or edit mode is enabled
   useEffect(() => {
     if (job && isEditMode) {
@@ -356,6 +373,7 @@ export function JobDetailModal({
         notes: job.notes,
         specs: { ...job.specs },
         vendorId: job.vendor?.id,
+        customerId: job.customer?.id,
         bradfordTotal: job.profit?.totalCost,
       });
     }
@@ -461,6 +479,13 @@ export function JobDetailModal({
   const { data: changeOrders, isLoading: isLoadingCOs, refetch: refetchCOs } = useQuery({
     queryKey: ['changeOrders', job?.id],
     queryFn: () => job?.id ? changeOrdersApi.list(job.id) : Promise.resolve([]),
+    enabled: !!job?.id,
+  });
+
+  // Fetch job activity (change history)
+  const { data: activities } = useQuery({
+    queryKey: ['jobActivity', job?.id],
+    queryFn: () => job?.id ? jobsApi.getActivity(job.id, 20) : Promise.resolve([]),
     enabled: !!job?.id,
   });
 
@@ -1163,72 +1188,82 @@ export function JobDetailModal({
     const blockers = getBlockers();
 
     return (
-    <div className="space-y-3">
-      {/* Compact Header Row: Key Numbers */}
-      <div className="grid grid-cols-5 gap-2 text-center bg-white border border-gray-200 rounded-lg overflow-hidden">
-        <div className="p-2 border-r border-gray-100">
-          <div className="text-[10px] text-gray-500 uppercase">Status</div>
+    <div className="space-y-4">
+      {/* Compact Header Row: Key Numbers - Editorial Style */}
+      <div className="grid grid-cols-5 gap-0 text-center bg-card border border-border rounded-lg overflow-hidden">
+        <div className="p-3 border-r border-border/50">
+          <div className="section-header mb-1">Status</div>
           {isEditMode ? (
             <select
               value={editedJob.status ?? job.status ?? ''}
               onChange={(e) => updateEditedField('status', e.target.value)}
-              className="w-full px-1 py-0.5 text-xs border rounded"
+              className="w-full px-2 py-1 text-xs border border-border rounded-md bg-background"
             >
               {statusOptions.map(opt => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
           ) : (
-            <span className={`inline-block px-1.5 py-0.5 text-xs font-medium rounded ${
-              job.status === 'PAID' ? 'bg-green-100 text-green-700' :
-              job.status === 'CANCELLED' ? 'bg-red-100 text-red-700' :
-              'bg-amber-100 text-amber-700'
+            <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-md ${
+              job.status === 'PAID' ? 'bg-status-success-bg text-status-success' :
+              job.status === 'CANCELLED' ? 'bg-status-danger-bg text-status-danger' :
+              'bg-status-warning-bg text-status-warning'
             }`}>
               {job.status}
             </span>
           )}
         </div>
-        <div className="p-2 border-r border-gray-100">
-          <div className="text-[10px] text-gray-500 uppercase">Sell</div>
-          <div className="text-sm font-bold text-gray-900">{formatCurrency(job.sellPrice || 0)}</div>
+        <div className="p-3 border-r border-border/50">
+          <div className="section-header mb-1">Sell</div>
+          <div className="font-mono text-sm font-semibold text-foreground tabular-nums">{formatCurrency(job.sellPrice || 0)}</div>
         </div>
-        <div className="p-2 border-r border-gray-100">
-          <div className="text-[10px] text-gray-500 uppercase">Cost</div>
-          <div className="text-sm font-bold text-gray-600">{formatCurrency(job.profit?.totalCost || 0)}</div>
+        <div className="p-3 border-r border-border/50">
+          <div className="section-header mb-1">Cost</div>
+          <div className="font-mono text-sm font-semibold text-muted-foreground tabular-nums">{formatCurrency(job.profit?.totalCost || 0)}</div>
         </div>
-        <div className="p-2 border-r border-gray-100">
-          <div className="text-[10px] text-gray-500 uppercase">Spread</div>
-          <div className={`text-sm font-bold ${(job.profit?.spread || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+        <div className="p-3 border-r border-border/50">
+          <div className="section-header mb-1">Spread</div>
+          <div className={`font-mono text-sm font-semibold tabular-nums ${(job.profit?.spread || 0) >= 0 ? 'text-status-success' : 'text-status-danger'}`}>
             {formatCurrency(job.profit?.spread || 0)}
           </div>
         </div>
-        <div className="p-2">
-          <div className="text-[10px] text-gray-500 uppercase">Qty</div>
-          <div className="text-sm font-bold text-gray-900">{(job.quantity || 0).toLocaleString()}</div>
+        <div className="p-3">
+          <div className="section-header mb-1">Qty</div>
+          {isEditMode ? (
+            <input
+              type="number"
+              value={editedJob.quantity ?? job.quantity ?? ''}
+              onChange={(e) => updateEditedField('quantity', parseInt(e.target.value) || 0)}
+              className="w-20 px-2 py-1 text-sm font-mono font-semibold border border-border rounded-md text-right bg-background"
+              min="0"
+            />
+          ) : (
+            <div className="font-mono text-sm font-semibold text-foreground tabular-nums">{(job.quantity || 0).toLocaleString()}</div>
+          )}
         </div>
       </div>
 
       {/* Workflow Status Bar - Simple Progress + Action */}
-      <div className="bg-white border border-gray-200 rounded-lg p-2">
-        <div className="flex items-center gap-3">
+      <div className="bg-card border border-border rounded-lg p-3">
+        <div className="flex items-center gap-4">
           {/* Progress dots */}
-          <div className="flex items-center gap-0.5">
+          <div className="flex items-center gap-1">
             {WORKFLOW_STAGES.map((stage, index) => (
               <div
                 key={index}
                 title={stage.label}
-                className={`w-3 h-3 rounded-full ${
-                  index < currentIndex ? 'bg-green-500' :
-                  index === currentIndex ? 'bg-blue-500' :
-                  'bg-gray-200'
+                className={`w-2.5 h-2.5 rounded-full transition-colors ${
+                  index < currentIndex ? 'bg-status-success' :
+                  index === currentIndex ? 'bg-status-info' :
+                  'bg-muted'
                 }`}
               />
             ))}
           </div>
           <div className="flex-1">
-            <span className="text-sm font-medium">{currentStage?.label || 'Unknown'}</span>
+            <span className="text-sm font-medium text-foreground">{currentStage?.label || 'Unknown'}</span>
             {job.workflowUpdatedAt && (
-              <span className="text-xs text-gray-400 ml-2">
+              <span className="text-xs text-muted-foreground ml-2 font-mono">
                 {new Date(job.workflowUpdatedAt).toLocaleDateString()}
               </span>
             )}
@@ -1238,7 +1273,7 @@ export function JobDetailModal({
             <button
               onClick={() => handleWorkflowStatusChange(nextActions[0].status)}
               disabled={isUpdatingStatus}
-              className="px-2 py-1 text-xs font-medium bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              className="px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 active:scale-[0.98] transition-all"
             >
               {isUpdatingStatus ? '...' : nextActions[0].action}
             </button>
@@ -1246,47 +1281,81 @@ export function JobDetailModal({
         </div>
         {/* Blockers - inline alert */}
         {blockers.length > 0 && (
-          <div className="mt-1 text-xs text-amber-600 flex items-center gap-1">
+          <div className="mt-2 text-xs text-status-warning flex items-center gap-1.5">
             <AlertTriangle className="w-3 h-3" />
             {blockers.join(' • ')}
           </div>
         )}
       </div>
 
-      {/* Data Grid: Key Info Table */}
-      <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
-        <tbody className="divide-y divide-gray-100">
-          <tr className="bg-gray-50">
-            <td className="px-3 py-2 font-medium text-gray-500 w-24">Customer</td>
-            <td className="px-3 py-2">{job.customer?.name || '—'}</td>
-            <td className="px-3 py-2 font-medium text-gray-500 w-24">Vendor</td>
-            <td className="px-3 py-2">
-              {job.vendor?.name || '—'}
-              {job.vendor?.isPartner && <span className="ml-1 px-1 text-[10px] bg-blue-100 text-blue-700 rounded">PARTNER</span>}
+      {/* Data Grid: Key Info Table - Editorial Style */}
+      <table className="w-full text-sm border border-border rounded-lg overflow-hidden">
+        <tbody className="divide-y divide-border/50">
+          <tr className="bg-muted/30">
+            <td className="px-4 py-2.5 text-muted-foreground w-24 section-header">Customer</td>
+            <td className="px-4 py-2.5 text-foreground">
+              {isEditMode ? (
+                <select
+                  value={editedJob.customerId || job.customer?.id || ''}
+                  onChange={(e) => setEditedJob({ ...editedJob, customerId: e.target.value })}
+                  className="w-full px-2 py-1 rounded border border-input bg-background text-sm"
+                  disabled={isLoadingCustomers}
+                >
+                  <option value="">Select customer...</option>
+                  {customers.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              ) : (
+                job.customer?.name || '—'
+              )}
+            </td>
+            <td className="px-4 py-2.5 text-muted-foreground w-24 section-header">Vendor</td>
+            <td className="px-4 py-2.5 text-foreground">
+              {isEditMode ? (
+                <select
+                  value={editedJob.vendorId || job.vendor?.id || ''}
+                  onChange={(e) => setEditedJob({ ...editedJob, vendorId: e.target.value })}
+                  className="w-full px-2 py-1 rounded border border-input bg-background text-sm"
+                  disabled={isLoadingVendors}
+                >
+                  <option value="">Select vendor...</option>
+                  {vendors.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name}{v.isPartner ? ' (Partner)' : ''}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <>
+                  {job.vendor?.name || '—'}
+                  {job.vendor?.isPartner && <span className="ml-2 px-1.5 py-0.5 text-[10px] bg-pathway-p3-bg text-pathway-p3 rounded font-medium">PARTNER</span>}
+                </>
+              )}
             </td>
           </tr>
-          <tr>
-            <td className="px-3 py-2 font-medium text-gray-500">Customer PO</td>
-            <td className="px-3 py-2">{job.customerPONumber || '—'}</td>
-            <td className="px-3 py-2 font-medium text-gray-500">Due Date</td>
-            <td className="px-3 py-2">{job.dueDate ? new Date(job.dueDate).toLocaleDateString() : '—'}</td>
+          <tr className="bg-card">
+            <td className="px-4 py-2.5 text-muted-foreground section-header">Customer PO</td>
+            <td className="px-4 py-2.5 text-foreground font-mono">{job.customerPONumber || '—'}</td>
+            <td className="px-4 py-2.5 text-muted-foreground section-header">Due Date</td>
+            <td className="px-4 py-2.5 text-foreground font-mono">{job.dueDate ? new Date(job.dueDate).toLocaleDateString() : '—'}</td>
           </tr>
-          <tr className="bg-gray-50">
-            <td className="px-3 py-2 font-medium text-gray-500">Product</td>
-            <td className="px-3 py-2">{job.specs?.productType || '—'}</td>
-            <td className="px-3 py-2 font-medium text-gray-500">Size</td>
-            <td className="px-3 py-2">{job.sizeName || job.specs?.flatSize || '—'}</td>
+          <tr className="bg-muted/30">
+            <td className="px-4 py-2.5 text-muted-foreground section-header">Product</td>
+            <td className="px-4 py-2.5 text-foreground">{job.specs?.productType || '—'}</td>
+            <td className="px-4 py-2.5 text-muted-foreground section-header">Size</td>
+            <td className="px-4 py-2.5 text-foreground">{job.sizeName || job.specs?.flatSize || '—'}</td>
           </tr>
           {populatedSpecs.length > 0 && (
-            <tr>
-              <td className="px-3 py-2 font-medium text-gray-500">Specs</td>
-              <td className="px-3 py-2" colSpan={3}>
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
+            <tr className="bg-card">
+              <td className="px-4 py-2.5 text-muted-foreground section-header">Specs</td>
+              <td className="px-4 py-2.5" colSpan={3}>
+                <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-muted-foreground">
                   {populatedSpecs.slice(0, showAllSpecs ? undefined : 4).map(spec => (
-                    <span key={spec.key}><strong>{spec.label}:</strong> {spec.value}</span>
+                    <span key={spec.key}><span className="font-medium text-foreground">{spec.label}:</span> {spec.value}</span>
                   ))}
                   {populatedSpecs.length > 4 && !showAllSpecs && (
-                    <button onClick={() => setShowAllSpecs(true)} className="text-blue-600 hover:underline">
+                    <button onClick={() => setShowAllSpecs(true)} className="text-status-info hover:underline font-medium">
                       +{populatedSpecs.length - 4} more
                     </button>
                   )}
@@ -1299,8 +1368,8 @@ export function JobDetailModal({
 
       {/* Vendor Portal Status - Compact Row */}
       {job.portal && (
-        <div className="flex items-center gap-4 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm">
-          <span className="font-medium text-gray-500">Vendor:</span>
+        <div className="flex items-center gap-4 px-3 py-2 bg-muted/50 border border-border rounded-lg text-sm">
+          <span className="font-medium text-muted-foreground">Vendor:</span>
           {job.portal.confirmedAt ? (
             <span className="flex items-center gap-1 text-green-600">
               <Check className="w-3 h-3" /> Confirmed {new Date(job.portal.confirmedAt).toLocaleDateString()}
@@ -1330,9 +1399,9 @@ export function JobDetailModal({
       )}
 
       {/* Files - Compact List */}
-      <div className="border border-gray-200 rounded-lg overflow-hidden">
-        <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-          <span className="text-xs font-medium text-gray-500 uppercase">Files ({uploadedFiles.length})</span>
+      <div className="border border-border rounded-lg overflow-hidden">
+        <div className="px-3 py-2 bg-muted/50 border-b border-border flex items-center justify-between">
+          <span className="section-header">Files ({uploadedFiles.length})</span>
           <label className="text-xs text-blue-600 hover:underline cursor-pointer">
             + Upload
             <input
@@ -1345,24 +1414,24 @@ export function JobDetailModal({
           </label>
         </div>
         {uploadedFiles.length > 0 ? (
-          <div className="divide-y divide-gray-100 max-h-32 overflow-y-auto">
+          <div className="divide-y divide-border/50 max-h-32 overflow-y-auto">
             {uploadedFiles.map((file) => (
-              <div key={file.id} className="px-3 py-1.5 flex items-center justify-between text-xs hover:bg-gray-50">
+              <div key={file.id} className="px-3 py-1.5 flex items-center justify-between text-xs hover:bg-accent/50 transition-colors">
                 <div className="flex items-center gap-2 min-w-0">
-                  <FileText className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                  <span className="truncate">{file.fileName}</span>
+                  <FileText className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                  <span className="truncate text-foreground">{file.fileName}</span>
                   {file.kind === 'VENDOR_PROOF' && (
-                    <span className="px-1 py-0.5 bg-purple-100 text-purple-700 text-[10px] rounded">PROOF</span>
+                    <span className="px-1.5 py-0.5 bg-pathway-p3-bg text-pathway-p3 text-[10px] rounded font-medium">PROOF</span>
                   )}
                   {file.kind === 'CUSTOMER_PO' && (
-                    <span className="px-1 py-0.5 bg-blue-100 text-blue-700 text-[10px] rounded">CUST PO</span>
+                    <span className="px-1.5 py-0.5 bg-status-info-bg text-status-info text-[10px] rounded font-medium">CUST PO</span>
                   )}
                 </div>
                 <div className="flex items-center gap-1">
                   {file.kind === 'VENDOR_PROOF' && job.customer?.email && (
                     <button
                       onClick={() => { setSelectedProofFiles([file]); setShowSendProofModal(true); }}
-                      className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                      className="p-1 text-status-info hover:bg-status-info-bg rounded transition-colors"
                       title="Send to customer"
                     >
                       <Send className="w-3 h-3" />
@@ -1372,7 +1441,7 @@ export function JobDetailModal({
                     <button
                       onClick={handleSendCustomerPO}
                       disabled={isSendingCustomerPO}
-                      className="p-1 text-blue-600 hover:bg-blue-50 rounded disabled:opacity-50"
+                      className="p-1 text-status-info hover:bg-status-info-bg rounded disabled:opacity-50 transition-colors"
                       title="Send to vendor"
                     >
                       <Send className="w-3 h-3" />
@@ -1380,7 +1449,7 @@ export function JobDetailModal({
                   )}
                   <button
                     onClick={() => handleDeleteFile(file.id)}
-                    className="p-1 text-red-400 hover:bg-red-50 rounded"
+                    className="p-1 text-status-danger/70 hover:bg-status-danger-bg rounded transition-colors"
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>
@@ -1389,7 +1458,7 @@ export function JobDetailModal({
             ))}
           </div>
         ) : (
-          <div className="px-3 py-4 text-center text-xs text-gray-400">
+          <div className="px-3 py-4 text-center text-xs text-muted-foreground">
             Drop files here or click Upload
           </div>
         )}
@@ -1461,10 +1530,10 @@ export function JobDetailModal({
 
     if (posByVendor.length === 0) {
       return (
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
-          <Package className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-          <p className="text-sm text-gray-500">No vendor purchase orders yet</p>
-          <p className="text-xs text-gray-400 mt-1">Create a PO below to track vendor costs</p>
+        <div className="bg-muted/30 border border-border rounded-lg p-6 text-center">
+          <Package className="w-8 h-8 text-muted-foreground/50 mx-auto mb-2" />
+          <p className="text-sm text-muted-foreground">No vendor purchase orders yet</p>
+          <p className="text-xs text-muted-foreground/60 mt-1">Create a PO below to track vendor costs</p>
         </div>
       );
     }
@@ -1472,20 +1541,20 @@ export function JobDetailModal({
     return (
       <div className="space-y-4">
         {/* Cost Summary Bar */}
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <div className="bg-card border border-border rounded-lg p-4">
           <div className="grid grid-cols-3 gap-4 text-center">
             <div>
-              <p className="text-xs text-gray-500 uppercase mb-1">Sell Price</p>
-              <p className="text-xl font-bold text-gray-900">{formatCurrency(sellPrice)}</p>
+              <p className="section-header mb-1">Sell Price</p>
+              <p className="metric-display text-xl text-foreground">{formatCurrency(sellPrice)}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 uppercase mb-1">Total Cost</p>
-              <p className="text-xl font-bold text-gray-700">{formatCurrency(totalVendorCost)}</p>
+              <p className="section-header mb-1">Total Cost</p>
+              <p className="metric-display text-xl text-muted-foreground">{formatCurrency(totalVendorCost)}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 uppercase mb-1">Profit</p>
-              <p className={`text-xl font-bold ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {formatCurrency(profit)} <span className="text-sm font-normal">({profitPercent.toFixed(1)}%)</span>
+              <p className="section-header mb-1">Profit</p>
+              <p className={`metric-display text-xl ${profit >= 0 ? 'text-status-success' : 'text-status-danger'}`}>
+                {formatCurrency(profit)} <span className="text-sm font-normal text-muted-foreground">({profitPercent.toFixed(1)}%)</span>
               </p>
             </div>
           </div>
@@ -1494,16 +1563,16 @@ export function JobDetailModal({
         {/* Vendor Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {posByVendor.map((vendor) => (
-            <div key={vendor.vendorId} className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+            <div key={vendor.vendorId} className="bg-card border border-border rounded-lg overflow-hidden shadow-sm">
               {/* Vendor Header */}
-              <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+              <div className="px-4 py-3 bg-muted/50 border-b border-border flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Building2 className="w-5 h-5 text-gray-500" />
-                  <span className="font-semibold text-gray-900">{vendor.vendorName}</span>
+                  <Building2 className="w-5 h-5 text-muted-foreground" />
+                  <span className="font-semibold text-foreground">{vendor.vendorName}</span>
                   {vendor.isPartner ? (
-                    <span className="px-2 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 rounded">Partner</span>
+                    <span className="px-2 py-0.5 text-[10px] font-medium bg-pathway-p3-bg text-pathway-p3 rounded">Partner</span>
                   ) : (
-                    <span className="px-2 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-600 rounded">Third-Party</span>
+                    <span className="px-2 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground rounded">Third-Party</span>
                   )}
                 </div>
                 {/* PO Status */}
@@ -1522,15 +1591,15 @@ export function JobDetailModal({
               <div className="p-4 space-y-3">
                 {/* Individual POs */}
                 {vendor.pos!.map((po) => (
-                  <div key={po.id} className="flex items-center justify-between text-sm border-b border-gray-100 pb-2 last:border-0 last:pb-0">
+                  <div key={po.id} className="flex items-center justify-between text-sm border-b border-border/50 pb-2 last:border-0 last:pb-0">
                     <div className="flex-1">
-                      <span className="font-mono text-xs text-gray-500">{po.poNumber || '—'}</span>
-                      <p className="text-gray-700 truncate" title={po.description}>{po.description || 'No description'}</p>
+                      <span className="font-mono text-xs text-muted-foreground">{po.poNumber || '—'}</span>
+                      <p className="text-foreground truncate" title={po.description}>{po.description || 'No description'}</p>
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold text-gray-900">{formatCurrency(po.buyCost || 0)}</p>
+                      <p className="font-mono font-semibold text-foreground tabular-nums">{formatCurrency(po.buyCost || 0)}</p>
                       {po.emailedAt && (
-                        <p className="text-[10px] text-green-600">Sent {formatDate(po.emailedAt)}</p>
+                        <p className="text-[10px] text-status-success">Sent {formatDate(po.emailedAt)}</p>
                       )}
                     </div>
                   </div>
@@ -1538,26 +1607,26 @@ export function JobDetailModal({
 
                 {/* Cost Details */}
                 {(vendor.paperCost > 0 || vendor.mfgCost > 0) && (
-                  <div className="pt-2 border-t border-gray-100 grid grid-cols-3 gap-2 text-xs">
+                  <div className="pt-2 border-t border-border/50 grid grid-cols-3 gap-2 text-xs">
                     <div className="text-center">
-                      <p className="text-gray-400 uppercase">Paper</p>
-                      <p className="font-medium text-amber-700">{formatCurrency(vendor.paperCost)}</p>
+                      <p className="section-header">Paper</p>
+                      <p className="font-mono font-medium text-status-warning tabular-nums">{formatCurrency(vendor.paperCost)}</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-gray-400 uppercase">Markup 18%</p>
-                      <p className="font-medium text-blue-700">{formatCurrency(vendor.paperMarkup)}</p>
+                      <p className="section-header">Markup 18%</p>
+                      <p className="font-mono font-medium text-status-info tabular-nums">{formatCurrency(vendor.paperMarkup)}</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-gray-400 uppercase">Mfg</p>
-                      <p className="font-medium text-purple-700">{formatCurrency(vendor.mfgCost)}</p>
+                      <p className="section-header">Mfg</p>
+                      <p className="font-mono font-medium text-pathway-p3 tabular-nums">{formatCurrency(vendor.mfgCost)}</p>
                     </div>
                   </div>
                 )}
 
                 {/* Vendor Total */}
-                <div className="pt-2 border-t border-gray-200 flex justify-between items-center">
-                  <span className="text-sm font-medium text-gray-600">Vendor Total</span>
-                  <span className="text-lg font-bold text-gray-900">{formatCurrency(vendor.totalCost)}</span>
+                <div className="pt-2 border-t border-border flex justify-between items-center">
+                  <span className="text-sm font-medium text-muted-foreground">Vendor Total</span>
+                  <span className="metric-display text-lg text-foreground">{formatCurrency(vendor.totalCost)}</span>
                 </div>
 
                 {/* Quick Actions */}
@@ -1566,7 +1635,7 @@ export function JobDetailModal({
                     <>
                       <button
                         onClick={(e) => { e.stopPropagation(); pdfApi.generatePO(vendor.pos![0].id); }}
-                        className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded font-medium"
+                        className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs text-foreground bg-muted hover:bg-accent rounded-md font-medium transition-colors"
                       >
                         <Download className="w-3 h-3" /> Download PO
                       </button>
@@ -1594,7 +1663,7 @@ export function JobDetailModal({
                           ) : (
                             <span
                               title="Vendor has no email address"
-                              className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs text-gray-400 bg-gray-100 rounded font-medium cursor-not-allowed"
+                              className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs text-muted-foreground/50 bg-muted rounded-md font-medium cursor-not-allowed"
                             >
                               <Send className="w-3 h-3" /> No Email
                             </span>
@@ -2905,50 +2974,50 @@ export function JobDetailModal({
         onClick={handleBackdropClick}
       >
         <div
-          className={`bg-gray-50 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col transform transition-transform duration-200 ${
+          className={`bg-background rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col transform transition-transform duration-200 ${
             isOpen ? 'scale-100' : 'scale-95'
           }`}
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
-          {/* Header */}
-          <div className={`border-b px-6 py-4 flex-shrink-0 ${isEditMode ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-200'}`}>
+          {/* Header - Editorial Style */}
+          <div className={`border-b px-6 py-5 flex-shrink-0 ${isEditMode ? 'bg-status-info-bg border-status-info-border' : 'bg-card border-border'}`}>
             {isEditMode && (
-              <div className="flex items-center gap-2 text-blue-600 text-sm font-medium mb-3">
+              <div className="flex items-center gap-2 text-status-info text-sm font-medium mb-3">
                 <Edit2 className="w-4 h-4" />
                 Edit Mode - Make changes below and click Save
               </div>
             )}
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3 flex-1 min-w-0">
-                {/* Job Number + Base Job ID */}
+              <div className="flex items-center gap-4 flex-1 min-w-0">
+                {/* Job Number + Base Job ID - Editorial mono styling */}
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <h2 className="text-xl font-bold text-gray-900">{jobNumber}</h2>
+                  <h2 className="job-number text-2xl text-foreground">{jobNumber}</h2>
                   {job.baseJobId && (
                     <>
-                      <span className="text-gray-300">|</span>
-                      <span className="text-sm font-mono text-gray-500" title="Canonical Job ID">
+                      <span className="text-muted-foreground/30">|</span>
+                      <span className="text-sm font-mono text-muted-foreground tracking-wider" title="Canonical Job ID">
                         {job.baseJobId}
                       </span>
                     </>
                   )}
                 </div>
-                <span className="text-gray-400 flex-shrink-0">•</span>
+                <span className="text-border flex-shrink-0">•</span>
                 {isEditMode ? (
                   <input
                     type="text"
                     value={editedJob.title ?? job.title ?? ''}
                     onChange={(e) => updateEditedField('title', e.target.value)}
-                    className="flex-1 px-2 py-1 text-gray-900 border border-blue-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="flex-1 px-3 py-1.5 text-foreground border border-status-info-border rounded-md focus:ring-2 focus:ring-status-info focus:border-status-info"
                     placeholder="Job title"
                   />
                 ) : (
-                  <span className="text-gray-600 truncate">{job.title}</span>
+                  <span className="text-muted-foreground truncate text-sm">{job.title}</span>
                 )}
-                {/* Pathway Badge */}
+                {/* Pathway Badge - Editorial styling */}
                 {job.pathway && PATHWAY_STYLES[job.pathway] && (
                   <span
-                    className={`px-2 py-0.5 ${PATHWAY_STYLES[job.pathway].bg} ${PATHWAY_STYLES[job.pathway].text} text-xs font-bold rounded flex-shrink-0`}
+                    className={`px-2.5 py-1 ${PATHWAY_STYLES[job.pathway].bg} ${PATHWAY_STYLES[job.pathway].text} text-xs font-semibold rounded-md flex-shrink-0 tracking-wide`}
                     title={`Pathway ${job.pathway}`}
                   >
                     {PATHWAY_STYLES[job.pathway].label}
@@ -2959,7 +3028,7 @@ export function JobDetailModal({
                 {onDelete && (
                   <button
                     onClick={onDelete}
-                    className="p-2 hover:bg-red-50 rounded-lg transition-colors text-gray-400 hover:text-red-600"
+                    className="p-2 hover:bg-status-danger-bg rounded-lg transition-colors text-muted-foreground hover:text-status-danger"
                     aria-label="Delete job"
                     title="Delete job"
                   >
@@ -2968,21 +3037,21 @@ export function JobDetailModal({
                 )}
                 <button
                   onClick={onClose}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors ml-1"
+                  className="p-2 hover:bg-accent rounded-lg transition-colors ml-1"
                   aria-label="Close modal"
                 >
-                  <X className="w-5 h-5 text-gray-500" />
+                  <X className="w-5 h-5 text-muted-foreground" />
                 </button>
               </div>
             </div>
 
             {/* Edit Mode Controls */}
             {isEditMode && (
-              <div className="flex gap-2 mt-4">
+              <div className="flex gap-3 mt-4">
                 <button
                   onClick={handleSaveJob}
                   disabled={isSavingJob}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-50"
+                  className="flex items-center gap-2 px-4 py-2 bg-status-success text-white rounded-md hover:bg-status-success/90 text-sm font-medium disabled:opacity-50 active:scale-[0.98] transition-all"
                 >
                   <Save className="w-4 h-4" />
                   {isSavingJob ? 'Saving...' : 'Save Changes'}
@@ -2990,7 +3059,7 @@ export function JobDetailModal({
                 <button
                   onClick={handleCancelEdit}
                   disabled={isSavingJob}
-                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium"
+                  className="flex items-center gap-2 px-4 py-2 border border-border text-foreground rounded-md hover:bg-accent text-sm font-medium"
                 >
                   <X className="w-4 h-4" />
                   Cancel
@@ -3000,25 +3069,25 @@ export function JobDetailModal({
 
             {/* Action Bar - Document Actions */}
             {!isEditMode && (
-              <div className="flex gap-4 mt-4">
+              <div className="flex gap-4 mt-5">
                 {/* Document & Email Actions */}
                 <div className="flex-1 flex flex-col gap-2">
                   {/* Top row: Edit + Documents grouped */}
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-3">
                     <button
                       onClick={() => setIsEditMode(true)}
-                      className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+                      className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-sm font-medium active:scale-[0.98] transition-all"
                     >
                       <Edit2 className="w-4 h-4" />
                       Edit
                     </button>
 
                     {/* Document buttons grouped */}
-                    <div className="flex items-center border border-gray-200 rounded-lg bg-gray-50 overflow-hidden">
+                    <div className="flex items-center border border-border rounded-md bg-muted/50 overflow-hidden">
                       {onDownloadQuote && (
                         <button
                           onClick={onDownloadQuote}
-                          className="flex items-center gap-1.5 px-3 py-2 text-gray-700 hover:bg-gray-100 text-sm border-r border-gray-200"
+                          className="flex items-center gap-1.5 px-3 py-2 text-foreground hover:bg-accent text-sm border-r border-border transition-colors"
                         >
                           <FileText className="w-4 h-4" />
                           Quote
@@ -3027,7 +3096,7 @@ export function JobDetailModal({
                       {onDownloadPO && (
                         <button
                           onClick={onDownloadPO}
-                          className="flex items-center gap-1.5 px-3 py-2 text-gray-700 hover:bg-gray-100 text-sm border-r border-gray-200"
+                          className="flex items-center gap-1.5 px-3 py-2 text-foreground hover:bg-accent text-sm border-r border-border transition-colors"
                         >
                           <Printer className="w-4 h-4" />
                           PO
@@ -3036,7 +3105,7 @@ export function JobDetailModal({
                       {onDownloadInvoice && (
                         <button
                           onClick={onDownloadInvoice}
-                          className="flex items-center gap-1.5 px-3 py-2 text-gray-700 hover:bg-gray-100 text-sm"
+                          className="flex items-center gap-1.5 px-3 py-2 text-foreground hover:bg-accent text-sm transition-colors"
                         >
                           <Receipt className="w-4 h-4" />
                           Invoice
@@ -3048,7 +3117,7 @@ export function JobDetailModal({
                     <div className="relative" data-email-dropdown>
                       <button
                         onClick={() => setShowEmailDropdown(!showEmailDropdown)}
-                        className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-100 text-sm"
+                        className="flex items-center gap-2 px-3 py-2 bg-status-info-bg border border-status-info-border text-status-info rounded-md hover:bg-status-info hover:text-white text-sm transition-colors"
                       >
                         <Send className="w-4 h-4" />
                         Send Email
@@ -3159,28 +3228,28 @@ export function JobDetailModal({
 
           {/* Job Readiness Banner */}
           {job?.id && (
-            <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 flex-shrink-0">
+            <div className="px-6 py-3 bg-muted/50 border-b border-border flex-shrink-0">
               <JobReadinessCard jobId={job.id} onStatusChange={onRefresh} compact />
             </div>
           )}
 
-          {/* Tab Navigation */}
-          <div className="bg-white border-b border-gray-200 px-6 flex-shrink-0">
-            <div className="flex gap-1">
+          {/* Tab Navigation - Editorial Underline Style */}
+          <div className="bg-card border-b border-border px-6 flex-shrink-0">
+            <div className="flex gap-6">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+                  className={`py-4 text-sm transition-colors flex items-center gap-2 border-b-2 -mb-[1px] ${
                     activeTab === tab.id
-                      ? 'text-blue-600 border-blue-600'
-                      : 'text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300'
+                      ? 'text-foreground border-primary font-semibold'
+                      : 'text-muted-foreground border-transparent hover:text-foreground hover:border-muted-foreground/30'
                   }`}
                 >
                   {tab.id === 'financials' && <DollarSign className="h-4 w-4" />}
-                  {tab.label}
+                  <span className="uppercase text-[11px] tracking-[0.08em]">{tab.label}</span>
                   {tab.badge && tab.badge > 0 && (
-                    <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-xs rounded-full font-semibold">
+                    <span className="px-2 py-0.5 bg-status-warning-bg text-status-warning text-[10px] rounded-full font-semibold">
                       {tab.badge}
                     </span>
                   )}
@@ -3190,21 +3259,78 @@ export function JobDetailModal({
           </div>
 
           {/* Tab Content */}
-          <div className="p-6 overflow-y-auto flex-1">
+          <div className="p-6 overflow-y-auto flex-1 bg-background">
             {activeTab === 'details' && (
               <>
                 {OverviewTab()}
                 {/* Notes Section */}
-                <div className="mt-6 pt-6 border-t border-gray-200">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Notes</h3>
+                <div className="mt-6 pt-6 border-t border-border">
+                  <h3 className="section-header mb-3">Notes</h3>
                   {job?.notes ? (
-                    <div className="bg-white p-4 rounded-lg border border-gray-200">
-                      <p className="text-sm text-gray-600 whitespace-pre-wrap">{job.notes}</p>
+                    <div className="bg-card p-4 rounded-lg border border-border">
+                      <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">{job.notes}</p>
                     </div>
                   ) : (
-                    <p className="text-gray-400 italic text-sm">No notes for this job</p>
+                    <p className="text-muted-foreground/60 italic text-sm">No notes for this job</p>
                   )}
                 </div>
+
+                {/* Change History Section */}
+                <div className="mt-6 pt-6 border-t border-border">
+                  <h3 className="section-header mb-3">Change History</h3>
+                  {activities && activities.length > 0 ? (
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {activities.map((activity: any) => (
+                        <div key={activity.id} className="flex items-start gap-3 py-2 border-b border-border/50 last:border-0">
+                          <div className="w-2 h-2 rounded-full bg-status-info mt-1.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-medium text-foreground capitalize">
+                                {activity.field?.replace(/_/g, ' ').toLowerCase() || activity.action?.replace(/_/g, ' ').toLowerCase()}
+                              </span>
+                              {activity.oldValue !== null && activity.newValue !== null && (
+                                <span className="text-xs text-muted-foreground">
+                                  <span className="line-through opacity-60">{activity.oldValue}</span>
+                                  {' → '}
+                                  <span className="text-foreground font-medium">{activity.newValue}</span>
+                                </span>
+                              )}
+                              {activity.oldValue === null && activity.newValue !== null && (
+                                <span className="text-xs text-status-success">set to {activity.newValue}</span>
+                              )}
+                              {activity.oldValue !== null && activity.newValue === null && (
+                                <span className="text-xs text-status-danger">cleared (was {activity.oldValue})</span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-muted-foreground/70 font-mono mt-0.5">
+                              {new Date(activity.createdAt).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: 'numeric',
+                                minute: '2-digit'
+                              })}
+                              {activity.changedBy && activity.changedBy !== 'system' && (
+                                <span> by {activity.changedBy}</span>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground/60 italic text-sm">No changes recorded</p>
+                  )}
+                </div>
+
+                {/* Proof Approval Section */}
+                {job && (
+                  <div className="mt-6 pt-6 border-t border-border">
+                    <ProofApprovalSection
+                      jobId={job.id}
+                      onProofStatusChange={onRefresh}
+                    />
+                  </div>
+                )}
 
               </>
             )}
@@ -3214,8 +3340,8 @@ export function JobDetailModal({
                 <FinancialsTab job={job} onRefresh={onRefresh} />
 
                 {/* Vendor Cards & Costs */}
-                <details className="group border-t border-gray-200 pt-4">
-                  <summary className="flex items-center justify-between cursor-pointer text-sm font-semibold text-gray-700 hover:text-gray-900 py-2">
+                <details className="group border-t border-border pt-4">
+                  <summary className="flex items-center justify-between cursor-pointer py-2 section-header hover:text-foreground transition-colors">
                     <span>Vendor Costs & POs</span>
                     <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
                   </summary>
@@ -3228,13 +3354,13 @@ export function JobDetailModal({
                 </details>
 
                 {/* Communications */}
-                <details className="group border-t border-gray-200 pt-4">
-                  <summary className="flex items-center justify-between cursor-pointer text-sm font-semibold text-gray-700 hover:text-gray-900 py-2">
+                <details className="group border-t border-border pt-4">
+                  <summary className="flex items-center justify-between cursor-pointer py-2 section-header hover:text-foreground transition-colors">
                     <span className="flex items-center gap-2">
                       <MessageSquare className="w-4 h-4" />
                       Communications
                       {pendingCommCount > 0 && (
-                        <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-xs rounded-full font-semibold">
+                        <span className="px-2 py-0.5 bg-status-warning-bg text-status-warning text-[10px] rounded-full font-semibold">
                           {pendingCommCount}
                         </span>
                       )}

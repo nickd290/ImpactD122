@@ -52,6 +52,10 @@ import {
   deleteJobComponent,
   // Mailing type detection
   detectMailingTypeEndpoint,
+  // Validation
+  validateJob,
+  // Activity / Change history
+  getJobActivity,
 } from '../controllers/jobsController';
 import {
   // Change Orders
@@ -71,6 +75,8 @@ const router = Router();
 // Job CRUD
 router.get('/', getAllJobs);
 router.get('/workflow-view', getJobsWorkflowView); // Must be before /:id
+router.get('/:id/validate', validateJob); // Must be before /:id
+router.get('/:id/activity', getJobActivity); // Job change history
 router.get('/:id', getJob);
 router.post('/', createJob);
 router.post('/from-email', createFromEmail); // Webhook for n8n email automation

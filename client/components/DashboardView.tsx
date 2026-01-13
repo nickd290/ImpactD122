@@ -92,76 +92,70 @@ export function DashboardView({
   const monthName = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
   return (
-    <div className="p-8 max-w-5xl">
+    <div className="p-8 lg:p-12 max-w-6xl animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between mb-10">
+      <div className="flex items-end justify-between mb-12">
         <div>
-          <h1 className="text-xl font-medium text-zinc-900">Dashboard</h1>
-          <p className="text-sm text-zinc-400 mt-1">{monthName}</p>
+          <h1 className="font-display text-3xl font-light tracking-tight text-foreground">Dashboard</h1>
+          <p className="text-sm text-muted-foreground mt-1 tracking-wide">{monthName}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button onClick={onCreateJob} size="sm" className="bg-zinc-900 hover:bg-zinc-800">
+        <div className="flex items-center gap-3">
+          <Button onClick={onCreateJob} size="sm">
             <Plus className="w-4 h-4 mr-1.5" />
             New Job
           </Button>
-          <Button onClick={onShowPOUploader} variant="outline" size="sm" className="border-zinc-200 text-zinc-600 hover:text-zinc-900">
+          <Button onClick={onShowPOUploader} variant="outline" size="sm">
             <Upload className="w-4 h-4 mr-1.5" />
             Upload PO
           </Button>
-          <Button onClick={onShowSpecParser} variant="outline" size="sm" className="border-zinc-200 text-zinc-600 hover:text-zinc-900">
+          <Button onClick={onShowSpecParser} variant="outline" size="sm">
             <Sparkles className="w-4 h-4 mr-1.5" />
             Parse Specs
           </Button>
         </div>
       </div>
 
-      {/* Metrics Row - No Cards */}
-      <div className="grid grid-cols-4 gap-8 mb-12 pb-8 border-b border-zinc-100">
-        <div>
-          <p className="text-3xl font-medium tabular-nums text-zinc-900">{activeJobs.length}</p>
-          <p className="text-sm text-zinc-500 mt-1">Active Jobs</p>
-        </div>
+      {/* Hero Metrics Row - Editorial Style */}
+      <div className="grid grid-cols-4 gap-12 mb-16 pb-10 border-b border-border">
+        <MetricCard
+          value={activeJobs.length.toString()}
+          label="Active Jobs"
+        />
 
-        <div>
-          <p className="text-3xl font-medium tabular-nums text-zinc-900">{jobsDueThisWeek.length}</p>
-          <p className="text-sm text-zinc-500 mt-1">Due This Week</p>
-          {overdueJobs.length > 0 && (
-            <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
-              <AlertCircle className="w-3 h-3" />
-              {overdueJobs.length} overdue
-            </p>
-          )}
-        </div>
+        <MetricCard
+          value={jobsDueThisWeek.length.toString()}
+          label="Due This Week"
+          alert={overdueJobs.length > 0 ? `${overdueJobs.length} overdue` : undefined}
+        />
 
-        <div>
-          <p className="text-3xl font-medium tabular-nums text-zinc-900">{formatCurrency(monthRevenue)}</p>
-          <p className="text-sm text-zinc-500 mt-1">Revenue</p>
-        </div>
+        <MetricCard
+          value={formatCurrency(monthRevenue)}
+          label="Revenue"
+        />
 
-        <div>
-          <p className={`text-3xl font-medium tabular-nums ${totalSpread >= 0 ? 'text-zinc-900' : 'text-red-600'}`}>
-            {formatCurrency(totalSpread)}
-          </p>
-          <p className="text-sm text-zinc-500 mt-1">Total Spread</p>
-          {marginPercent > 0 && (
-            <p className="text-xs text-zinc-400 mt-1">{marginPercent.toFixed(0)}% margin</p>
-          )}
-        </div>
+        <MetricCard
+          value={formatCurrency(totalSpread)}
+          label="Total Spread"
+          subtitle={marginPercent > 0 ? `${marginPercent.toFixed(0)}% margin` : undefined}
+          negative={totalSpread < 0}
+        />
       </div>
 
       {/* Two Column Layout */}
-      <div className="grid grid-cols-2 gap-12">
+      <div className="grid grid-cols-2 gap-16">
         {/* Needs Attention */}
         <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-medium text-zinc-500">Needs Attention</h2>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="section-header">Needs Attention</h2>
             {needsAttention.length > 0 && (
-              <span className="text-xs tabular-nums text-zinc-400">{needsAttention.length}</span>
+              <span className="text-xs font-mono tabular-nums text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                {needsAttention.length}
+              </span>
             )}
           </div>
 
           {needsAttention.length === 0 ? (
-            <p className="text-sm text-zinc-400 py-4">All caught up</p>
+            <p className="text-sm text-muted-foreground py-6">All caught up</p>
           ) : (
             <div className="space-y-0">
               {needsAttention.map((job) => {
@@ -170,22 +164,27 @@ export function DashboardView({
                   <div
                     key={job.id}
                     onClick={() => handleJobClick(job)}
-                    className="py-3 border-b border-zinc-100 last:border-0 cursor-pointer group"
+                    className="py-4 border-b border-border last:border-0 cursor-pointer group hover:bg-accent/30 -mx-3 px-3 rounded-sm transition-colors"
                   >
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-zinc-900 group-hover:text-zinc-600 truncate">
+                        <p className="text-sm font-medium text-foreground group-hover:text-foreground/80 truncate">
                           {job.title || job.number}
                         </p>
-                        <p className="text-xs text-zinc-400 mt-0.5">
-                          {job.number} · {job.customer?.name || 'No customer'}
+                        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
+                          <span className="font-mono tracking-wider">{job.number}</span>
+                          <span className="text-border">·</span>
+                          <span>{job.customer?.name || 'No customer'}</span>
                         </p>
                       </div>
-                      <div className="ml-4 flex-shrink-0">
+                      <div className="flex-shrink-0">
                         {isOverdue ? (
-                          <span className="text-xs text-red-600 font-medium">Overdue</span>
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-status-danger">
+                            <AlertCircle className="w-3 h-3" />
+                            Overdue
+                          </span>
                         ) : job.dueDate ? (
-                          <span className="text-xs text-zinc-400">Due {formatDate(job.dueDate)}</span>
+                          <span className="text-xs text-muted-foreground">Due {formatDate(job.dueDate)}</span>
                         ) : null}
                       </div>
                     </div>
@@ -198,11 +197,11 @@ export function DashboardView({
 
         {/* Recent Jobs */}
         <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-medium text-zinc-500">Recent Jobs</h2>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="section-header">Recent Jobs</h2>
             <button
               onClick={onViewAllJobs}
-              className="text-xs text-zinc-400 hover:text-zinc-600 flex items-center gap-1 transition-colors"
+              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors tracking-wide uppercase"
             >
               View all
               <ArrowRight className="w-3 h-3" />
@@ -210,26 +209,28 @@ export function DashboardView({
           </div>
 
           {recentJobs.length === 0 ? (
-            <p className="text-sm text-zinc-400 py-4">No jobs yet</p>
+            <p className="text-sm text-muted-foreground py-6">No jobs yet</p>
           ) : (
             <div className="space-y-0">
               {recentJobs.map((job) => (
                 <div
                   key={job.id}
                   onClick={() => handleJobClick(job)}
-                  className="py-3 border-b border-zinc-100 last:border-0 cursor-pointer group"
+                  className="py-4 border-b border-border last:border-0 cursor-pointer group hover:bg-accent/30 -mx-3 px-3 rounded-sm transition-colors"
                 >
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-zinc-900 group-hover:text-zinc-600 truncate">
+                      <p className="text-sm font-medium text-foreground group-hover:text-foreground/80 truncate">
                         {job.title || job.number}
                       </p>
-                      <p className="text-xs text-zinc-400 mt-0.5">
-                        {job.number} · {job.customer?.name || 'No customer'}
+                      <p className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
+                        <span className="font-mono tracking-wider">{job.number}</span>
+                        <span className="text-border">·</span>
+                        <span>{job.customer?.name || 'No customer'}</span>
                       </p>
                     </div>
-                    <div className="ml-4 flex-shrink-0">
-                      <StatusText status={job.status} />
+                    <div className="flex-shrink-0">
+                      <StatusIndicator status={job.status} />
                     </div>
                   </div>
                 </div>
@@ -242,23 +243,53 @@ export function DashboardView({
   );
 }
 
-// Simple status text - no badge background
-function StatusText({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    ACTIVE: 'text-amber-600',
-    PAID: 'text-green-600',
-    CANCELLED: 'text-zinc-400',
+// Editorial Metric Card
+function MetricCard({
+  value,
+  label,
+  subtitle,
+  alert,
+  negative
+}: {
+  value: string;
+  label: string;
+  subtitle?: string;
+  alert?: string;
+  negative?: boolean;
+}) {
+  return (
+    <div className="space-y-2">
+      <p className={`metric-display text-5xl ${negative ? 'text-status-danger' : 'text-foreground'}`}>
+        {value}
+      </p>
+      <p className="section-header">{label}</p>
+      {subtitle && (
+        <p className="text-xs text-muted-foreground font-mono">{subtitle}</p>
+      )}
+      {alert && (
+        <p className="text-xs text-status-danger font-medium flex items-center gap-1 mt-1">
+          <AlertCircle className="w-3 h-3" />
+          {alert}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Status indicator with semantic colors
+function StatusIndicator({ status }: { status: string }) {
+  const config: Record<string, { color: string; label: string }> = {
+    ACTIVE: { color: 'bg-status-warning', label: 'Active' },
+    PAID: { color: 'bg-status-success', label: 'Paid' },
+    CANCELLED: { color: 'bg-status-neutral', label: 'Cancelled' },
   };
 
-  const labels: Record<string, string> = {
-    ACTIVE: 'Active',
-    PAID: 'Paid',
-    CANCELLED: 'Cancelled',
-  };
+  const { color, label } = config[status] || { color: 'bg-status-neutral', label: status };
 
   return (
-    <span className={`text-xs ${colors[status] || 'text-zinc-400'}`}>
-      {labels[status] || status}
+    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+      <span className={`w-1.5 h-1.5 rounded-full ${color}`} />
+      {label}
     </span>
   );
 }

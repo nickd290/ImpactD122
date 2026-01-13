@@ -1,0 +1,907 @@
+openapi: 3.0.3
+info:
+  title: ImpactD122 API
+  description: Print brokerage management system API
+  version: 1.0.0
+  contact:
+    name: Impact Direct Printing
+
+servers:
+  - url: http://localhost:3001/api
+    description: Development
+  - url: https://impactd122-production.up.railway.app/api
+    description: Production
+
+tags:
+  - name: Jobs
+    description: Job management endpoints
+  - name: Webhooks
+    description: External integration webhooks
+  - name: Entities
+    description: Companies and vendors
+  - name: Files
+    description: File management
+  - name: AI
+    description: AI-powered parsing
+  - name: PDF
+    description: Document generation
+  - name: Financials
+    description: Payment tracking
+  - name: Email
+    description: Email operations
+  - name: RFQ
+    description: Vendor RFQ workflow
+  - name: Portal
+    description: Vendor portal access
+
+paths:
+  # ============== JOBS ==============
+  /jobs:
+    get:
+      tags: [Jobs]
+      summary: List all jobs
+      responses:
+        '200':
+          description: List of jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Job'
+    post:
+      tags: [Jobs]
+      summary: Create new job
+      description: Creates job using unified service with atomic ID generation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateJobRequest'
+      responses:
+        '201':
+          description: Job created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+
+  /jobs/workflow-view:
+    get:
+      tags: [Jobs]
+      summary: Get filtered workflow view
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/JobWorkflowStatus'
+        - name: pathway
+          in: query
+          schema:
+            $ref: '#/components/schemas/Pathway'
+      responses:
+        '200':
+          description: Filtered jobs
+
+  /jobs/{id}:
+    get:
+      tags: [Jobs]
+      summary: Get job by ID
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+    put:
+      tags: [Jobs]
+      summary: Update job
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateJobRequest'
+      responses:
+        '200':
+          description: Job updated
+    delete:
+      tags: [Jobs]
+      summary: Delete job
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '204':
+          description: Job deleted
+
+  /jobs/{id}/status:
+    patch:
+      tags: [Jobs]
+      summary: Update job status
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  $ref: '#/components/schemas/JobStatus'
+      responses:
+        '200':
+          description: Status updated
+
+  /jobs/{id}/workflow-status:
+    patch:
+      tags: [Jobs]
+      summary: Update workflow status (manual override)
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workflowStatus]
+              properties:
+                workflowStatus:
+                  $ref: '#/components/schemas/JobWorkflowStatus'
+      responses:
+        '200':
+          description: Workflow status updated
+
+  /jobs/{id}/po:
+    post:
+      tags: [Jobs]
+      summary: Create purchase order
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePORequest'
+      responses:
+        '201':
+          description: PO created
+
+  /jobs/{id}/pos:
+    get:
+      tags: [Jobs]
+      summary: List purchase orders for job
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: List of POs
+
+  /jobs/{id}/mark-customer-paid:
+    post:
+      tags: [Jobs]
+      summary: Mark customer payment received
+      description: Step 1 of 4-step payment flow (P1 pathway)
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                paidDate:
+                  type: string
+                  format: date
+                amount:
+                  type: number
+      responses:
+        '200':
+          description: Payment recorded
+
+  /jobs/{id}/mark-vendor-paid:
+    post:
+      tags: [Jobs]
+      summary: Mark vendor payment sent
+      description: Step 2 of 4-step payment flow (P1 pathway)
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Payment recorded
+
+  /jobs/{id}/mark-bradford-paid:
+    post:
+      tags: [Jobs]
+      summary: Mark Bradford 50% payment sent
+      description: Step 3 of 4-step payment flow (P1 pathway only)
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Payment recorded
+
+  /jobs/{id}/send-jd-invoice:
+    post:
+      tags: [Jobs]
+      summary: Send JD invoice
+      description: Step 4a of payment flow - send invoice to JD
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Invoice sent
+
+  /jobs/{id}/mark-jd-paid:
+    post:
+      tags: [Jobs]
+      summary: Mark JD payment received
+      description: Step 4b of payment flow - JD paid
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Payment recorded
+
+  /jobs/{id}/readiness:
+    get:
+      tags: [Jobs]
+      summary: Check job readiness (QC status)
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Readiness status
+    patch:
+      tags: [Jobs]
+      summary: Update QC flags
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QCFlags'
+      responses:
+        '200':
+          description: QC flags updated
+
+  /jobs/{id}/qc-overrides:
+    patch:
+      tags: [Jobs]
+      summary: Set QC override flags
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QCOverrides'
+      responses:
+        '200':
+          description: Overrides set
+
+  /jobs/{id}/components:
+    get:
+      tags: [Jobs]
+      summary: Get job components (P3 multi-vendor)
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: List of components
+    post:
+      tags: [Jobs]
+      summary: Add job component
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '201':
+          description: Component added
+
+  /jobs/{id}/change-orders:
+    get:
+      tags: [Jobs]
+      summary: List change orders
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: List of change orders
+    post:
+      tags: [Jobs]
+      summary: Create change order
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '201':
+          description: Change order created
+
+  /jobs/{id}/change-orders/{coId}/approve:
+    post:
+      tags: [Jobs]
+      summary: Approve change order
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+        - name: coId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Change order approved
+
+  /jobs/import:
+    post:
+      tags: [Jobs]
+      summary: Batch import jobs from Excel
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Jobs imported
+
+  # ============== WEBHOOKS ==============
+  /webhooks/health:
+    get:
+      tags: [Webhooks]
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+
+  /webhooks/jobs:
+    post:
+      tags: [Webhooks]
+      summary: Receive job from customer portal
+      description: |
+        Creates or updates job from impact-customer-portal.
+        Requires x-webhook-secret header.
+        Uses idempotency via WebhookEvent table.
+      security:
+        - webhookSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookJobPayload'
+      responses:
+        '200':
+          description: Job created/updated
+        '409':
+          description: Duplicate webhook (idempotent)
+
+  /webhooks/campaigns:
+    post:
+      tags: [Webhooks]
+      summary: Receive campaign from customer portal
+      security:
+        - webhookSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookCampaignPayload'
+      responses:
+        '200':
+          description: Campaign created
+
+  /webhooks/email-to-job:
+    post:
+      tags: [Webhooks]
+      summary: Create job from email (n8n integration)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailToJobPayload'
+      responses:
+        '200':
+          description: Job created
+
+  /webhooks/link-job:
+    post:
+      tags: [Webhooks]
+      summary: Link external job ID to internal job
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [externalJobId, internalJobId]
+              properties:
+                externalJobId:
+                  type: string
+                internalJobId:
+                  type: string
+      responses:
+        '200':
+          description: Jobs linked
+
+  # ============== ENTITIES ==============
+  /entities/companies:
+    get:
+      tags: [Entities]
+      summary: List companies
+      responses:
+        '200':
+          description: List of companies
+    post:
+      tags: [Entities]
+      summary: Create company
+      responses:
+        '201':
+          description: Company created
+
+  /entities/vendors:
+    get:
+      tags: [Entities]
+      summary: List vendors
+      responses:
+        '200':
+          description: List of vendors
+
+  # ============== AI ==============
+  /ai/parse-spec:
+    post:
+      tags: [AI]
+      summary: Parse job specifications using OpenAI
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text:
+                  type: string
+      responses:
+        '200':
+          description: Parsed specs
+
+  /ai/parse-po:
+    post:
+      tags: [AI]
+      summary: Parse PO PDF using Gemini
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Parsed PO data
+
+  # ============== FILES ==============
+  /files:
+    get:
+      tags: [Files]
+      summary: List files
+      responses:
+        '200':
+          description: List of files
+
+  /files/upload:
+    post:
+      tags: [Files]
+      summary: Upload file
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                jobId:
+                  type: string
+                kind:
+                  $ref: '#/components/schemas/FileKind'
+      responses:
+        '201':
+          description: File uploaded
+
+  /files/{id}/download:
+    get:
+      tags: [Files]
+      summary: Download file
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: File content
+
+  # ============== PDF ==============
+  /pdf/quote:
+    post:
+      tags: [PDF]
+      summary: Generate quote PDF
+      responses:
+        '200':
+          description: PDF file
+
+  /pdf/invoice:
+    post:
+      tags: [PDF]
+      summary: Generate invoice PDF
+      responses:
+        '200':
+          description: PDF file
+
+  /pdf/po:
+    post:
+      tags: [PDF]
+      summary: Generate PO PDF
+      responses:
+        '200':
+          description: PDF file
+
+  # ============== VENDOR RFQ ==============
+  /vendor-rfqs:
+    get:
+      tags: [RFQ]
+      summary: List RFQs
+      responses:
+        '200':
+          description: List of RFQs
+    post:
+      tags: [RFQ]
+      summary: Create RFQ
+      responses:
+        '201':
+          description: RFQ created
+
+  /vendor-rfqs/{id}/send:
+    post:
+      tags: [RFQ]
+      summary: Send RFQ to vendors
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: RFQ sent
+
+  /vendor-rfqs/{id}/convert:
+    post:
+      tags: [RFQ]
+      summary: Convert RFQ to job
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job created from RFQ
+
+  # ============== PORTAL ==============
+  /portal/{token}:
+    get:
+      tags: [Portal]
+      summary: Get vendor portal data
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Portal data
+
+  /portal/{token}/upload:
+    post:
+      tags: [Portal]
+      summary: Upload file via vendor portal
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: File uploaded
+
+components:
+  parameters:
+    JobId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Job ID (UUID or baseJobId)
+
+  securitySchemes:
+    webhookSecret:
+      type: apiKey
+      in: header
+      name: x-webhook-secret
+
+  schemas:
+    # ============== ENUMS ==============
+    JobStatus:
+      type: string
+      enum: [ACTIVE, PAID, CANCELLED]
+
+    JobWorkflowStatus:
+      type: string
+      enum:
+        - NEW_JOB
+        - AWAITING_PROOF_FROM_VENDOR
+        - PROOF_SENT_TO_CUSTOMER
+        - AWAITING_PROOF_APPROVAL
+        - CHANGES_REQUESTED
+        - PROOF_APPROVED
+        - IN_PRODUCTION
+        - SHIPPED
+        - INVOICED
+        - PAID
+
+    Pathway:
+      type: string
+      enum: [P1, P2, P3]
+      description: |
+        P1: Bradford partner (50/50 split + 18% paper markup)
+        P2: Single vendor (65/35 split)
+        P3: Multi-vendor (component tracking)
+
+    RoutingType:
+      type: string
+      enum: [BRADFORD_JD, THIRD_PARTY_VENDOR]
+
+    MailFormat:
+      type: string
+      enum: [SELF_MAILER, POSTCARD, ENVELOPE]
+
+    FileKind:
+      type: string
+      enum: [ARTWORK, DATA_FILE, PROOF, PO, INVOICE, OTHER]
+
+    # ============== MODELS ==============
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        baseJobId:
+          type: string
+          example: ME2-3001
+        jobTypeCode:
+          type: string
+          example: MS
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        workflowStatus:
+          $ref: '#/components/schemas/JobWorkflowStatus'
+        pathway:
+          $ref: '#/components/schemas/Pathway'
+        routingType:
+          $ref: '#/components/schemas/RoutingType'
+        customerName:
+          type: string
+        vendorName:
+          type: string
+        quantity:
+          type: integer
+        sizeName:
+          type: string
+        mailFormat:
+          $ref: '#/components/schemas/MailFormat'
+        price:
+          type: number
+        cost:
+          type: number
+        spread:
+          type: number
+        externalJobId:
+          type: string
+          description: Link to customer portal job
+        externalSource:
+          type: string
+          example: impact-customer-portal
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateJobRequest:
+      type: object
+      required: [customerName]
+      properties:
+        customerName:
+          type: string
+        title:
+          type: string
+        quantity:
+          type: integer
+        sizeName:
+          type: string
+        mailFormat:
+          $ref: '#/components/schemas/MailFormat'
+        vendorId:
+          type: string
+        routingType:
+          $ref: '#/components/schemas/RoutingType'
+        specs:
+          type: object
+
+    UpdateJobRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        quantity:
+          type: integer
+        price:
+          type: number
+        cost:
+          type: number
+        vendorId:
+          type: string
+
+    CreatePORequest:
+      type: object
+      required: [vendorId, amount]
+      properties:
+        vendorId:
+          type: string
+        amount:
+          type: number
+        description:
+          type: string
+
+    QCFlags:
+      type: object
+      properties:
+        artworkReceived:
+          type: boolean
+        dataFileReceived:
+          type: boolean
+        proofApproved:
+          type: boolean
+        vendorConfirmed:
+          type: boolean
+
+    QCOverrides:
+      type: object
+      properties:
+        artOverride:
+          type: string
+          enum: [SENT, NA]
+        dataOverride:
+          type: string
+          enum: [SENT, NA]
+        proofOverride:
+          type: boolean
+        vendorConfirmOverride:
+          type: boolean
+        trackingOverride:
+          type: string
+
+    # ============== WEBHOOK PAYLOADS ==============
+    WebhookJobPayload:
+      type: object
+      required: [externalJobId, companyName]
+      properties:
+        externalJobId:
+          type: string
+          description: Unique ID from customer portal
+        jobNo:
+          type: string
+          description: Portal's job number
+        companyName:
+          type: string
+        customerPONumber:
+          type: string
+        title:
+          type: string
+        sizeName:
+          type: string
+        quantity:
+          type: integer
+        specs:
+          type: object
+        deliveryDate:
+          type: string
+          format: date
+        files:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              fileName:
+                type: string
+              kind:
+                type: string
+              downloadUrl:
+                type: string
+
+    WebhookCampaignPayload:
+      type: object
+      required: [externalCampaignId, companyName]
+      properties:
+        externalCampaignId:
+          type: string
+        companyName:
+          type: string
+        name:
+          type: string
+        frequency:
+          type: string
+          enum: [WEEKLY, BIWEEKLY, MONTHLY]
+        mailDay:
+          type: integer
+        startDate:
+          type: string
+          format: date
+        drops:
+          type: array
+          items:
+            type: object
+            properties:
+              mailDate:
+                type: string
+                format: date
+              quantity:
+                type: integer
+
+    EmailToJobPayload:
+      type: object
+      properties:
+        from:
+          type: string
+        subject:
+          type: string
+        body:
+          type: string
+        attachments:
+          type: array
+          items:
+            type: object
+            properties:
+              filename:
+                type: string
+              content:
+                type: string
+                description: Base64 encoded

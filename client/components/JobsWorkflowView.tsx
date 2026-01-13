@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ChevronDown, ChevronRight, CheckCircle2, Clock, AlertCircle, Circle, FileText, Database, Package, Truck, RefreshCw, MessageSquare, X, Check, ClipboardList } from 'lucide-react';
+import { ChevronDown, ChevronRight, CheckCircle2, Clock, AlertCircle, Package, RefreshCw, X, Check, ClipboardList } from 'lucide-react';
 import { Button, Badge } from './ui';
 import { cn } from '../lib/utils';
-import { jobsApi, communicationsApi } from '../lib/api';
+import { jobsApi } from '../lib/api';
 import { WORKFLOW_STAGES, getNextWorkflowStatuses } from './WorkflowStatusBadge';
 
 interface QCIndicators {
@@ -49,7 +49,6 @@ interface WorkflowJob {
   poNumber: string | null;
   poSentAt: string | null;
   qc: QCIndicators;
-  // Active task (production meeting action items)
   activeTask: string | null;
   activeTaskCreatedAt: string | null;
   activeTaskCreatedBy: string | null;
@@ -65,79 +64,6 @@ interface WorkflowStage {
 interface JobsWorkflowViewProps {
   onSelectJob: (jobId: string) => void;
   onRefresh?: () => void;
-}
-
-// QC Badge component
-function QCBadge({
-  status,
-  label,
-  count,
-  isOverride
-}: {
-  status: 'sent' | 'missing' | 'na' | 'approved' | 'pending' | 'changes' | 'confirmed' | 'waiting';
-  label: string;
-  count?: number;
-  isOverride?: boolean;
-}) {
-  const getStatusStyle = () => {
-    switch (status) {
-      case 'sent':
-      case 'approved':
-      case 'confirmed':
-        return 'bg-green-100 text-green-800 border-green-200';
-      case 'missing':
-      case 'changes':
-        return 'bg-red-100 text-red-800 border-red-200';
-      case 'pending':
-      case 'waiting':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'na':
-        return 'bg-gray-100 text-gray-500 border-gray-200';
-      default:
-        return 'bg-gray-100 text-gray-600 border-gray-200';
-    }
-  };
-
-  const getIcon = () => {
-    switch (status) {
-      case 'sent':
-      case 'approved':
-      case 'confirmed':
-        return <CheckCircle2 className="w-3 h-3" />;
-      case 'missing':
-      case 'changes':
-        return <AlertCircle className="w-3 h-3" />;
-      case 'pending':
-      case 'waiting':
-        return <Clock className="w-3 h-3" />;
-      case 'na':
-        return <Circle className="w-3 h-3" />;
-      default:
-        return null;
-    }
-  };
-
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium border',
-        getStatusStyle(),
-        isOverride && 'ring-2 ring-orange-400 ring-offset-1'
-      )}
-      title={isOverride ? 'Manually set' : undefined}
-    >
-      {getIcon()}
-      <span>{label}</span>
-      {count !== undefined && count > 0 && <span className="opacity-70">({count})</span>}
-    </span>
-  );
-}
-
-// Format date for display
-function formatDate(dateString: string | null): string {
-  if (!dateString) return '-';
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 // Days until due date
@@ -177,11 +103,11 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
 
   // Handle workflow status change
   const handleStatusChange = async (jobId: string, newStatus: string, e: React.MouseEvent | React.ChangeEvent) => {
-    e.stopPropagation(); // Don't trigger row click
+    e.stopPropagation();
     setUpdatingStatusJobId(jobId);
     try {
       await jobsApi.updateWorkflowStatus(jobId, newStatus);
-      fetchWorkflowData(); // Refresh the list
+      fetchWorkflowData();
     } catch (err) {
       console.error('Failed to update status:', err);
     } finally {
@@ -258,7 +184,7 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
 
   // Open task modal
   const openTaskModal = (jobId: string, jobNo: string, existingTask: string | null, e: React.MouseEvent) => {
-    e.stopPropagation(); // Don't trigger row click
+    e.stopPropagation();
     setTaskModalJobId(jobId);
     setTaskModalJobNo(jobNo);
     setTaskText(existingTask || '');
@@ -272,7 +198,6 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
       await jobsApi.setTask(taskModalJobId, taskText.trim());
       setTaskModalJobId(null);
       setTaskText('');
-      // Refresh to show highlighted row
       fetchWorkflowData();
     } catch (err) {
       console.error('Failed to save task:', err);
@@ -283,11 +208,10 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
 
   // Complete task
   const handleCompleteTask = async (jobId: string, e: React.MouseEvent) => {
-    e.stopPropagation(); // Don't trigger row click
+    e.stopPropagation();
     setCompletingTaskId(jobId);
     try {
       await jobsApi.completeTask(jobId);
-      // Refresh to remove highlight
       fetchWorkflowData();
     } catch (err) {
       console.error('Failed to complete task:', err);
@@ -296,72 +220,44 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
     }
   };
 
-  // Get QC status as clear text
-  const getQCStatusText = (qc: QCIndicators): { text: string; color: 'green' | 'red' | 'yellow' | 'blue' | 'orange' } => {
-    // Check for tracking first (shipped)
-    if (qc.hasTracking) {
-      return { text: 'Shipped', color: 'blue' };
-    }
+  // Get QC status
+  const getQCStatus = (qc: QCIndicators): { text: string; variant: 'success' | 'danger' | 'warning' | 'info' | 'neutral' } => {
+    if (qc.hasTracking) return { text: 'Shipped', variant: 'info' };
 
-    // Build list of missing items
     const missing: string[] = [];
     if (qc.artwork === 'missing') missing.push('Art');
     if (qc.data === 'missing') missing.push('Data');
-    // Vendor confirmation happens after PO is sent - not a pre-requisite
 
-    // If nothing missing, check proof status
     if (missing.length === 0) {
-      if (qc.proofStatus === 'CHANGES_REQUESTED') {
-        return { text: 'Changes Requested', color: 'orange' };
-      }
-      if (qc.proofStatus === 'PENDING' || (qc.hasProof && qc.proofStatus !== 'APPROVED')) {
-        return { text: 'Proof Pending', color: 'yellow' };
-      }
-      if (qc.proofStatus === 'APPROVED') {
-        return { text: 'Ready', color: 'green' };
-      }
-      // All items received, no proof yet
-      return { text: 'Files Ready', color: 'green' };
+      if (qc.proofStatus === 'CHANGES_REQUESTED') return { text: 'Changes', variant: 'warning' };
+      if (qc.proofStatus === 'PENDING' || (qc.hasProof && qc.proofStatus !== 'APPROVED')) return { text: 'Proof Pending', variant: 'warning' };
+      if (qc.proofStatus === 'APPROVED') return { text: 'Ready', variant: 'success' };
+      return { text: 'Files Ready', variant: 'success' };
     }
 
-    // Return what's missing
-    return { text: `Need ${missing.join(', ')}`, color: 'red' };
+    return { text: `Need ${missing.join(', ')}`, variant: 'danger' };
   };
 
-  // Render QC status text
-  const renderQCStatus = (job: WorkflowJob) => {
-    const qc = job.qc;
-    const status = getQCStatusText(qc);
-
-    const colorClasses = {
-      green: 'bg-green-100 text-green-800',
-      red: 'bg-red-100 text-red-800',
-      yellow: 'bg-yellow-100 text-yellow-800',
-      blue: 'bg-blue-100 text-blue-800',
-      orange: 'bg-orange-100 text-orange-800',
-    };
-
-    // Check for any overrides
-    const hasOverride = qc.artworkIsOverride || qc.dataIsOverride || qc.vendorIsOverride || qc.proofIsOverride;
+  // Render QC badge
+  const renderQCBadge = (job: WorkflowJob) => {
+    const status = getQCStatus(job.qc);
+    const hasOverride = job.qc.artworkIsOverride || job.qc.dataIsOverride || job.qc.vendorIsOverride || job.qc.proofIsOverride;
 
     return (
-      <span
-        className={cn(
-          'inline-flex items-center px-2 py-1 rounded text-xs font-medium',
-          colorClasses[status.color],
-          hasOverride && 'ring-2 ring-orange-400 ring-offset-1'
-        )}
+      <Badge
+        variant={status.variant}
+        className={cn(hasOverride && 'ring-2 ring-status-warning ring-offset-1')}
         title={hasOverride ? 'Has manual overrides' : undefined}
       >
         {status.text}
-      </span>
+      </Badge>
     );
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+        <RefreshCw className="w-6 h-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -369,7 +265,7 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4">
-        <p className="text-red-600">{error}</p>
+        <p className="text-status-danger">{error}</p>
         <Button onClick={fetchWorkflowData} variant="outline">
           Retry
         </Button>
@@ -378,14 +274,14 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
   }
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-1 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b">
+      <div className="flex items-center justify-between px-6 py-4 bg-card border-b border-border">
         <div className="flex items-center gap-4">
-          <h2 className="text-lg font-semibold text-gray-900">Jobs Control Station</h2>
-          <Badge variant="outline">
-            {selectedCustomerId ? `${filteredJobCount} of ${totalActive}` : totalActive} Active Jobs
-          </Badge>
+          <h2 className="font-display text-xl font-medium text-foreground tracking-tight">Jobs Control Station</h2>
+          <span className="text-sm text-muted-foreground font-mono tabular-nums bg-muted px-2 py-0.5 rounded">
+            {selectedCustomerId ? `${filteredJobCount} of ${totalActive}` : totalActive} active
+          </span>
         </div>
         <Button
           variant="ghost"
@@ -395,38 +291,40 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
             onRefresh?.();
           }}
         >
-          <RefreshCw className="w-4 h-4 mr-1" />
+          <RefreshCw className="w-4 h-4 mr-1.5" />
           Refresh
         </Button>
       </div>
 
-      {/* Customer Tabs */}
+      {/* Customer Tabs - Editorial underline style */}
       {customers.length > 1 && (
-        <div className="px-4 py-2 bg-white border-b overflow-x-auto">
-          <div className="flex items-center gap-2">
+        <div className="px-6 py-3 bg-card border-b border-border overflow-x-auto">
+          <div className="flex items-center gap-6">
             <button
               onClick={() => setSelectedCustomerId(null)}
               className={cn(
-                'px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
+                'pb-2 text-sm font-medium tracking-wide transition-colors border-b-2',
                 !selectedCustomerId
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? 'border-primary text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
               )}
             >
-              All ({totalActive})
+              <span className="uppercase text-[11px] tracking-[0.08em]">All</span>
+              <span className="ml-2 font-mono text-[10px] text-muted-foreground">({totalActive})</span>
             </button>
             {customers.map((customer) => (
               <button
                 key={customer.id}
                 onClick={() => setSelectedCustomerId(customer.id)}
                 className={cn(
-                  'px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
+                  'pb-2 text-sm font-medium tracking-wide transition-colors border-b-2 whitespace-nowrap',
                   selectedCustomerId === customer.id
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    ? 'border-primary text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
                 )}
               >
-                {customer.name} ({customer.jobCount})
+                <span className="uppercase text-[11px] tracking-[0.08em]">{customer.name}</span>
+                <span className="ml-2 font-mono text-[10px] text-muted-foreground">({customer.jobCount})</span>
               </button>
             ))}
           </div>
@@ -434,49 +332,50 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
       )}
 
       {/* Workflow Stages */}
-      <div className="divide-y divide-gray-200">
+      <div className="divide-y divide-border">
         {filteredStages.map((stage) => {
           const isCollapsed = collapsedStages.has(stage.status);
 
           return (
-            <div key={stage.status} className="bg-white">
+            <div key={stage.status} className="bg-card">
               {/* Stage Header */}
               <button
                 onClick={() => toggleStage(stage.status)}
-                className="w-full flex items-center gap-3 px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+                className="w-full flex items-center gap-4 px-6 py-4 bg-muted/50 hover:bg-muted transition-colors text-left"
               >
                 {isCollapsed ? (
-                  <ChevronRight className="w-5 h-5 text-gray-500" />
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 ) : (
-                  <ChevronDown className="w-5 h-5 text-gray-500" />
+                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
                 )}
-                <span className="font-medium text-gray-900">{stage.label}</span>
-                <Badge
-                  variant={stage.count > 0 ? 'default' : 'outline'}
-                  className={stage.count > 0 ? 'bg-blue-600' : ''}
-                >
+                <span className="font-display text-base font-medium text-foreground">{stage.label}</span>
+                <span className={cn(
+                  'px-2 py-0.5 rounded text-xs font-mono tabular-nums',
+                  stage.count > 0 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+                )}>
                   {stage.count}
-                </Badge>
+                </span>
               </button>
 
               {/* Jobs Table */}
               {!isCollapsed && stage.jobs.length > 0 && (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-50 border-b">
+                    <thead className="bg-muted/30 border-b border-border">
                       <tr>
-                        <th className="px-3 py-2 text-left font-medium text-gray-600 w-20">Job #</th>
-                        <th className="px-3 py-2 text-left font-medium text-gray-600">Customer</th>
-                        <th className="px-3 py-2 text-left font-medium text-gray-600 w-24">Vendor</th>
-                        <th className="px-3 py-2 text-left font-medium text-gray-600 w-36">Status</th>
-                        <th className="px-3 py-2 text-left font-medium text-gray-600 w-20">Due</th>
-                        <th className="px-3 py-2 text-right font-medium text-gray-600 w-20">Price</th>
-                        <th className="px-3 py-2 text-right font-medium text-gray-600 w-20">Spread</th>
-                        <th className="px-3 py-2 text-left font-medium text-gray-600 w-28">QC</th>
-                        <th className="px-3 py-2 text-center font-medium text-gray-600 w-12"></th>
+                        <th className="px-4 py-3 text-left section-header w-24">Job #</th>
+                        <th className="px-4 py-3 text-left section-header w-28">Customer PO</th>
+                        <th className="px-4 py-3 text-left section-header">Customer</th>
+                        <th className="px-4 py-3 text-left section-header w-28">Vendor</th>
+                        <th className="px-4 py-3 text-left section-header w-40">Status</th>
+                        <th className="px-4 py-3 text-left section-header w-20">Due</th>
+                        <th className="px-4 py-3 text-right section-header w-24">Price</th>
+                        <th className="px-4 py-3 text-right section-header w-24">Spread</th>
+                        <th className="px-4 py-3 text-left section-header w-28">QC</th>
+                        <th className="px-4 py-3 text-center section-header w-16"></th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
+                    <tbody className="divide-y divide-border">
                       {stage.jobs.map((job) => {
                         const dueInfo = getDaysUntil(job.deliveryDate);
                         const hasTask = !!job.activeTask;
@@ -488,41 +387,49 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
                             className={cn(
                               "cursor-pointer transition-colors",
                               hasTask
-                                ? "bg-amber-50 hover:bg-amber-100 border-l-4 border-l-amber-400"
-                                : "hover:bg-blue-50"
+                                ? "bg-status-warning-bg hover:bg-status-warning-bg/80 border-l-4 border-l-status-warning"
+                                : "hover:bg-accent/50"
                             )}
                           >
-                            {/* Job # with PO in tooltip */}
-                            <td className="px-3 py-2">
-                              <span
-                                className="font-mono text-blue-600 font-medium text-xs cursor-help"
-                                title={job.customerPONumber ? `PO: ${job.customerPONumber}` : undefined}
-                              >
+                            {/* Job # */}
+                            <td className="px-4 py-4">
+                              <span className="job-number text-status-info">
                                 {job.jobNo}
                               </span>
                             </td>
+                            {/* Customer PO */}
+                            <td className="px-4 py-4">
+                              {job.customerPONumber ? (
+                                <span className="job-number text-base text-foreground">
+                                  {job.customerPONumber}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground/40 text-xs">—</span>
+                              )}
+                            </td>
                             {/* Customer + Title + Task */}
-                            <td className="px-3 py-2">
-                              <div className="font-medium text-gray-900">
+                            <td className="px-4 py-4">
+                              <div className="font-medium text-foreground">
                                 {job.customerName}
                               </div>
                               {job.title && (
-                                <div className="text-xs text-gray-500 truncate max-w-[180px]">
+                                <div className="text-xs text-muted-foreground truncate max-w-[200px] mt-0.5">
                                   {job.title}
                                 </div>
                               )}
                               {hasTask && (
-                                <div className="text-xs text-amber-700 font-medium mt-1 truncate max-w-[180px]" title={job.activeTask || ''}>
-                                  📋 {job.activeTask}
+                                <div className="text-xs text-status-warning font-medium mt-1.5 truncate max-w-[200px] flex items-center gap-1" title={job.activeTask || ''}>
+                                  <ClipboardList className="w-3 h-3" />
+                                  {job.activeTask}
                                 </div>
                               )}
                             </td>
                             {/* Vendor */}
-                            <td className="px-3 py-2 text-gray-700 text-xs truncate max-w-[100px]">
+                            <td className="px-4 py-4 text-muted-foreground text-xs truncate max-w-[120px]">
                               {job.vendorName}
                             </td>
                             {/* Status Dropdown */}
-                            <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                            <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
                               {(() => {
                                 const currentStage = WORKFLOW_STAGES.find(s => s.status === job.workflowStatus);
                                 const nextStages = getNextWorkflowStatuses(job.workflowStatus);
@@ -534,8 +441,8 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
                                     onChange={(e) => handleStatusChange(job.id, e.target.value, e)}
                                     disabled={isUpdating}
                                     className={cn(
-                                      'text-xs px-2 py-1 rounded border cursor-pointer w-full',
-                                      'bg-white hover:bg-gray-50 focus:ring-2 focus:ring-blue-500',
+                                      'text-xs px-2 py-1.5 rounded border border-border cursor-pointer w-full',
+                                      'bg-background hover:bg-accent focus:ring-2 focus:ring-ring',
                                       isUpdating && 'opacity-50 cursor-wait'
                                     )}
                                   >
@@ -556,36 +463,36 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
                               })()}
                             </td>
                             {/* Due */}
-                            <td className="px-3 py-2">
+                            <td className="px-4 py-4">
                               <span className={cn(
-                                'font-medium text-xs',
-                                dueInfo.urgent ? 'text-red-600' : 'text-gray-700'
+                                'font-mono text-xs tabular-nums',
+                                dueInfo.urgent ? 'text-status-danger font-semibold' : 'text-muted-foreground'
                               )}>
                                 {dueInfo.text}
                               </span>
                             </td>
                             {/* Price */}
-                            <td className="px-3 py-2 text-right font-medium text-gray-900 text-xs">
+                            <td className="px-4 py-4 text-right font-mono text-xs tabular-nums text-foreground">
                               ${job.sellPrice?.toLocaleString() || '0'}
                             </td>
                             {/* Spread */}
                             <td className={cn(
-                              "px-3 py-2 text-right font-medium text-xs",
-                              job.spread >= 0 ? 'text-green-600' : 'text-red-600'
+                              "px-4 py-4 text-right font-mono text-xs tabular-nums font-medium",
+                              job.spread >= 0 ? 'text-status-success' : 'text-status-danger'
                             )}>
                               ${job.spread?.toLocaleString() || '0'}
                             </td>
                             {/* QC Status */}
-                            <td className="px-3 py-2">
-                              {renderQCStatus(job)}
+                            <td className="px-4 py-4">
+                              {renderQCBadge(job)}
                             </td>
-                            <td className="px-3 py-2">
-                              <div className="flex items-center gap-1">
-                                {/* Complete task button (only if task exists) */}
+                            {/* Actions */}
+                            <td className="px-4 py-4">
+                              <div className="flex items-center justify-center gap-1">
                                 {hasTask && (
                                   <button
                                     onClick={(e) => handleCompleteTask(job.id, e)}
-                                    className="p-1 text-green-600 hover:text-green-700 hover:bg-green-50 rounded transition-colors"
+                                    className="p-1.5 text-status-success hover:bg-status-success-bg rounded transition-colors"
                                     title="Complete task"
                                     disabled={completingTaskId === job.id}
                                   >
@@ -596,14 +503,13 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
                                     )}
                                   </button>
                                 )}
-                                {/* Add/edit task button */}
                                 <button
                                   onClick={(e) => openTaskModal(job.id, job.jobNo, job.activeTask, e)}
                                   className={cn(
-                                    "p-1 rounded transition-colors",
+                                    "p-1.5 rounded transition-colors",
                                     hasTask
-                                      ? "text-amber-600 hover:text-amber-700 hover:bg-amber-100"
-                                      : "text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                                      ? "text-status-warning hover:bg-status-warning-bg"
+                                      : "text-muted-foreground hover:text-status-info hover:bg-status-info-bg"
                                   )}
                                   title={hasTask ? "Edit task" : "Add task"}
                                 >
@@ -621,7 +527,7 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
 
               {/* Empty State */}
               {!isCollapsed && stage.jobs.length === 0 && (
-                <div className="px-4 py-6 text-center text-gray-500 text-sm">
+                <div className="px-6 py-8 text-center text-muted-foreground text-sm">
                   No jobs in this stage
                 </div>
               )}
@@ -632,13 +538,13 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
 
       {/* Empty State for No Stages */}
       {filteredStages.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-12 text-gray-500">
-          <Package className="w-12 h-12 mb-4 opacity-50" />
+        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+          <Package className="w-12 h-12 mb-4 opacity-40" />
           <p>{selectedCustomerId ? 'No jobs for this customer' : 'No active jobs to display'}</p>
           {selectedCustomerId && (
             <button
               onClick={() => setSelectedCustomerId(null)}
-              className="mt-2 text-blue-600 hover:text-blue-700 text-sm"
+              className="mt-3 text-status-info hover:text-status-info/80 text-sm font-medium"
             >
               Show all customers
             </button>
@@ -648,39 +554,39 @@ export function JobsWorkflowView({ onSelectJob, onRefresh }: JobsWorkflowViewPro
 
       {/* Task Modal */}
       {taskModalJobId && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setTaskModalJobId(null)}>
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-4 py-3 border-b bg-amber-50">
-              <h3 className="font-semibold text-gray-900">
-                <span className="text-amber-600">📋</span> Task - Job {taskModalJobNo}
+        <div className="fixed inset-0 bg-foreground/50 flex items-center justify-center z-50" onClick={() => setTaskModalJobId(null)}>
+          <div className="bg-card rounded-lg shadow-xl w-full max-w-md mx-4 animate-slide-up" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-status-warning-bg rounded-t-lg">
+              <h3 className="font-display font-medium text-foreground">
+                Task - Job <span className="font-mono">{taskModalJobNo}</span>
               </h3>
               <button
                 onClick={() => setTaskModalJobId(null)}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                className="p-1 text-muted-foreground hover:text-foreground rounded transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-4">
-              <p className="text-sm text-gray-600 mb-2">
+            <div className="p-5">
+              <p className="text-sm text-muted-foreground mb-3">
                 Jobs with tasks are highlighted until marked complete.
               </p>
               <textarea
                 value={taskText}
                 onChange={(e) => setTaskText(e.target.value)}
                 placeholder="What needs to be done for this job?"
-                className="w-full h-24 px-3 py-2 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full h-28 px-3 py-2 border border-border rounded-lg resize-none bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-status-warning"
                 autoFocus
               />
             </div>
-            <div className="flex justify-end gap-2 px-4 py-3 border-t bg-gray-50">
+            <div className="flex justify-end gap-3 px-5 py-4 border-t border-border bg-muted/30 rounded-b-lg">
               <Button variant="outline" onClick={() => setTaskModalJobId(null)}>
                 Cancel
               </Button>
               <Button
+                variant="warning"
                 onClick={handleSaveTask}
                 disabled={!taskText.trim() || savingTask}
-                className="bg-amber-600 hover:bg-amber-700"
               >
                 {savingTask ? 'Saving...' : 'Set Task'}
               </Button>

@@ -3088,6 +3088,50 @@ export const updateInvoiceStatus = async (req: Request, res: Response) => {
   }
 };
 
+// Job Validation endpoint
+import { validateJob as runJobValidation } from '../domain/jobValidation';
+
+/**
+ * GET /api/jobs/:id/validate
+ * Run read-only validation checks on a job
+ */
+export const validateJob = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const result = await runJobValidation(prisma, id);
+    res.json(result);
+  } catch (error) {
+    console.error('Job validation error:', error);
+    res.status(500).json({ error: 'Failed to validate job' });
+  }
+};
+
+// ============================================
+// JOB ACTIVITY / CHANGE HISTORY
+// ============================================
+
+/**
+ * GET /api/jobs/:id/activity
+ * Retrieve change history for a job
+ */
+export const getJobActivity = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const limit = parseInt(req.query.limit as string) || 50;
+
+    const activities = await prisma.jobActivity.findMany({
+      where: { jobId: id },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+
+    res.json(activities);
+  } catch (error) {
+    console.error('Get job activity error:', error);
+    res.status(500).json({ error: 'Failed to retrieve job activity' });
+  }
+};
+
 // Re-export from crud controller
 export { getJobsWorkflowView, updateQCOverrides, updateWorkflowStatus, setJobTask, completeJobTask, createFromEmail, detectMailingTypeEndpoint } from './jobs/jobsCrudController';
 

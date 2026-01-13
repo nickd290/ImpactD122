@@ -6,6 +6,11 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        display: ['var(--font-display)'],
+        body: ['var(--font-body)'],
+        mono: ['var(--font-mono)'],
+      },
       colors: {
         'impact-red': '#FF6B35',
         'impact-orange': '#F7931E',
@@ -41,6 +46,49 @@ export default {
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
+        },
+        // Semantic status colors
+        status: {
+          success: {
+            DEFAULT: "hsl(var(--status-success))",
+            bg: "hsl(var(--status-success-bg))",
+            border: "hsl(var(--status-success-border))",
+          },
+          warning: {
+            DEFAULT: "hsl(var(--status-warning))",
+            bg: "hsl(var(--status-warning-bg))",
+            border: "hsl(var(--status-warning-border))",
+          },
+          danger: {
+            DEFAULT: "hsl(var(--status-danger))",
+            bg: "hsl(var(--status-danger-bg))",
+            border: "hsl(var(--status-danger-border))",
+          },
+          info: {
+            DEFAULT: "hsl(var(--status-info))",
+            bg: "hsl(var(--status-info-bg))",
+            border: "hsl(var(--status-info-border))",
+          },
+          neutral: {
+            DEFAULT: "hsl(var(--status-neutral))",
+            bg: "hsl(var(--status-neutral-bg))",
+            border: "hsl(var(--status-neutral-border))",
+          },
+        },
+        // Pathway colors (P1/P2/P3)
+        pathway: {
+          p1: {
+            DEFAULT: "hsl(var(--pathway-p1))",
+            bg: "hsl(var(--pathway-p1-bg))",
+          },
+          p2: {
+            DEFAULT: "hsl(var(--pathway-p2))",
+            bg: "hsl(var(--pathway-p2-bg))",
+          },
+          p3: {
+            DEFAULT: "hsl(var(--pathway-p3))",
+            bg: "hsl(var(--pathway-p3-bg))",
+          },
         },
       },
       borderRadius: {

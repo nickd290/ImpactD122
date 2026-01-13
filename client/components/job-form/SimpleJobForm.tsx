@@ -36,6 +36,11 @@ interface SimpleJobFormProps {
   isUploading: boolean;
   uploadError: string;
   onCustomerCreated?: (newCustomer: Customer) => void;
+  // PDF extraction props
+  onPDFExtract?: (file: File) => void;
+  isExtracting?: boolean;
+  extractionError?: string;
+  extractedCustomerName?: string;
 }
 
 const formatFileSize = (bytes: number): string => {
@@ -56,6 +61,10 @@ export function SimpleJobForm({
   isUploading,
   uploadError,
   onCustomerCreated,
+  onPDFExtract,
+  isExtracting,
+  extractionError,
+  extractedCustomerName,
 }: SimpleJobFormProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -71,7 +80,12 @@ export function SimpleJobForm({
     if (e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
       if (file.type === 'application/pdf') {
-        setPendingPOFile(file);
+        // If extraction handler provided, extract + auto-fill
+        if (onPDFExtract) {
+          onPDFExtract(file);
+        } else {
+          setPendingPOFile(file);
+        }
       }
     }
   };
@@ -79,7 +93,12 @@ export function SimpleJobForm({
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && file.type === 'application/pdf') {
-      setPendingPOFile(file);
+      // If extraction handler provided, extract + auto-fill
+      if (onPDFExtract) {
+        onPDFExtract(file);
+      } else {
+        setPendingPOFile(file);
+      }
     }
   };
 
@@ -340,7 +359,9 @@ export function SimpleJobForm({
           Customer PO (PDF)
         </h3>
         <p className="text-xs text-gray-500 mb-3">
-          Upload the customer's PO to attach to this job. This will be sent to the vendor when you email the PO.
+          {onPDFExtract
+            ? 'Drop a PO to auto-fill job details, or upload to attach to this job.'
+            : 'Upload the customer\'s PO to attach to this job. This will be sent to the vendor when you email the PO.'}
         </p>
 
         {/* Show uploaded file or pending file */}
@@ -386,6 +407,16 @@ export function SimpleJobForm({
               </button>
             )}
           </div>
+        ) : isExtracting ? (
+          <div className="border-2 border-dashed border-blue-400 bg-blue-50 rounded-lg p-6 text-center">
+            <Loader2 className="w-8 h-8 text-blue-500 mx-auto mb-2 animate-spin" />
+            <p className="text-sm font-medium text-blue-700">
+              Extracting PO data...
+            </p>
+            <p className="text-xs text-blue-500 mt-1">
+              Reading customer info, dates, and pricing
+            </p>
+          </div>
         ) : (
           <div
             className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
@@ -416,13 +447,36 @@ export function SimpleJobForm({
               </button>
             </p>
             <p className="text-xs text-gray-400 mt-1">
-              PDF only
+              {onPDFExtract ? 'Drop PO to auto-fill fields' : 'PDF only'}
             </p>
           </div>
         )}
 
         {uploadError && (
           <p className="mt-2 text-sm text-red-600">{uploadError}</p>
+        )}
+
+        {extractionError && (
+          <p className="mt-2 text-sm text-red-600">{extractionError}</p>
+        )}
+
+        {/* Show extracted customer name hint if no match found */}
+        {extractedCustomerName && !formData.customerId && (
+          <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <p className="text-sm text-amber-800">
+              <span className="font-medium">Customer from PO:</span> "{extractedCustomerName}"
+            </p>
+            <p className="text-xs text-amber-600 mt-1">
+              No exact match found. Select a customer above or{' '}
+              <button
+                type="button"
+                onClick={() => setShowCreateCustomer(true)}
+                className="text-amber-700 underline hover:text-amber-900"
+              >
+                create new customer
+              </button>
+            </p>
+          </div>
         )}
       </div>
     </div>

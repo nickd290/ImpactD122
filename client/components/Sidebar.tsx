@@ -1,8 +1,8 @@
 import React from 'react';
-import { BarChart3, Briefcase, Users, Building2, DollarSign, MessageSquare, FileQuestion, Search } from 'lucide-react';
+import { BarChart3, Briefcase, Users, Building2, DollarSign, MessageSquare, FileQuestion, Search, Kanban } from 'lucide-react';
 import { cn } from '../lib/utils';
 
-type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
+type View = 'DASHBOARD' | 'JOBS' | 'JOB_BOARD' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
 
 interface SidebarProps {
   currentView: View;
@@ -115,6 +115,13 @@ export function Sidebar({
             onClick={() => onViewChange('JOBS')}
             badge={jobsCount}
             shortcut="J"
+          />
+          <NavItem
+            icon={<Kanban />}
+            label="Job Board"
+            active={currentView === 'JOB_BOARD'}
+            onClick={() => onViewChange('JOB_BOARD')}
+            shortcut="B"
           />
           <NavItem
             icon={<MessageSquare />}

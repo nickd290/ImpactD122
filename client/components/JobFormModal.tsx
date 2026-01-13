@@ -32,6 +32,11 @@ export function JobFormModal({
   const [uploadError, setUploadError] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // PDF extraction state
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractionError, setExtractionError] = useState<string>('');
+  const [extractedCustomerName, setExtractedCustomerName] = useState<string>('');
+
   // Initialize form when modal opens
   useEffect(() => {
     if (isOpen) {
@@ -58,8 +63,57 @@ export function JobFormModal({
       }
       setPendingPOFile(null);
       setUploadError('');
+      setExtractionError('');
+      setExtractedCustomerName('');
     }
   }, [isOpen, initialData]);
+
+  // Handle PDF extraction for auto-fill
+  const handlePDFExtraction = async (file: File) => {
+    setIsExtracting(true);
+    setExtractionError('');
+    setExtractedCustomerName('');
+
+    const formDataToSend = new FormData();
+    formDataToSend.append('file', file);
+
+    try {
+      const res = await fetch('/api/ai/parse-po', { method: 'POST', body: formDataToSend });
+      const data = await res.json();
+
+      if (data.error) throw new Error(data.error);
+
+      // Auto-fill form with extracted data
+      setFormData(prev => ({
+        ...prev,
+        title: data.title || prev.title,
+        customerPONumber: data.poNumber || prev.customerPONumber,
+        description: data.description || data.specialInstructions || prev.description,
+        sellPrice: data.poTotal?.toString() || prev.sellPrice,
+        dueDate: data.dueDate || data.mailDate || prev.dueDate,
+      }));
+
+      // Try to match customer by name
+      if (data.customerName) {
+        setExtractedCustomerName(data.customerName);
+        const match = customers.find(c =>
+          c.name.toLowerCase().includes(data.customerName.toLowerCase()) ||
+          data.customerName.toLowerCase().includes(c.name.toLowerCase())
+        );
+        if (match) {
+          setFormData(prev => ({ ...prev, customerId: match.id }));
+        }
+      }
+
+      setPendingPOFile(file); // Keep file for upload with job
+      toast.success('PO data extracted!');
+    } catch (err: any) {
+      setExtractionError(err.message || 'Failed to extract PO data');
+      toast.error('Failed to extract PO');
+    } finally {
+      setIsExtracting(false);
+    }
+  };
 
   // Fetch existing customer PO file for a job
   const fetchExistingPOFile = async (jobId: string) => {
@@ -149,9 +203,15 @@ export function JobFormModal({
       hasExistingPOFile: !!uploadedPOFile,
     };
 
-    onSubmit(submitData);
-    setIsSubmitting(false);
-    onClose();
+    try {
+      await onSubmit(submitData);
+      onClose();
+    } catch (error) {
+      console.error('Job submit failed:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to save job');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -192,6 +252,10 @@ export function JobFormModal({
               isUploading={isUploading}
               uploadError={uploadError}
               onCustomerCreated={onCustomerCreated}
+              onPDFExtract={handlePDFExtraction}
+              isExtracting={isExtracting}
+              extractionError={extractionError}
+              extractedCustomerName={extractedCustomerName}
             />
 
             {/* Actions */}
