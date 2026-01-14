@@ -14,6 +14,7 @@ import { sendArtworkFollowUpEmail, sendJDInvoiceToBradfordEmail, sendVendorPOWit
 import { initiateBothThreads } from '../services/communicationService';
 import { COMPANY_IDS } from '../constants';
 import { JOB_INCLUDE } from './jobs/jobsHelpers';
+import { generateJobNo } from '../services/jobCreationService';
 
 /**
  * Check if a job meets criteria for Impact→Bradford PO creation
@@ -550,19 +551,8 @@ export const createJob = async (req: Request, res: Response) => {
       }
     }
 
-    // Generate job number
-    const lastJob = await prisma.job.findFirst({
-      orderBy: { jobNo: 'desc' },
-    });
-
-    let jobNo = 'J-1001';
-    if (lastJob) {
-      const match = lastJob.jobNo.match(/J-(\d+)/);
-      if (match) {
-        const lastNumber = parseInt(match[1]);
-        jobNo = `J-${(lastNumber + 1).toString().padStart(4, '0')}`;
-      }
-    }
+    // Generate job number using atomic increment
+    const jobNo = await generateJobNo(prisma);
 
     // Calculate quantity from line items or use provided quantity
     const quantity = inputQuantity || lineItems?.reduce((sum: number, item: any) => sum + (parseInt(item.quantity) || 0), 0) || 0;
@@ -1860,19 +1850,8 @@ export const importBatchJobs = async (req: Request, res: Response) => {
     const createdJobs = [];
 
     for (const jobData of jobs) {
-      // Generate job number
-      const lastJob = await prisma.job.findFirst({
-        orderBy: { jobNo: 'desc' },
-      });
-
-      let jobNo = 'J-1001';
-      if (lastJob) {
-        const match = lastJob.jobNo.match(/J-(\d+)/);
-        if (match) {
-          const lastNumber = parseInt(match[1]);
-          jobNo = `J-${(lastNumber + 1 + createdJobs.length).toString().padStart(4, '0')}`;
-        }
-      }
+      // Generate job number using atomic increment
+      const jobNo = await generateJobNo(prisma);
 
       const job = await prisma.job.create({
         data: {

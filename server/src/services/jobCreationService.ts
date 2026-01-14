@@ -92,9 +92,9 @@ export interface CreateJobUnifiedResult {
 /**
  * Generate the next job number (J-XXXX format).
  * Uses atomic increment via JobSequence to prevent race conditions.
- * MUST be called within a transaction for atomicity.
+ * Can be called with prisma client or transaction client.
  */
-async function generateJobNo(
+export async function generateJobNo(
   tx: PrismaClient | Parameters<Parameters<PrismaClient['$transaction']>[0]>[0]
 ): Promise<string> {
   // Use atomic upsert to prevent race conditions when multiple users create jobs simultaneously
