@@ -1,8 +1,8 @@
 import React from 'react';
-import { BarChart3, Briefcase, Users, Building2, DollarSign, MessageSquare, FileQuestion, Search, Kanban } from 'lucide-react';
+import { BarChart3, Briefcase, Users, Building2, DollarSign, MessageSquare, FileQuestion, Search, AlertCircle, Factory, Inbox } from 'lucide-react';
 import { cn } from '../lib/utils';
 
-type View = 'DASHBOARD' | 'JOBS' | 'JOB_BOARD' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
+type View = 'DASHBOARD' | 'ACTION_ITEMS' | 'JOBS' | 'JOB_BOARD' | 'PRODUCTION_BOARD' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
 
 interface SidebarProps {
   currentView: View;
@@ -12,6 +12,7 @@ interface SidebarProps {
   vendorsCount: number;
   partnerJobsCount: number;
   pendingCommunicationsCount: number;
+  actionItemsCount: number;
   onShowSpecParser: () => void;
   onCreateJob: () => void;
   onShowSearch: () => void;
@@ -71,6 +72,7 @@ export function Sidebar({
   vendorsCount,
   partnerJobsCount,
   pendingCommunicationsCount,
+  actionItemsCount,
   onShowSpecParser,
   onCreateJob,
   onShowSearch,
@@ -97,9 +99,32 @@ export function Sidebar({
 
       {/* Navigation */}
       <nav className="flex-1 px-1 overflow-y-auto">
+        {/* Inbox - Action Items First */}
         <div className="mb-6">
           <p className="px-3 mb-2 text-xs font-medium text-zinc-400">
-            Main
+            Inbox
+          </p>
+          <NavItem
+            icon={<Inbox />}
+            label="Action Items"
+            active={currentView === 'ACTION_ITEMS'}
+            onClick={() => onViewChange('ACTION_ITEMS')}
+            badge={actionItemsCount}
+            shortcut="I"
+          />
+          <NavItem
+            icon={<MessageSquare />}
+            label="Communications"
+            active={currentView === 'COMMUNICATIONS'}
+            onClick={() => onViewChange('COMMUNICATIONS')}
+            badge={pendingCommunicationsCount}
+            shortcut="M"
+          />
+        </div>
+
+        <div className="mb-6">
+          <p className="px-3 mb-2 text-xs font-medium text-zinc-400">
+            Jobs
           </p>
           <NavItem
             icon={<BarChart3 />}
@@ -110,33 +135,18 @@ export function Sidebar({
           />
           <NavItem
             icon={<Briefcase />}
-            label="Jobs"
-            active={currentView === 'JOBS'}
+            label="All Jobs"
+            active={currentView === 'JOBS' || currentView === 'JOB_BOARD'}
             onClick={() => onViewChange('JOBS')}
             badge={jobsCount}
             shortcut="J"
           />
           <NavItem
-            icon={<Kanban />}
-            label="Job Board"
-            active={currentView === 'JOB_BOARD'}
-            onClick={() => onViewChange('JOB_BOARD')}
-            shortcut="B"
-          />
-          <NavItem
-            icon={<MessageSquare />}
-            label="Communications"
-            active={currentView === 'COMMUNICATIONS'}
-            onClick={() => onViewChange('COMMUNICATIONS')}
-            badge={pendingCommunicationsCount}
-            shortcut="M"
-          />
-          <NavItem
-            icon={<FileQuestion />}
-            label="Vendor RFQs"
-            active={currentView === 'VENDOR_RFQS'}
-            onClick={() => onViewChange('VENDOR_RFQS')}
-            shortcut="R"
+            icon={<Factory />}
+            label="Production"
+            active={currentView === 'PRODUCTION_BOARD'}
+            onClick={() => onViewChange('PRODUCTION_BOARD')}
+            shortcut="P"
           />
         </div>
 

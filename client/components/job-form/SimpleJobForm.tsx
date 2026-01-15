@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FileText, Trash2, Loader2, Plus, Check } from 'lucide-react';
+import { Upload, FileText, Trash2, Loader2, Plus, Check, Image, FileSpreadsheet, Link2 } from 'lucide-react';
 
 export type RoutingType = 'BRADFORD_JD' | 'THIRD_PARTY_VENDOR';
 
@@ -12,6 +12,8 @@ export interface SimpleJobFormData {
   description: string;
   sellPrice: string;
   dueDate: string;
+  artworkUrl: string;
+  artworkToFollow: boolean;
 }
 
 export interface Customer {
@@ -41,6 +43,14 @@ interface SimpleJobFormProps {
   isExtracting?: boolean;
   extractionError?: string;
   extractedCustomerName?: string;
+  // Artwork file props
+  pendingArtworkFiles: File[];
+  setPendingArtworkFiles: (files: File[]) => void;
+  onDeleteArtworkFile: (index: number) => void;
+  // Data file props
+  pendingDataFiles: File[];
+  setPendingDataFiles: (files: File[]) => void;
+  onDeleteDataFile: (index: number) => void;
 }
 
 const formatFileSize = (bytes: number): string => {
@@ -65,9 +75,19 @@ export function SimpleJobForm({
   isExtracting,
   extractionError,
   extractedCustomerName,
+  pendingArtworkFiles,
+  setPendingArtworkFiles,
+  onDeleteArtworkFile,
+  pendingDataFiles,
+  setPendingDataFiles,
+  onDeleteDataFile,
 }: SimpleJobFormProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const artworkInputRef = useRef<HTMLInputElement>(null);
+  const dataInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isDraggingArtwork, setIsDraggingArtwork] = useState(false);
+  const [isDraggingData, setIsDraggingData] = useState(false);
   const [showCreateCustomer, setShowCreateCustomer] = useState(false);
   const [isCreatingCustomer, setIsCreatingCustomer] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState('');
@@ -99,6 +119,54 @@ export function SimpleJobForm({
       } else {
         setPendingPOFile(file);
       }
+    }
+  };
+
+  // Artwork file handlers
+  const handleArtworkDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingArtwork(false);
+    if (e.dataTransfer.files.length > 0) {
+      const newFiles = Array.from(e.dataTransfer.files).filter(file =>
+        /\.(pdf|png|jpg|jpeg|tif|tiff|ai|eps|psd)$/i.test(file.name)
+      );
+      if (newFiles.length > 0) {
+        setPendingArtworkFiles([...pendingArtworkFiles, ...newFiles]);
+      }
+    }
+  };
+
+  const handleArtworkSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      setPendingArtworkFiles([...pendingArtworkFiles, ...Array.from(files)]);
+    }
+    if (artworkInputRef.current) {
+      artworkInputRef.current.value = '';
+    }
+  };
+
+  // Data file handlers
+  const handleDataDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingData(false);
+    if (e.dataTransfer.files.length > 0) {
+      const newFiles = Array.from(e.dataTransfer.files).filter(file =>
+        /\.(csv|xlsx|xls|txt)$/i.test(file.name)
+      );
+      if (newFiles.length > 0) {
+        setPendingDataFiles([...pendingDataFiles, ...newFiles]);
+      }
+    }
+  };
+
+  const handleDataSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      setPendingDataFiles([...pendingDataFiles, ...Array.from(files)]);
+    }
+    if (dataInputRef.current) {
+      dataInputRef.current.value = '';
     }
   };
 
@@ -353,7 +421,43 @@ export function SimpleJobForm({
         />
       </div>
 
-      {/* Row 7: Customer PO File Upload */}
+      {/* Row 7: Artwork URL/Link */}
+      <div className="border-t pt-6">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium text-gray-700">
+            Artwork Link
+          </h3>
+          <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={formData.artworkToFollow}
+              onChange={(e) => setFormData({ ...formData, artworkToFollow: e.target.checked })}
+              className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600"
+            />
+            Artwork to Follow
+          </label>
+        </div>
+        <div className="relative">
+          <Link2 className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="url"
+            value={formData.artworkUrl}
+            onChange={(e) => setFormData({ ...formData, artworkUrl: e.target.value })}
+            className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder="https://sharefile.com/... or Dropbox link"
+          />
+        </div>
+        {formData.artworkToFollow && !formData.artworkUrl && (
+          <p className="mt-2 text-xs text-amber-600">
+            Artwork marked as "to follow" - will be sent separately
+          </p>
+        )}
+        <p className="mt-2 text-xs text-gray-500">
+          Paste a link to artwork files (Sharefile, Dropbox, Google Drive, etc.)
+        </p>
+      </div>
+
+      {/* Row 8: Customer PO File Upload */}
       <div className="border-t pt-6">
         <h3 className="text-sm font-medium text-gray-700 mb-3">
           Customer PO (PDF)
@@ -479,6 +583,148 @@ export function SimpleJobForm({
           </div>
         )}
       </div>
+
+      {/* Row 8: Artwork Files Upload */}
+      <div className="border-t pt-6">
+        <h3 className="text-sm font-medium text-gray-700 mb-3">
+          Artwork Files
+        </h3>
+        <p className="text-xs text-gray-500 mb-3">
+          Upload design files (PDF, PNG, JPG, TIFF, AI, EPS, PSD)
+        </p>
+
+        {/* Show pending artwork files */}
+        {pendingArtworkFiles.length > 0 && (
+          <div className="space-y-2 mb-3">
+            {pendingArtworkFiles.map((file, index) => (
+              <div key={index} className="flex items-center justify-between bg-purple-50 p-3 rounded-lg border border-purple-200">
+                <div className="flex items-center gap-3">
+                  <Image className="w-5 h-5 text-purple-500" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{file.name}</p>
+                    <p className="text-xs text-gray-500">
+                      {formatFileSize(file.size)} • Ready to upload
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onDeleteArtworkFile(index)}
+                  className="p-1 text-red-500 hover:bg-red-50 rounded"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Artwork drag-drop zone */}
+        <div
+          className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+            isDraggingArtwork
+              ? 'border-purple-500 bg-purple-50'
+              : 'border-gray-300 hover:border-gray-400'
+          }`}
+          onDragOver={(e) => { e.preventDefault(); setIsDraggingArtwork(true); }}
+          onDragLeave={() => setIsDraggingArtwork(false)}
+          onDrop={handleArtworkDrop}
+        >
+          <input
+            ref={artworkInputRef}
+            type="file"
+            accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.ai,.eps,.psd"
+            multiple
+            onChange={handleArtworkSelect}
+            className="hidden"
+          />
+          <Image className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+          <p className="text-sm text-gray-600">
+            Drag & drop artwork files, or{' '}
+            <button
+              type="button"
+              onClick={() => artworkInputRef.current?.click()}
+              className="text-purple-600 hover:underline"
+            >
+              browse
+            </button>
+          </p>
+          <p className="text-xs text-gray-400 mt-1">
+            PDF, PNG, JPG, TIFF, AI, EPS, PSD
+          </p>
+        </div>
+      </div>
+
+      {/* Row 9: Data Files Upload */}
+      <div className="border-t pt-6">
+        <h3 className="text-sm font-medium text-gray-700 mb-3">
+          Data Files
+        </h3>
+        <p className="text-xs text-gray-500 mb-3">
+          Upload mail lists or data files (CSV, Excel, TXT)
+        </p>
+
+        {/* Show pending data files */}
+        {pendingDataFiles.length > 0 && (
+          <div className="space-y-2 mb-3">
+            {pendingDataFiles.map((file, index) => (
+              <div key={index} className="flex items-center justify-between bg-emerald-50 p-3 rounded-lg border border-emerald-200">
+                <div className="flex items-center gap-3">
+                  <FileSpreadsheet className="w-5 h-5 text-emerald-500" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{file.name}</p>
+                    <p className="text-xs text-gray-500">
+                      {formatFileSize(file.size)} • Ready to upload
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onDeleteDataFile(index)}
+                  className="p-1 text-red-500 hover:bg-red-50 rounded"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Data file drag-drop zone */}
+        <div
+          className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+            isDraggingData
+              ? 'border-emerald-500 bg-emerald-50'
+              : 'border-gray-300 hover:border-gray-400'
+          }`}
+          onDragOver={(e) => { e.preventDefault(); setIsDraggingData(true); }}
+          onDragLeave={() => setIsDraggingData(false)}
+          onDrop={handleDataDrop}
+        >
+          <input
+            ref={dataInputRef}
+            type="file"
+            accept=".csv,.xlsx,.xls,.txt"
+            multiple
+            onChange={handleDataSelect}
+            className="hidden"
+          />
+          <FileSpreadsheet className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+          <p className="text-sm text-gray-600">
+            Drag & drop data files, or{' '}
+            <button
+              type="button"
+              onClick={() => dataInputRef.current?.click()}
+              className="text-emerald-600 hover:underline"
+            >
+              browse
+            </button>
+          </p>
+          <p className="text-xs text-gray-400 mt-1">
+            CSV, Excel, TXT
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -493,4 +739,6 @@ export const defaultSimpleJobFormData: SimpleJobFormData = {
   description: '',
   sellPrice: '',
   dueDate: '',
+  artworkUrl: '',
+  artworkToFollow: false,
 };

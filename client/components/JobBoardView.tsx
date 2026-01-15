@@ -177,17 +177,15 @@ function JobBoardCard({ job, onClick }: { job: Job; onClick: () => void }) {
         </div>
       )}
 
-      {/* Partner Badge */}
-      {job.vendor?.isPartner && (
-        <div className="mt-3 pt-3 border-t border-border/50">
-          <Badge variant="p3">Bradford Partner</Badge>
-        </div>
-      )}
-
-      {/* Last Edited */}
-      {job.updatedAt && (
-        <div className="mt-3 pt-2 border-t border-border/50 text-[10px] text-muted-foreground/70 font-mono">
-          Last edited: {new Date(job.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+      {/* Workflow Stage */}
+      {job.workflowStatus && (
+        <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between">
+          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+            {job.workflowStatus.replace(/_/g, ' ')}
+          </span>
+          {job.vendor?.isPartner && (
+            <Badge variant="p3" className="text-[9px]">Partner</Badge>
+          )}
         </div>
       )}
     </div>

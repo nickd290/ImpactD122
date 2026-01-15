@@ -4,13 +4,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route, useParams } from 'react-router-dom';
 import App from './App';
 import VendorQuoteForm from './components/VendorQuoteForm';
-import { VendorPortalView } from './components/VendorPortalView';
+import { VendorPortalSimple } from './components/VendorPortalSimple';
 import './index.css';
 
 // Wrapper to pass token from URL params
 function PortalWrapper() {
   const { token } = useParams<{ token: string }>();
-  return <VendorPortalView token={token || ''} />;
+  return <VendorPortalSimple token={token || ''} />;
 }
 
 // Create a client for React Query

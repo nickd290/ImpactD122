@@ -188,7 +188,7 @@
   /* Metric display - large serif numbers */
   .metric-display {
     font-family: var(--font-display);
-    font-weight: 400;
+    font-weight: 600;
     letter-spacing: -0.03em;
     line-height: 1;
   }
@@ -281,5 +281,25 @@
       opacity: 1;
       transform: translateY(0);
     }
+  }
+
+  /* Pulse animation for urgent items */
+  .animate-pulse-subtle {
+    animation: pulse-subtle 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-subtle {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.85;
+    }
+  }
+
+  /* Overdue badge - extra prominent */
+  .badge-overdue {
+    @apply px-3 py-1 text-xs font-semibold bg-status-danger text-white rounded-full;
+    animation: pulse-subtle 2s ease-in-out infinite;
   }
 }

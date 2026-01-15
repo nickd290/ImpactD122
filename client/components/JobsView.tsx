@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Plus, Search, Sparkles, Upload, FileText, Edit, Trash2, FileSpreadsheet, CheckSquare, Square, ChevronDown, ChevronRight, MoreVertical, DollarSign, Printer, Receipt, Building2, Copy, FileDown, Mail } from 'lucide-react';
-import { JobsWorkflowView } from './JobsWorkflowView';
+import { JobPipelineBoard } from './JobPipelineBoard';
 import { Button, Tabs } from './ui';
 import { Input } from './ui';
 import { Badge } from './ui';
 import { StatusBadge } from './ui/StatusBadge';
-import { JobDetailModal } from './JobDetailModal';
+import { BrokerJobModal } from './BrokerJobModal';
 import { InlineEditableCell } from './InlineEditableCell';
 import { StatusDropdown } from './StatusDropdown';
 import { cn } from '../lib/utils';
@@ -416,9 +416,9 @@ export function JobsView({
         </div>
       </div>
 
-      {/* Jobs Workflow View */}
-      <div className="bg-white rounded-lg border border-zinc-200 overflow-hidden">
-        <JobsWorkflowView
+      {/* Job Pipeline Board - Kanban Style */}
+      <div className="bg-white rounded-lg overflow-hidden" style={{ height: 'calc(100vh - 140px)' }}>
+        <JobPipelineBoard
           onSelectJob={(jobId) => {
             const job = jobs.find(j => j.id === jobId);
             if (job) {
@@ -751,9 +751,9 @@ export function JobsView({
         </>
       )}
 
-      {/* Job Detail Modal */}
+      {/* Broker Job Modal - Simplified view for production meetings */}
       {selectedJob && (
-        <JobDetailModal
+        <BrokerJobModal
           isOpen={isDrawerOpen}
           onClose={() => {
             setIsDrawerOpen(false);
@@ -761,14 +761,6 @@ export function JobsView({
           }}
           job={selectedJob}
           onEdit={() => onEditJob(selectedJob)}
-          onDelete={() => {
-            setIsDrawerOpen(false);
-            onDeleteJob(selectedJob);
-          }}
-          onGenerateEmail={() => onShowEmailDraft(selectedJob)}
-          onDownloadPO={() => pdfApi.generateVendorPO(selectedJob.id)}
-          onDownloadInvoice={() => pdfApi.generateInvoice(selectedJob.id)}
-          onDownloadQuote={() => pdfApi.generateQuote(selectedJob.id)}
           onRefresh={onRefresh}
         />
       )}

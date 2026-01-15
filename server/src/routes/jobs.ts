@@ -3,6 +3,7 @@ import {
   getAllJobs,
   getJob,
   getJobsWorkflowView,
+  getJobsProductionView,
   createJob,
   updateJob,
   deleteJob,
@@ -75,6 +76,7 @@ const router = Router();
 // Job CRUD
 router.get('/', getAllJobs);
 router.get('/workflow-view', getJobsWorkflowView); // Must be before /:id
+router.get('/production-view', getJobsProductionView); // Production board view
 router.get('/:id/validate', validateJob); // Must be before /:id
 router.get('/:id/activity', getJobActivity); // Job change history
 router.get('/:id', getJob);

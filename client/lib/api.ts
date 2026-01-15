@@ -33,6 +33,14 @@ export const jobsApi = {
     return apiFetch(`/jobs${query}`);
   },
   getWorkflowView: () => apiFetch('/jobs/workflow-view'),
+  getProductionView: (params?: { dueDays?: number; vendorId?: string; customerId?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.dueDays) query.set('dueDays', String(params.dueDays));
+    if (params?.vendorId) query.set('vendorId', params.vendorId);
+    if (params?.customerId) query.set('customerId', params.customerId);
+    const queryStr = query.toString();
+    return apiFetch(`/jobs/production-view${queryStr ? `?${queryStr}` : ''}`);
+  },
   getById: (id: string) => apiFetch(`/jobs/${id}`),
   getActivity: (id: string, limit?: number) => {
     const query = limit ? `?limit=${limit}` : '';

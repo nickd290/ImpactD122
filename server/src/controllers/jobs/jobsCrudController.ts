@@ -211,6 +211,135 @@ export const getJobsWorkflowView = async (req: Request, res: Response) => {
 };
 
 /**
+ * Get jobs for production board view
+ * - Filters by due date window (default 14 days)
+ * - Includes full specs, shipping info, samples flag
+ * - Returns data optimized for vendor-grouped display
+ */
+export const getJobsProductionView = async (req: Request, res: Response) => {
+  try {
+    const dueDays = parseInt(req.query.dueDays as string) || 14;
+    const vendorId = req.query.vendorId as string | undefined;
+    const customerId = req.query.customerId as string | undefined;
+
+    // Calculate due window
+    const dueWindow = new Date();
+    dueWindow.setDate(dueWindow.getDate() + dueDays);
+
+    // Build where clause
+    const whereClause: any = {
+      deletedAt: null,
+      status: 'ACTIVE',
+      // Only jobs due within window OR no due date set
+      OR: [
+        { deliveryDate: { lte: dueWindow } },
+        { deliveryDate: null },
+      ],
+    };
+
+    if (vendorId) whereClause.vendorId = vendorId;
+    if (customerId) whereClause.customerId = customerId;
+
+    const jobs = await prisma.job.findMany({
+      where: whereClause,
+      include: {
+        ...JOB_INCLUDE_WORKFLOW,
+        // Include full Proof list for new proof detection
+        Proof: {
+          select: {
+            id: true,
+            status: true,
+            version: true,
+            createdAt: true,
+          },
+          orderBy: { version: 'desc' as const },
+        },
+      },
+      orderBy: [
+        { deliveryDate: 'asc' },
+        { createdAt: 'desc' },
+      ],
+    });
+
+    // Transform jobs with production-specific data
+    const transformedJobs = jobs.map(job => {
+      const base = transformJobForWorkflow(job);
+      base.workflowStatus = calculateWorkflowStage(job);
+
+      // Add production-specific fields
+      return {
+        ...base,
+        // Full specs object
+        specs: job.specs as any,
+        // Shipping destination
+        vendorShipToName: job.vendorShipToName,
+        vendorShipToAddress: job.vendorShipToAddress,
+        vendorShipToCity: job.vendorShipToCity,
+        vendorShipToState: job.vendorShipToState,
+        vendorShipToZip: job.vendorShipToZip,
+        // Samples flag
+        hasSamples: job.hasSamples || false,
+        // Paper info
+        bradfordPaperType: job.bradfordPaperType,
+        paperSource: job.paperSource,
+        // All proofs (for new proof detection)
+        proofs: (job.Proof || []).map((p: any) => ({
+          id: p.id,
+          status: p.status,
+          version: p.version,
+          createdAt: p.createdAt,
+        })),
+        // Full portal info
+        portal: job.JobPortal ? {
+          vendorStatus: job.JobPortal.vendorStatus,
+          trackingNumber: job.JobPortal.trackingNumber,
+          trackingCarrier: job.JobPortal.trackingCarrier,
+          confirmedAt: job.JobPortal.confirmedAt,
+          accessCount: job.JobPortal.accessCount,
+        } : null,
+        // Full customer info
+        customer: job.Company ? {
+          id: job.Company.id,
+          name: job.Company.name,
+          email: job.Company.email,
+        } : null,
+        // Full vendor info with contacts
+        vendor: job.Vendor ? {
+          id: job.Vendor.id,
+          name: job.Vendor.name,
+          email: job.Vendor.email,
+          contacts: (job.Vendor as any).contacts || [],
+        } : null,
+        // Size name
+        sizeName: job.sizeName || null,
+        // Purchase orders array for frontend
+        purchaseOrders: (job.PurchaseOrder || []).map((po: any) => ({
+          id: po.id,
+          poNumber: po.poNumber,
+          emailedAt: po.emailedAt,
+        })),
+        // Files categorized for quick access
+        files: {
+          artwork: (job.File || []).filter((f: any) => f.kind === 'ARTWORK').map((f: any) => ({ id: f.id, name: f.fileName })),
+          data: (job.File || []).filter((f: any) => f.kind === 'DATA_FILE').map((f: any) => ({ id: f.id, name: f.fileName })),
+          proofs: (job.File || []).filter((f: any) => f.kind === 'PROOF' || f.kind === 'VENDOR_PROOF').map((f: any) => ({ id: f.id, name: f.fileName })),
+          po: (job.File || []).filter((f: any) => f.kind === 'PO_PDF').map((f: any) => ({ id: f.id, name: f.fileName })),
+        },
+      };
+    });
+
+    res.json({
+      jobs: transformedJobs,
+      totalCount: transformedJobs.length,
+      filterParams: { dueDays, vendorId, customerId },
+    });
+  } catch (error) {
+    console.error('Get jobs production view error:', error);
+    res.status(500).json({ error: 'Failed to fetch production view' });
+  }
+};
+
+/**
  * Get single job by ID
  */
 export const getJob = async (req: Request, res: Response) => {

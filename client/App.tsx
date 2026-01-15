@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Toaster, toast } from 'sonner';
 import { jobsApi, entitiesApi, communicationsApi } from './lib/api';
 import { SpecParser } from './components/SpecParser';
@@ -17,6 +17,8 @@ import { UnifiedFinancialsView } from './components/financials/UnifiedFinancials
 import { CommunicationsView } from './components/CommunicationsView';
 import { VendorRFQView } from './components/VendorRFQView';
 import { JobBoardView } from './components/JobBoardView';
+import { ProductionBoard } from './components/production';
+import { ActionItemsView } from './components/ActionItemsView';
 import { JobFormModal } from './components/JobFormModal';
 import { JobExcelImporter } from './components/JobExcelImporter';
 import { JobImportPreviewModal } from './components/JobImportPreviewModal';
@@ -24,7 +26,7 @@ import { NewJobChoiceModal } from './components/NewJobChoiceModal';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { AppLoadingSkeleton } from './components/LoadingSkeleton';
 
-type View = 'DASHBOARD' | 'JOBS' | 'JOB_BOARD' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
+type View = 'DASHBOARD' | 'ACTION_ITEMS' | 'JOBS' | 'JOB_BOARD' | 'PRODUCTION_BOARD' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
 
 // Impact Direct entity for PDF generation
 const IMPACT_DIRECT_ENTITY = {
@@ -79,6 +81,33 @@ function App() {
 
   // Search Modal state
   const [showSearchModal, setShowSearchModal] = useState(false);
+
+  // Calculate action items count for sidebar badge
+  const actionItemsCount = useMemo(() => {
+    const activeJobs = jobs.filter(j => j.status === 'ACTIVE');
+    const now = new Date();
+
+    // Overdue jobs
+    const overdueCount = activeJobs.filter(j => {
+      const deadline = j.dueDate || j.mailDate || j.inHomesDate;
+      return deadline && new Date(deadline) < now;
+    }).length;
+
+    // Missing artwork
+    const missingArtworkCount = activeJobs.filter(j => j.qcArtwork === 'PENDING').length;
+
+    // Missing data files (but has artwork)
+    const missingDataCount = activeJobs.filter(j =>
+      j.qcDataFiles === 'PENDING' && j.qcArtwork !== 'PENDING'
+    ).length;
+
+    // Ready to bill (shipped but not invoiced)
+    const readyToBillCount = activeJobs.filter(j =>
+      j.workflowStatus === 'SHIPPED' && !j.invoiceGeneratedAt
+    ).length;
+
+    return overdueCount + missingArtworkCount + missingDataCount + readyToBillCount + pendingCommunicationsCount;
+  }, [jobs, pendingCommunicationsCount]);
 
   // Load data
   useEffect(() => {
@@ -143,7 +172,7 @@ function App() {
   const handleSubmitJobForm = async (jobData: any) => {
     try {
       // Extract pending files before creating job
-      const { pendingFiles, pendingCustomerPOFile, ...jobDataWithoutFiles } = jobData;
+      const { pendingFiles, pendingCustomerPOFile, pendingArtworkFiles, pendingDataFiles, ...jobDataWithoutFiles } = jobData;
 
       // Create the job
       const newJob = await jobsApi.create(jobDataWithoutFiles);
@@ -168,6 +197,48 @@ function App() {
         } catch (error) {
           console.error('Failed to upload customer PO file:', error);
           failedFiles.push(pendingCustomerPOFile.name || 'Customer PO');
+        }
+      }
+
+      // Upload artwork files
+      if (pendingArtworkFiles && pendingArtworkFiles.length > 0) {
+        for (const file of pendingArtworkFiles) {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('kind', 'ARTWORK');
+
+          try {
+            const response = await fetch(`/api/files/jobs/${newJob.id}/files`, {
+              method: 'POST',
+              body: formData,
+            });
+            if (!response.ok) throw new Error('Upload failed');
+            uploadedCount++;
+          } catch (error) {
+            console.error('Failed to upload artwork file:', file.name, error);
+            failedFiles.push(file.name);
+          }
+        }
+      }
+
+      // Upload data files
+      if (pendingDataFiles && pendingDataFiles.length > 0) {
+        for (const file of pendingDataFiles) {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('kind', 'DATA_FILE');
+
+          try {
+            const response = await fetch(`/api/files/jobs/${newJob.id}/files`, {
+              method: 'POST',
+              body: formData,
+            });
+            if (!response.ok) throw new Error('Upload failed');
+            uploadedCount++;
+          } catch (error) {
+            console.error('Failed to upload data file:', file.name, error);
+            failedFiles.push(file.name);
+          }
         }
       }
 
@@ -599,6 +670,7 @@ function App() {
         vendorsCount={vendors.length}
         partnerJobsCount={jobs.filter(j => j.vendor?.isPartner).length}
         pendingCommunicationsCount={pendingCommunicationsCount}
+        actionItemsCount={actionItemsCount}
         onShowSpecParser={() => setShowSpecParser(true)}
         onCreateJob={handleCreateJob}
         onShowSearch={() => setShowSearchModal(true)}
@@ -617,6 +689,16 @@ function App() {
               onShowSpecParser={() => setShowSpecParser(true)}
               onShowPOUploader={() => setShowPOUploader(true)}
               onViewAllJobs={() => setCurrentView('JOBS')}
+            />
+          )}
+
+          {currentView === 'ACTION_ITEMS' && (
+            <ActionItemsView
+              jobs={jobs}
+              onJobClick={(job) => {
+                setSelectedJob(job);
+                setCurrentView('JOBS');
+              }}
             />
           )}
 
@@ -649,6 +731,10 @@ function App() {
                 setCurrentView('JOBS');
               }}
             />
+          )}
+
+          {currentView === 'PRODUCTION_BOARD' && (
+            <ProductionBoard onRefresh={loadData} />
           )}
 
           {currentView === 'CUSTOMERS' && (

@@ -32,6 +32,10 @@ export function JobFormModal({
   const [uploadError, setUploadError] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Artwork and data file state
+  const [pendingArtworkFiles, setPendingArtworkFiles] = useState<File[]>([]);
+  const [pendingDataFiles, setPendingDataFiles] = useState<File[]>([]);
+
   // PDF extraction state
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractionError, setExtractionError] = useState<string>('');
@@ -51,6 +55,8 @@ export function JobFormModal({
           description: initialData.description || '',
           sellPrice: initialData.sellPrice?.toString() || '',
           dueDate: initialData.dueDate ? new Date(initialData.dueDate).toISOString().split('T')[0] : '',
+          artworkUrl: initialData.specs?.artworkUrl || initialData.artworkUrl || '',
+          artworkToFollow: initialData.specs?.artworkToFollow || initialData.artworkToFollow || false,
         });
         // Only fetch existing files if this is an existing job (has an ID)
         if (initialData.id) {
@@ -62,6 +68,8 @@ export function JobFormModal({
         setUploadedPOFile(null);
       }
       setPendingPOFile(null);
+      setPendingArtworkFiles([]);
+      setPendingDataFiles([]);
       setUploadError('');
       setExtractionError('');
       setExtractedCustomerName('');
@@ -152,6 +160,15 @@ export function JobFormModal({
     }
   };
 
+  // Delete handlers for artwork and data files
+  const handleDeleteArtworkFile = (index: number) => {
+    setPendingArtworkFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleDeleteDataFile = (index: number) => {
+    setPendingDataFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -197,8 +214,16 @@ export function JobFormModal({
       description: formData.description.trim() || null,
       sellPrice: parsedSellPrice,
       dueDate: formData.dueDate || null,
+      // Artwork link fields
+      specs: {
+        artworkUrl: formData.artworkUrl.trim() || null,
+        artworkToFollow: formData.artworkToFollow,
+      },
       // Include pending PO file for upload after job creation
       pendingCustomerPOFile: pendingPOFile,
+      // Include pending artwork and data files
+      pendingArtworkFiles,
+      pendingDataFiles,
       // For editing: flag if we should upload a new file
       hasExistingPOFile: !!uploadedPOFile,
     };
@@ -256,6 +281,12 @@ export function JobFormModal({
               isExtracting={isExtracting}
               extractionError={extractionError}
               extractedCustomerName={extractedCustomerName}
+              pendingArtworkFiles={pendingArtworkFiles}
+              setPendingArtworkFiles={setPendingArtworkFiles}
+              onDeleteArtworkFile={handleDeleteArtworkFile}
+              pendingDataFiles={pendingDataFiles}
+              setPendingDataFiles={setPendingDataFiles}
+              onDeleteDataFile={handleDeleteDataFile}
             />
 
             {/* Actions */}

@@ -18,6 +18,7 @@ import { useQuery } from '@tanstack/react-query';
 import { WorkflowStatusBadge, getNextWorkflowStatuses, WORKFLOW_STAGES, getStageIndex } from './WorkflowStatusBadge';
 import { PDFPreviewModal } from './PDFPreviewModal';
 import { JobReadinessCard } from './job-form/JobReadinessCard';
+import { BlockingIssueCard } from './job-detail/BlockingIssueCard';
 
 // Pathway badge styling - uses design system colors
 const PATHWAY_STYLES = {
@@ -1189,6 +1190,23 @@ export function JobDetailModal({
 
     return (
     <div className="space-y-4">
+      {/* Blocking Issue - Prominent at top when applicable */}
+      <BlockingIssueCard
+        job={job}
+        hasArtwork={hasArtwork}
+        hasProof={hasProof}
+        onUploadArtwork={() => fileInputRef.current?.click()}
+        onAssignVendor={() => setIsEditMode(true)}
+        onSkipArtwork={async () => {
+          try {
+            await jobsApi.updateQCOverrides(job.id, { artOverride: true, artOverrideNote: 'N/A - not required' });
+            if (onRefresh) onRefresh();
+          } catch (error) {
+            console.error('Failed to update art override:', error);
+          }
+        }}
+      />
+
       {/* Compact Header Row: Key Numbers - Editorial Style */}
       <div className="grid grid-cols-5 gap-0 text-center bg-card border border-border rounded-lg overflow-hidden">
         <div className="p-3 border-r border-border/50">

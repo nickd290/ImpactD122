@@ -1,11 +1,19 @@
 # ImpactD122 - Status
 
-> Last updated: 2026-01-08
+> Last updated: 2026-01-15
 
 ## Current Goal
-Stabilize architecture and prevent route drift. Improve production meeting workflow visibility.
+UX redesign complete. Focus on testing and refinement.
 
 ## Recent Changes
+- **UX Redesign (2026-01-15)**:
+  - Created `ActionItemsView.tsx` - unified inbox for overdue jobs, missing files, pending communications
+  - Created `BlockingIssueCard.tsx` - prominent blocking issue display at top of job modal
+  - Reorganized `Sidebar.tsx` - grouped nav into Inbox/Jobs/Entities/Analytics sections
+  - Updated `JobBoardView.tsx` - removed "Last edited", added workflow stage display
+  - Updated `index.css` - increased metric font weights, added pulse animation for urgent items
+  - Integrated blocking issues into `JobDetailModal.tsx`
+  - Added action items count to sidebar badge
 - Created `.claude/ARCHITECTURE.md` with full route registry
 - Documented 100+ API endpoints
 - Documented pathway system (P1/P2/P3)
@@ -13,28 +21,27 @@ Stabilize architecture and prevent route drift. Improve production meeting workf
 
 ## Known Issues
 
-### From Gemini Analysis
-1. **UI Complexity**: Hard to find things during production meetings
-2. **Workflow Visibility**: Need clearer job status at-a-glance
-3. **Financials vs Jobs**: Should be separated into tabs
+### Resolved by UX Redesign
+- ~~UI Complexity: Hard to find things~~ → Action Items inbox consolidates blockers
+- ~~Workflow Visibility: Need clearer status~~ → Blocking issue card at top of modal
+- ~~Status Badges: Need color coding~~ → Red/yellow/green tinting on job cards
 
-### Suggested Improvements
-1. **Meeting Mode Toggle**: Hide financials, focus on blockers
-2. **Status Badges**: Color-coded (red = late, green = ready)
-3. **One-Click Actions**: "Send PO" button directly in job row
+### Remaining
+- Financials vs Jobs tab split (not implemented - may not be needed now)
+- Meeting Mode toggle (not implemented - Action Items view serves this purpose)
 
 ## Sprint/Focus
-- Fix any job creation issues (check webhook flow)
-- Simplify Jobs view for production meetings
-- Consider Jobs tab vs Financials tab split
+- Test UX redesign changes with real workflow
+- Gather user feedback on Action Items inbox
+- Consider adding quick action buttons to job cards if needed
 
 ## Active Projects
 | Slot | Project | Status |
 |------|---------|--------|
-| P1 | ImpactD122 | Architecture documented |
+| P1 | ImpactD122 | UX redesign complete |
 | P2 | impact-customer-portal | Debugging job creation |
 
 ## Next Session
-1. Test webhook integration between portal and ImpactD122
-2. Review job creation flow end-to-end
-3. Plan UI simplification
+1. Test Action Items view with production data
+2. Verify blocking issue detection logic works correctly
+3. Review job board workflow stage display

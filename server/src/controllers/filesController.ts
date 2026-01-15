@@ -43,7 +43,7 @@ export const uploadJobFile = async (req: Request, res: Response) => {
     }
 
     // Validate kind
-    const validKinds = ['ARTWORK', 'DATA_FILE', 'PROOF', 'INVOICE', 'PO_PDF'];
+    const validKinds = ['ARTWORK', 'DATA_FILE', 'PROOF', 'INVOICE', 'PO_PDF', 'CUSTOMER_PO', 'VENDOR_PROOF'];
     if (!validKinds.includes(kind)) {
       if (file.path && fs.existsSync(file.path)) {
         fs.unlinkSync(file.path);

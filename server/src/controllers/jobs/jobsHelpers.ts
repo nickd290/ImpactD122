@@ -560,6 +560,7 @@ export const JOB_INCLUDE_WORKFLOW = {
       poNumber: true,
       status: true,
       issuedAt: true,
+      emailedAt: true,
       buyCost: true,
       targetVendorId: true,
     },
@@ -675,6 +676,10 @@ export function transformJobForWorkflow(job: any) {
     hasPO: !!vendorPO,
     poNumber: vendorPO?.poNumber || null,
     poSentAt: vendorPO?.issuedAt || null,
+
+    // Vendor portal status (for production meetings)
+    vendorConfirmedAt: portal?.confirmedAt || null,
+    vendorStatus: portal?.vendorStatus || null,
 
     // QC Indicators
     qc: qcIndicators,
