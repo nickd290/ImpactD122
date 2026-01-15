@@ -188,7 +188,7 @@ function App() {
           const formData = new FormData();
           formData.append('file', pendingCustomerPOFile);
           formData.append('kind', 'CUSTOMER_PO');
-          const response = await fetch(`/api/files/jobs/${newJob.id}/files`, {
+          const response = await fetch(`/api/jobs/${newJob.id}/files`, {
             method: 'POST',
             body: formData,
           });
@@ -208,7 +208,7 @@ function App() {
           formData.append('kind', 'ARTWORK');
 
           try {
-            const response = await fetch(`/api/files/jobs/${newJob.id}/files`, {
+            const response = await fetch(`/api/jobs/${newJob.id}/files`, {
               method: 'POST',
               body: formData,
             });
@@ -229,7 +229,7 @@ function App() {
           formData.append('kind', 'DATA_FILE');
 
           try {
-            const response = await fetch(`/api/files/jobs/${newJob.id}/files`, {
+            const response = await fetch(`/api/jobs/${newJob.id}/files`, {
               method: 'POST',
               body: formData,
             });
@@ -250,7 +250,7 @@ function App() {
           formData.append('kind', 'ARTWORK');
 
           try {
-            const response = await fetch(`/api/files/jobs/${newJob.id}/files`, {
+            const response = await fetch(`/api/jobs/${newJob.id}/files`, {
               method: 'POST',
               body: formData,
             });
@@ -269,7 +269,7 @@ function App() {
           const formData = new FormData();
           formData.append('file', originalPOFile);
           formData.append('kind', 'PO_PDF');
-          const response = await fetch(`/api/files/jobs/${newJob.id}/files`, {
+          const response = await fetch(`/api/jobs/${newJob.id}/files`, {
             method: 'POST',
             body: formData,
           });

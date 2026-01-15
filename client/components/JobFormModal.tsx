@@ -126,7 +126,7 @@ export function JobFormModal({
   // Fetch existing customer PO file for a job
   const fetchExistingPOFile = async (jobId: string) => {
     try {
-      const response = await fetch(`/api/files/jobs/${jobId}/files`);
+      const response = await fetch(`/api/jobs/${jobId}/files`);
       if (response.ok) {
         const files = await response.json();
         const customerPO = files.find((f: any) => f.kind === 'CUSTOMER_PO');
@@ -141,7 +141,7 @@ export function JobFormModal({
   const handleDeletePOFile = async () => {
     if (uploadedPOFile && initialData?.id) {
       try {
-        const response = await fetch(`/api/files/jobs/${initialData.id}/files/${uploadedPOFile.id}`, {
+        const response = await fetch(`/api/jobs/${initialData.id}/files/${uploadedPOFile.id}`, {
           method: 'DELETE',
         });
         if (response.ok) {
@@ -201,6 +201,13 @@ export function JobFormModal({
       return;
     }
 
+    const parsedQuantity = parseInt(formData.quantity, 10);
+    if (!formData.quantity || isNaN(parsedQuantity) || parsedQuantity < 1) {
+      toast.error('Please enter a valid quantity (at least 1)');
+      setIsSubmitting(false);
+      return;
+    }
+
     // Get vendor info for routing calculation
     const selectedVendor = vendors.find(v => v.id === formData.vendorId);
 
@@ -213,6 +220,7 @@ export function JobFormModal({
       customerPONumber: formData.customerPONumber.trim() || null,
       description: formData.description.trim() || null,
       sellPrice: parsedSellPrice,
+      quantity: parsedQuantity,
       dueDate: formData.dueDate || null,
       // Artwork link fields
       specs: {

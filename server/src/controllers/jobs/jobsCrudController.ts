@@ -398,6 +398,8 @@ export const createJob = async (req: Request, res: Response) => {
       bradfordRefNumber,
       bradfordPaperLbs,
       dataIncludedWithArtwork,
+      description,
+      notes,
       ...rest
     } = req.body;
 
@@ -557,6 +559,7 @@ export const createJob = async (req: Request, res: Response) => {
       envelopeComponents: rest.envelopeComponents || null,
       jobType: rest.jobType || null,
       source: 'MANUAL',
+      notes: notes || description || null,
     });
 
     const jobId = job.id;

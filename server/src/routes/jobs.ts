@@ -1,4 +1,7 @@
 import { Router } from 'express';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 import {
   getAllJobs,
   getJob,
@@ -70,8 +73,43 @@ import {
   rejectChangeOrder,
   getEffectiveJobState,
 } from '../controllers/changeOrderController';
+import {
+  getJobFiles,
+  uploadJobFile,
+  deleteJobFile,
+} from '../controllers/filesController';
 
 const router = Router();
+
+// File upload configuration for job files
+const uploadsDir = path.join(__dirname, '../../uploads/');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadsDir),
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + '-' + file.originalname);
+  }
+});
+
+const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  const blockedExtensions = /exe|bat|cmd|sh|ps1|msi|dll|sys/i;
+  const extname = path.extname(file.originalname).toLowerCase();
+  if (blockedExtensions.test(extname)) {
+    cb(new Error('Executable files are not allowed'));
+  } else {
+    cb(null, true);
+  }
+};
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  fileFilter
+});
 
 // Job CRUD
 router.get('/', getAllJobs);
@@ -126,6 +164,11 @@ router.get('/:jobId/pos', getJobPOs);
 router.post('/:jobId/pos', createJobPO);
 router.put('/:jobId/pos/:poId', updatePO);
 router.delete('/:jobId/pos/:poId', deletePO);
+
+// File management routes
+router.get('/:jobId/files', getJobFiles);
+router.post('/:jobId/files', upload.single('file'), uploadJobFile);
+router.delete('/:jobId/files/:fileId', deleteJobFile);
 
 // Invoice status
 router.patch('/invoices/:invoiceId/status', updateInvoiceStatus);

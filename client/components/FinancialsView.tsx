@@ -17,7 +17,7 @@ interface FinancialsViewProps {
 export function FinancialsView({ onRefresh }: FinancialsViewProps) {
   const [loading, setLoading] = useState(true);
   const [jobs, setJobs] = useState<any[]>([]);
-  const [filter, setFilter] = useState<'all' | 'unpaid' | 'invoiced' | 'paid'>('all');
+  const [filter, setFilter] = useState<'all' | 'active' | 'completed' | 'paid'>('all');
   const [selectedJob, setSelectedJob] = useState<any | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
@@ -168,7 +168,8 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
     // Customer filter
     if (filterCustomerId && job.customer?.id !== filterCustomerId) return false;
     // Payment status filter
-    if (filter === 'active') return !job.customerPaymentDate; // Not paid by customer
+    if (filter === 'active') return !job.customerPaymentDate && job.status !== 'COMPLETED'; // Active, not paid
+    if (filter === 'completed') return job.status === 'COMPLETED'; // Completed jobs
     if (filter === 'paid') return !!job.customerPaymentDate; // Paid by customer
     return true;
   });
@@ -324,7 +325,17 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
                 : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900'
             }`}
           >
-            Unpaid <span className="text-xs tabular-nums ml-1">{jobs.filter(j => !j.customerPaymentDate).length}</span>
+            Unpaid <span className="text-xs tabular-nums ml-1">{jobs.filter(j => !j.customerPaymentDate && j.status !== 'COMPLETED').length}</span>
+          </button>
+          <button
+            onClick={() => setFilter('completed')}
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              filter === 'completed'
+                ? 'bg-blue-600 text-white'
+                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900'
+            }`}
+          >
+            Completed <span className="text-xs tabular-nums ml-1">{jobs.filter(j => j.status === 'COMPLETED').length}</span>
           </button>
           <button
             onClick={() => setFilter('paid')}
@@ -422,7 +433,7 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
       </div>
 
       {/* Jobs Table */}
-      <div className="bg-white rounded-lg border border-zinc-200 overflow-hidden">
+      <div className="bg-white rounded-lg border border-zinc-200 overflow-visible">
         <table className="min-w-full">
           <thead className="border-b border-zinc-200">
             <tr>
