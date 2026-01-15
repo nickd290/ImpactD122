@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Upload, Sparkles, ArrowRight, AlertCircle } from 'lucide-react';
+import { Plus, Upload, Sparkles, ArrowRight, AlertCircle, DollarSign, Mail } from 'lucide-react';
 import { Button } from './ui';
 
 interface Job {
@@ -21,6 +21,8 @@ interface DashboardViewProps {
   onShowPOUploader: () => void;
   onViewAllJobs: () => void;
   onSelectJob?: (job: Job) => void;
+  pendingEmailsCount?: number;
+  unpaidInvoicesTotal?: number;
 }
 
 export function DashboardView({
@@ -29,8 +31,18 @@ export function DashboardView({
   onShowSpecParser,
   onShowPOUploader,
   onViewAllJobs,
-  onSelectJob
+  onSelectJob,
+  pendingEmailsCount = 0,
+  unpaidInvoicesTotal = 0,
 }: DashboardViewProps) {
+  // Get time-aware greeting
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  };
+
   // Calculate metrics
   const activeJobs = jobs.filter(j => j.status === 'ACTIVE');
   const paidJobs = jobs.filter(j => j.status === 'PAID');
@@ -93,10 +105,10 @@ export function DashboardView({
 
   return (
     <div className="p-8 lg:p-12 max-w-6xl animate-fade-in">
-      {/* Header */}
+      {/* Header - My Day greeting */}
       <div className="flex items-end justify-between mb-12">
         <div>
-          <h1 className="font-display text-3xl font-light tracking-tight text-foreground">Dashboard</h1>
+          <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground">{getGreeting()}</h1>
           <p className="text-sm text-muted-foreground mt-1 tracking-wide">{monthName}</p>
         </div>
         <div className="flex items-center gap-3">
@@ -141,21 +153,59 @@ export function DashboardView({
         />
       </div>
 
+      {/* Summary Cards - Quick status overview */}
+      {(overdueJobs.length > 0 || pendingEmailsCount > 0 || unpaidInvoicesTotal > 0) && (
+        <div className="grid grid-cols-3 gap-4 mb-8">
+          {overdueJobs.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex items-center gap-2 text-red-700">
+                <AlertCircle className="w-5 h-5" />
+                <span className="font-semibold">{overdueJobs.length} Overdue</span>
+              </div>
+              <p className="text-xs text-red-600 mt-1">Jobs past due date</p>
+            </div>
+          )}
+          {pendingEmailsCount > 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-center gap-2 text-blue-700">
+                <Mail className="w-5 h-5" />
+                <span className="font-semibold">{pendingEmailsCount} Emails</span>
+              </div>
+              <p className="text-xs text-blue-600 mt-1">Awaiting response</p>
+            </div>
+          )}
+          {unpaidInvoicesTotal > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <div className="flex items-center gap-2 text-amber-700">
+                <DollarSign className="w-5 h-5" />
+                <span className="font-semibold">{formatCurrency(unpaidInvoicesTotal)}</span>
+              </div>
+              <p className="text-xs text-amber-600 mt-1">Unpaid invoices</p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Two Column Layout */}
       <div className="grid grid-cols-2 gap-16">
-        {/* Needs Attention */}
+        {/* Needs Attention - More prominent */}
         <div>
           <div className="flex items-center justify-between mb-6">
-            <h2 className="section-header">Needs Attention</h2>
+            <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide">Needs Attention</h2>
             {needsAttention.length > 0 && (
-              <span className="text-xs font-mono tabular-nums text-muted-foreground bg-muted px-2 py-0.5 rounded">
+              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+                overdueJobs.length > 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+              }`}>
                 {needsAttention.length}
               </span>
             )}
           </div>
 
           {needsAttention.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-6">All caught up</p>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-6 text-center">
+              <p className="text-sm font-medium text-emerald-700">All caught up!</p>
+              <p className="text-xs text-emerald-600 mt-1">No urgent items</p>
+            </div>
           ) : (
             <div className="space-y-0">
               {needsAttention.map((job) => {
@@ -164,7 +214,9 @@ export function DashboardView({
                   <div
                     key={job.id}
                     onClick={() => handleJobClick(job)}
-                    className="py-4 border-b border-border last:border-0 cursor-pointer group hover:bg-accent/30 -mx-3 px-3 rounded-sm transition-colors"
+                    className={`py-4 border-b border-border last:border-0 cursor-pointer group -mx-3 px-3 rounded-sm transition-colors ${
+                      isOverdue ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-accent/30'
+                    }`}
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0 flex-1">
@@ -179,7 +231,7 @@ export function DashboardView({
                       </div>
                       <div className="flex-shrink-0">
                         {isOverdue ? (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-status-danger">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-600 text-white">
                             <AlertCircle className="w-3 h-3" />
                             Overdue
                           </span>

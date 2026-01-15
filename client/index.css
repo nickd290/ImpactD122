@@ -185,12 +185,13 @@
     font-weight: 500;
   }
 
-  /* Metric display - large serif numbers */
+  /* Metric display - large serif numbers, bold and readable */
   .metric-display {
     font-family: var(--font-display);
-    font-weight: 600;
+    font-weight: 700;
     letter-spacing: -0.03em;
     line-height: 1;
+    color: #1a1a1a;
   }
 
   /* Job number styling */

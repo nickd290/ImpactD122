@@ -1,5 +1,5 @@
 import React from 'react';
-import { BarChart3, Briefcase, Users, Building2, DollarSign, MessageSquare, FileQuestion, Search, AlertCircle, Factory, Inbox } from 'lucide-react';
+import { BarChart3, Briefcase, Users, Building2, DollarSign, MessageSquare, FileQuestion, Search, AlertCircle, Factory, Inbox, LayoutGrid } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 type View = 'DASHBOARD' | 'ACTION_ITEMS' | 'JOBS' | 'JOB_BOARD' | 'PRODUCTION_BOARD' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
@@ -136,10 +136,17 @@ export function Sidebar({
           <NavItem
             icon={<Briefcase />}
             label="All Jobs"
-            active={currentView === 'JOBS' || currentView === 'JOB_BOARD'}
+            active={currentView === 'JOBS'}
             onClick={() => onViewChange('JOBS')}
             badge={jobsCount}
             shortcut="J"
+          />
+          <NavItem
+            icon={<LayoutGrid />}
+            label="Job Kanban"
+            active={currentView === 'JOB_BOARD'}
+            onClick={() => onViewChange('JOB_BOARD')}
+            shortcut="K"
           />
           <NavItem
             icon={<Factory />}

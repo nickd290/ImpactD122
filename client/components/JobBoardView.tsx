@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { differenceInDays, parseISO } from 'date-fns';
-import { AlertCircle, Clock, CheckCircle, Filter } from 'lucide-react';
+import { AlertCircle, Clock, CheckCircle, Filter, Upload, Mail, Send, ExternalLink } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { Badge } from './ui';
+import { Badge, Button } from './ui';
 
 // Job type matching API response
 interface Job {
@@ -14,8 +14,8 @@ interface Job {
   dueDate?: string;
   mailDate?: string;
   inHomesDate?: string;
-  customer?: { id: string; name: string };
-  vendor?: { id: string; name: string; isPartner?: boolean };
+  customer?: { id: string; name: string; email?: string };
+  vendor?: { id: string; name: string; isPartner?: boolean; email?: string };
   customerPOFile?: string;
   customerPONumber?: string;
   qcArtwork?: string;
@@ -23,11 +23,18 @@ interface Job {
   qcMailing?: string;
   pathway?: string;
   updatedAt?: string;
+  sellPrice?: number;
+  profit?: { spread?: number; totalCost?: number };
+  purchaseOrders?: { id: string; emailedAt?: string }[];
 }
 
 interface JobBoardViewProps {
   jobs: Job[];
   onJobClick: (job: Job) => void;
+  onUploadArtwork?: (job: Job) => void;
+  onEmailCustomer?: (job: Job) => void;
+  onEmailVendor?: (job: Job) => void;
+  onMarkPOSent?: (job: Job) => void;
 }
 
 type BoardStatus = 'red' | 'yellow' | 'green';
@@ -98,10 +105,34 @@ function getDeadlineText(job: Job): string | null {
   }
 }
 
-function JobBoardCard({ job, onClick }: { job: Job; onClick: () => void }) {
+interface JobBoardCardProps {
+  job: Job;
+  onClick: () => void;
+  onUploadArtwork?: () => void;
+  onEmailCustomer?: () => void;
+  onEmailVendor?: () => void;
+  onMarkPOSent?: () => void;
+}
+
+function JobBoardCard({ job, onClick, onUploadArtwork, onEmailCustomer, onEmailVendor, onMarkPOSent }: JobBoardCardProps) {
   const status = calculateBoardStatus(job);
   const missingItems = getMissingItems(job);
   const deadlineText = getDeadlineText(job);
+  const needsArtwork = job.qcArtwork === 'PENDING';
+  const hasPO = (job.purchaseOrders?.length ?? 0) > 0;
+  const poSent = job.purchaseOrders?.some(po => po.emailedAt);
+
+  // Format currency
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  };
+
+  const spread = job.profit?.spread ?? (job.sellPrice ? job.sellPrice - (job.profit?.totalCost ?? 0) : 0);
 
   // Full card tinting based on status
   const cardStyles = {
@@ -118,36 +149,37 @@ function JobBoardCard({ job, onClick }: { job: Job; onClick: () => void }) {
 
   return (
     <div
-      onClick={onClick}
       className={cn(
-        'p-5 rounded-lg border-2 cursor-pointer transition-all hover:shadow-lg',
+        'p-4 rounded-lg border-2 transition-all hover:shadow-lg flex flex-col',
         cardStyles[status]
       )}
     >
-      {/* Header */}
-      <div className="flex items-start justify-between mb-3">
-        <div className="space-y-1">
-          <span className="job-number text-base text-foreground">{job.jobNo}</span>
-          <h3 className="text-sm text-muted-foreground truncate max-w-[180px]" title={job.title}>
-            {job.title || 'Untitled Job'}
-          </h3>
-        </div>
-        <Badge variant={statusLabels[status].variant}>
-          {statusLabels[status].text}
-        </Badge>
+      {/* Header - Job # and Spread */}
+      <div className="flex items-start justify-between mb-2">
+        <span className="job-number text-base text-foreground">{job.jobNo}</span>
+        {job.sellPrice && (
+          <span className={cn(
+            'text-sm font-semibold tabular-nums',
+            spread >= 0 ? 'text-emerald-700' : 'text-red-600'
+          )}>
+            {formatCurrency(spread)}
+          </span>
+        )}
       </div>
+
+      {/* Title - Allow 2 lines */}
+      <h3
+        className="text-sm font-medium text-foreground mb-1 line-clamp-2 cursor-pointer hover:text-foreground/80"
+        onClick={onClick}
+        title={job.title}
+      >
+        {job.title || 'Untitled Job'}
+      </h3>
 
       {/* Customer */}
       <p className="text-xs text-muted-foreground mb-2">
         {job.customer?.name || 'No customer'}
       </p>
-
-      {/* Customer PO */}
-      {job.customerPONumber && (
-        <p className="job-number text-sm text-foreground mb-3">
-          PO: {job.customerPONumber}
-        </p>
-      )}
 
       {/* Deadline - Emphasized */}
       {deadlineText && (
@@ -160,26 +192,22 @@ function JobBoardCard({ job, onClick }: { job: Job; onClick: () => void }) {
         </div>
       )}
 
-      {/* Missing Items */}
+      {/* Missing Items - Simplified */}
       {missingItems.length > 0 && (
-        <div className="mt-3 pt-3 border-t border-border/50">
-          <p className="section-header mb-2">Missing</p>
-          <div className="flex flex-wrap gap-1.5">
-            {missingItems.map((item) => (
-              <span
-                key={item}
-                className="px-2 py-0.5 bg-background/80 text-muted-foreground text-[10px] rounded font-medium"
-              >
-                {item}
-              </span>
-            ))}
+        <div className="mb-3">
+          <div className="flex items-center gap-1.5 text-amber-700">
+            <AlertCircle className="w-3.5 h-3.5" />
+            <span className="text-xs font-medium">
+              Needs: {missingItems.slice(0, 2).join(', ')}
+              {missingItems.length > 2 && ` +${missingItems.length - 2}`}
+            </span>
           </div>
         </div>
       )}
 
       {/* Workflow Stage */}
       {job.workflowStatus && (
-        <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between">
           <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
             {job.workflowStatus.replace(/_/g, ' ')}
           </span>
@@ -188,11 +216,76 @@ function JobBoardCard({ job, onClick }: { job: Job; onClick: () => void }) {
           )}
         </div>
       )}
+
+      {/* Action Buttons */}
+      <div className="mt-auto pt-3 border-t border-border/50 flex flex-wrap gap-1.5">
+        <button
+          onClick={onClick}
+          className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-zinc-800 hover:bg-zinc-700 rounded transition-colors"
+        >
+          <ExternalLink className="w-3 h-3" />
+          Open
+        </button>
+
+        {needsArtwork && onUploadArtwork && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onUploadArtwork(); }}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 rounded transition-colors"
+          >
+            <Upload className="w-3 h-3" />
+            Upload
+          </button>
+        )}
+
+        {onEmailCustomer && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onEmailCustomer(); }}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-100 hover:bg-blue-200 rounded transition-colors"
+          >
+            <Mail className="w-3 h-3" />
+            Cust
+          </button>
+        )}
+
+        {job.vendor && onEmailVendor && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onEmailVendor(); }}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-purple-700 bg-purple-100 hover:bg-purple-200 rounded transition-colors"
+          >
+            <Mail className="w-3 h-3" />
+            Vendor
+          </button>
+        )}
+
+        {hasPO && !poSent && onMarkPOSent && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onMarkPOSent(); }}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-emerald-700 bg-emerald-100 hover:bg-emerald-200 rounded transition-colors"
+          >
+            <Send className="w-3 h-3" />
+            Send PO
+          </button>
+        )}
+
+        {poSent && (
+          <span className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-emerald-600">
+            <CheckCircle className="w-3 h-3" />
+            PO Sent
+          </span>
+        )}
+      </div>
     </div>
   );
 }
 
-export function JobBoardView({ jobs, onJobClick }: JobBoardViewProps) {
+export function JobBoardView({
+  jobs,
+  onJobClick,
+  onUploadArtwork,
+  onEmailCustomer,
+  onEmailVendor,
+  onMarkPOSent,
+}: JobBoardViewProps) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   const activeJobs = useMemo(() => {
@@ -289,6 +382,10 @@ export function JobBoardView({ jobs, onJobClick }: JobBoardViewProps) {
               key={job.id}
               job={job}
               onClick={() => onJobClick(job)}
+              onUploadArtwork={onUploadArtwork ? () => onUploadArtwork(job) : undefined}
+              onEmailCustomer={onEmailCustomer ? () => onEmailCustomer(job) : undefined}
+              onEmailVendor={onEmailVendor ? () => onEmailVendor(job) : undefined}
+              onMarkPOSent={onMarkPOSent ? () => onMarkPOSent(job) : undefined}
             />
           ))}
         </div>
