@@ -689,6 +689,8 @@ function App() {
               onShowSpecParser={() => setShowSpecParser(true)}
               onShowPOUploader={() => setShowPOUploader(true)}
               onViewAllJobs={() => setCurrentView('JOBS')}
+              onEditJob={handleEditJob}
+              onRefresh={loadData}
             />
           )}
 
@@ -728,8 +730,11 @@ function App() {
               jobs={jobs}
               onJobClick={(job) => {
                 setSelectedJob(job);
-                setCurrentView('JOBS');
               }}
+              onEditJob={(job) => {
+                setEditingJob(job);
+              }}
+              onRefresh={loadData}
             />
           )}
 

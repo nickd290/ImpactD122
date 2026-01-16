@@ -1,8 +1,8 @@
 import React from 'react';
-import { BarChart3, Briefcase, Users, Building2, DollarSign, MessageSquare, FileQuestion, Search, AlertCircle, Factory, Inbox, LayoutGrid } from 'lucide-react';
+import { BarChart3, Briefcase, Users, DollarSign, Search, LayoutGrid } from 'lucide-react';
 import { cn } from '../lib/utils';
 
-type View = 'DASHBOARD' | 'ACTION_ITEMS' | 'JOBS' | 'JOB_BOARD' | 'PRODUCTION_BOARD' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
+type View = 'DASHBOARD' | 'ACTION_ITEMS' | 'JOBS' | 'JOB_BOARD' | 'PRODUCTION_BOARD' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS' | 'ENTITIES';
 
 interface SidebarProps {
   currentView: View;
@@ -97,92 +97,40 @@ export function Sidebar({
         </button>
       </div>
 
-      {/* Navigation */}
+      {/* Navigation - Simplified to 5 main tabs */}
       <nav className="flex-1 px-1 overflow-y-auto">
-        {/* Inbox - Action Items First */}
-        <div className="mb-6">
-          <p className="px-3 mb-2 text-xs font-medium text-zinc-400">
-            Inbox
-          </p>
-          <NavItem
-            icon={<Inbox />}
-            label="Action Items"
-            active={currentView === 'ACTION_ITEMS'}
-            onClick={() => onViewChange('ACTION_ITEMS')}
-            badge={actionItemsCount}
-            shortcut="I"
-          />
-          <NavItem
-            icon={<MessageSquare />}
-            label="Communications"
-            active={currentView === 'COMMUNICATIONS'}
-            onClick={() => onViewChange('COMMUNICATIONS')}
-            badge={pendingCommunicationsCount}
-            shortcut="M"
-          />
-        </div>
-
-        <div className="mb-6">
-          <p className="px-3 mb-2 text-xs font-medium text-zinc-400">
-            Jobs
-          </p>
+        <div className="mb-2">
           <NavItem
             icon={<BarChart3 />}
             label="Dashboard"
             active={currentView === 'DASHBOARD'}
             onClick={() => onViewChange('DASHBOARD')}
+            badge={actionItemsCount > 0 ? actionItemsCount : undefined}
             shortcut="D"
           />
           <NavItem
             icon={<Briefcase />}
-            label="All Jobs"
-            active={currentView === 'JOBS'}
+            label="Jobs"
+            active={currentView === 'JOBS' || currentView === 'ACTION_ITEMS'}
             onClick={() => onViewChange('JOBS')}
             badge={jobsCount}
             shortcut="J"
           />
           <NavItem
             icon={<LayoutGrid />}
-            label="Job Kanban"
-            active={currentView === 'JOB_BOARD'}
+            label="Kanban"
+            active={currentView === 'JOB_BOARD' || currentView === 'PRODUCTION_BOARD'}
             onClick={() => onViewChange('JOB_BOARD')}
             shortcut="K"
           />
           <NavItem
-            icon={<Factory />}
-            label="Production"
-            active={currentView === 'PRODUCTION_BOARD'}
-            onClick={() => onViewChange('PRODUCTION_BOARD')}
-            shortcut="P"
-          />
-        </div>
-
-        <div className="mb-6">
-          <p className="px-3 mb-2 text-xs font-medium text-zinc-400">
-            Entities
-          </p>
-          <NavItem
             icon={<Users />}
-            label="Customers"
-            active={currentView === 'CUSTOMERS'}
+            label="Entities"
+            active={currentView === 'CUSTOMERS' || currentView === 'VENDORS' || currentView === 'ENTITIES'}
             onClick={() => onViewChange('CUSTOMERS')}
-            badge={customersCount}
-            shortcut="C"
+            badge={customersCount + vendorsCount}
+            shortcut="E"
           />
-          <NavItem
-            icon={<Building2 />}
-            label="Vendors"
-            active={currentView === 'VENDORS'}
-            onClick={() => onViewChange('VENDORS')}
-            badge={vendorsCount}
-            shortcut="V"
-          />
-        </div>
-
-        <div className="mb-6">
-          <p className="px-3 mb-2 text-xs font-medium text-zinc-400">
-            Analytics
-          </p>
           <NavItem
             icon={<DollarSign />}
             label="Financials"

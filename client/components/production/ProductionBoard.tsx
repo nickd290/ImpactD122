@@ -4,7 +4,7 @@ import { useProductionBoard, ProductionJob } from '../../hooks/useProductionBoar
 import { ProductionFilters } from './ProductionFilters';
 import { VendorRow } from './VendorRow';
 import { SendEmailModal } from '../SendEmailModal';
-import { BrokerJobModal } from '../BrokerJobModal';
+import { JobDrawer } from '../JobDrawer';
 import { PDFPreviewModal } from '../PDFPreviewModal';
 
 interface ProductionBoardProps {
@@ -28,9 +28,9 @@ export function ProductionBoard({ onRefresh }: ProductionBoardProps) {
     refresh,
   } = useProductionBoard();
 
-  // Job modal state (in-place, like JobsView)
+  // Job drawer state (slide-out panel)
   const [selectedJob, setSelectedJob] = useState<any>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   const [emailModal, setEmailModal] = useState<EmailModalState>(null);
 
@@ -43,15 +43,15 @@ export function ProductionBoard({ onRefresh }: ProductionBoardProps) {
     onRefresh?.();
   };
 
-  // Handle job click - opens BrokerJobModal in-place
+  // Handle job click - opens JobDrawer slide-out
   const handleJobClick = (job: ProductionJob) => {
     setSelectedJob(job);
-    setIsModalOpen(true);
+    setIsDrawerOpen(true);
   };
 
-  // Handle modal close
-  const handleModalClose = () => {
-    setIsModalOpen(false);
+  // Handle drawer close
+  const handleDrawerClose = () => {
+    setIsDrawerOpen(false);
     setSelectedJob(null);
   };
 
@@ -67,10 +67,10 @@ export function ProductionBoard({ onRefresh }: ProductionBoardProps) {
     setEmailModal({ type: 'invoice', job });
   };
 
-  // Handle Send Proof - opens job modal since proof needs file selection
+  // Handle Send Proof - opens job drawer since proof needs file selection
   const handleSendProof = (job: ProductionJob) => {
     setSelectedJob(job);
-    setIsModalOpen(true);
+    setIsDrawerOpen(true);
   };
 
   // Handle email modal close
@@ -185,12 +185,12 @@ export function ProductionBoard({ onRefresh }: ProductionBoardProps) {
         />
       )}
 
-      {/* Job Detail Modal (in-place like JobsView) */}
+      {/* Job Detail Drawer (slide-out panel) */}
       {selectedJob && (
-        <BrokerJobModal
+        <JobDrawer
           job={selectedJob}
-          isOpen={isModalOpen}
-          onClose={handleModalClose}
+          isOpen={isDrawerOpen}
+          onClose={handleDrawerClose}
           onRefresh={handleRefresh}
         />
       )}

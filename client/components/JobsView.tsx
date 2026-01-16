@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Plus, Search, Sparkles, Upload, FileText, Edit, Trash2, FileSpreadsheet, CheckSquare, Square, ChevronDown, ChevronRight, MoreVertical, DollarSign, Printer, Receipt, Building2, Copy, FileDown, Mail } from 'lucide-react';
+import { Plus, Search, Sparkles, Upload, FileText, Edit, Trash2, FileSpreadsheet, CheckSquare, Square, ChevronDown, ChevronRight, MoreVertical, DollarSign, Printer, Receipt, Building2, Copy, FileDown, Mail, ArrowUpDown, Clock, AlertCircle, Filter } from 'lucide-react';
 import { Button, Tabs } from './ui';
 import { Input } from './ui';
 import { Badge } from './ui';
 import { StatusBadge } from './ui/StatusBadge';
-import { BrokerJobModal } from './BrokerJobModal';
+import { JobDrawer } from './JobDrawer';
 import { InlineEditableCell } from './InlineEditableCell';
 import { StatusDropdown } from './StatusDropdown';
 import { cn } from '../lib/utils';
@@ -79,9 +79,17 @@ export function JobsView({
   onShowExcelImporter,
 }: JobsViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'active' | 'completed' | 'paid'>('active');
+  const [activeTab, setActiveTab] = useState<'active' | 'archive'>('active');
   // Unified workflow view (no toggle needed)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  // Sorting state
+  const [sortBy, setSortBy] = useState<'recent' | 'due' | 'alpha' | 'customer'>('recent');
+  const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
+  const sortMenuRef = useRef<HTMLDivElement>(null);
+
+  // Quick filters
+  const [quickFilter, setQuickFilter] = useState<'all' | 'overdue' | 'due-soon' | 'no-vendor'>('all');
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const [collapsedCustomers, setCollapsedCustomers] = useState<Set<string>>(new Set());
@@ -95,33 +103,51 @@ export function JobsView({
   const actionMenuRef = useRef<HTMLDivElement>(null);
 
   // Filter jobs by active tab
+  // Active = currently in progress (not completed/shipped/paid)
+  // Archive = completed, shipped, paid, or cancelled
   const tabFilteredJobs = useMemo(() => {
     switch (activeTab) {
       case 'active':
-        return jobs.filter((job) => job.status === 'ACTIVE');
-      case 'completed':
-        // Work is done (status PAID) but invoice not yet paid, exclude optimistically paid
-        return jobs.filter((job) => job.status === 'PAID' && !job.hasPaidInvoice && !optimisticallyPaidIds.has(job.id));
-      case 'paid':
-        // Invoice has been paid
-        return jobs.filter((job) => job.hasPaidInvoice === true);
+        // Active jobs that are not in terminal workflow states
+        return jobs.filter((job) => {
+          if (job.status !== 'ACTIVE') return false;
+          // Exclude jobs that are effectively done (COMPLETED, INVOICED, PAID workflow states)
+          const effectiveStatus = (job as any).workflowStatusOverride || (job as any).workflowStatus || 'NEW_JOB';
+          return !['COMPLETED', 'INVOICED', 'PAID', 'CANCELLED'].includes(effectiveStatus);
+        });
+      case 'archive':
+        // Jobs that are done: PAID status OR terminal workflow states
+        return jobs.filter((job) => {
+          if (job.status === 'PAID' || job.status === 'CANCELLED') return true;
+          const effectiveStatus = (job as any).workflowStatusOverride || (job as any).workflowStatus || 'NEW_JOB';
+          return ['COMPLETED', 'INVOICED', 'PAID', 'CANCELLED'].includes(effectiveStatus);
+        });
       default:
         return jobs;
     }
   }, [jobs, activeTab, optimisticallyPaidIds]);
 
   // Get counts for tabs
-  const tabCounts = useMemo(() => ({
-    active: jobs.filter((job) => job.status === 'ACTIVE').length,
-    completed: jobs.filter((job) => job.status === 'PAID' && !job.hasPaidInvoice && !optimisticallyPaidIds.has(job.id)).length,
-    paid: jobs.filter((job) => job.hasPaidInvoice === true).length,
-  }), [jobs, optimisticallyPaidIds]);
+  const tabCounts = useMemo(() => {
+    const activeCount = jobs.filter((job) => {
+      if (job.status !== 'ACTIVE') return false;
+      const effectiveStatus = (job as any).workflowStatusOverride || (job as any).workflowStatus || 'NEW_JOB';
+      return !['COMPLETED', 'INVOICED', 'PAID', 'CANCELLED'].includes(effectiveStatus);
+    }).length;
 
-  // Define tabs
+    const archiveCount = jobs.filter((job) => {
+      if (job.status === 'PAID' || job.status === 'CANCELLED') return true;
+      const effectiveStatus = (job as any).workflowStatusOverride || (job as any).workflowStatus || 'NEW_JOB';
+      return ['COMPLETED', 'INVOICED', 'PAID', 'CANCELLED'].includes(effectiveStatus);
+    }).length;
+
+    return { active: activeCount, archive: archiveCount };
+  }, [jobs, optimisticallyPaidIds]);
+
+  // Define tabs - simplified to Active/Archive
   const tabs = [
-    { id: 'active', label: 'Active Jobs', count: tabCounts.active },
-    { id: 'completed', label: 'Completed Jobs', count: tabCounts.completed },
-    { id: 'paid', label: 'Paid Jobs', count: tabCounts.paid },
+    { id: 'active', label: 'Active', count: tabCounts.active },
+    { id: 'archive', label: 'Archive', count: tabCounts.archive },
   ];
 
   // Close dropdowns when clicking outside
@@ -133,6 +159,9 @@ export function JobsView({
       if (docMenuRef.current && !docMenuRef.current.contains(event.target as Node)) {
         setIsDocMenuOpen(false);
       }
+      if (sortMenuRef.current && !sortMenuRef.current.contains(event.target as Node)) {
+        setIsSortMenuOpen(false);
+      }
       // Close action menu when clicking outside
       if (openActionMenuId) {
         const target = event.target as HTMLElement;
@@ -142,20 +171,109 @@ export function JobsView({
       }
     };
 
-    if (isPaymentMenuOpen || isDocMenuOpen || openActionMenuId) {
+    if (isPaymentMenuOpen || isDocMenuOpen || openActionMenuId || isSortMenuOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [isPaymentMenuOpen, isDocMenuOpen, openActionMenuId]);
+  }, [isPaymentMenuOpen, isDocMenuOpen, openActionMenuId, isSortMenuOpen]);
+
+  // Helper to check if job is new (created in last 24 hours)
+  const isNewJob = (job: Job) => {
+    if (!job.createdAt) return false;
+    const createdDate = new Date(job.createdAt);
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    return createdDate > yesterday;
+  };
+
+  // Helper to calculate days until due
+  const getDaysUntilDue = (job: Job): number | null => {
+    if (!job.dueDate) return null;
+    const now = new Date();
+    const due = new Date(job.dueDate);
+    return Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  };
+
+  // Quick filter counts
+  const filterCounts = useMemo(() => {
+    const now = new Date();
+    return {
+      all: tabFilteredJobs.length,
+      overdue: tabFilteredJobs.filter(j => {
+        if (!j.dueDate) return false;
+        return new Date(j.dueDate) < now;
+      }).length,
+      'due-soon': tabFilteredJobs.filter(j => {
+        if (!j.dueDate) return false;
+        const due = new Date(j.dueDate);
+        const days = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        return days >= 0 && days <= 7;
+      }).length,
+      'no-vendor': tabFilteredJobs.filter(j => !j.vendor?.name).length,
+    };
+  }, [tabFilteredJobs]);
 
   // Apply search filter on top of tab filter
-  const filteredJobs = tabFilteredJobs.filter((job: Job) =>
+  const searchFilteredJobs = tabFilteredJobs.filter((job: Job) =>
     job.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     job.number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     job.customerPONumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     job.customer?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     job.vendor?.name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Apply quick filter
+  const quickFilteredJobs = useMemo(() => {
+    const now = new Date();
+    return searchFilteredJobs.filter(job => {
+      if (quickFilter === 'all') return true;
+      if (quickFilter === 'overdue') {
+        if (!job.dueDate) return false;
+        return new Date(job.dueDate) < now;
+      }
+      if (quickFilter === 'due-soon') {
+        if (!job.dueDate) return false;
+        const due = new Date(job.dueDate);
+        const days = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        return days >= 0 && days <= 7;
+      }
+      if (quickFilter === 'no-vendor') {
+        return !job.vendor?.name;
+      }
+      return true;
+    });
+  }, [searchFilteredJobs, quickFilter]);
+
+  // Apply sorting
+  const filteredJobs = useMemo(() => {
+    const sorted = [...quickFilteredJobs];
+    if (sortBy === 'recent') {
+      sorted.sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA; // Newest first
+      });
+    } else if (sortBy === 'due') {
+      sorted.sort((a, b) => {
+        if (!a.dueDate && !b.dueDate) return 0;
+        if (!a.dueDate) return 1; // No due date goes to end
+        if (!b.dueDate) return -1;
+        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(); // Soonest first
+      });
+    } else if (sortBy === 'alpha') {
+      sorted.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    } else if (sortBy === 'customer') {
+      sorted.sort((a, b) => (a.customer?.name || '').localeCompare(b.customer?.name || ''));
+    }
+    return sorted;
+  }, [quickFilteredJobs, sortBy]);
+
+  // Sort label helper
+  const sortLabels: Record<string, string> = {
+    recent: 'Recently Added',
+    due: 'Due Soon',
+    alpha: 'Alphabetical',
+    customer: 'Customer',
+  };
 
   // Handle inline field updates
   const handleInlineUpdate = async (jobId: string, field: string, value: string) => {
@@ -210,8 +328,8 @@ export function JobsView({
   };
 
   const handleRowClick = (job: Job) => {
-    onSelectJob(job);
-    setIsDrawerOpen(true);
+    // Open edit modal directly when clicking a job row
+    onEditJob(job);
   };
 
   const handleToggleSelection = (jobId: string) => {
@@ -417,18 +535,133 @@ export function JobsView({
 
       {/* Jobs List Table */}
       <div className="bg-white rounded-lg border border-zinc-200 overflow-visible">
-        {/* Search */}
+        {/* Search and Sort */}
         <div className="px-4 py-3 border-b border-zinc-200">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-400 w-4 h-4" />
-            <input
-              type="text"
-              placeholder="Search jobs by title, number, or customer..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-3 py-2 border border-zinc-200 rounded-lg text-sm focus:ring-1 focus:ring-zinc-400 focus:border-zinc-400"
-            />
+          <div className="flex items-center gap-3">
+            {/* Search */}
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-400 w-4 h-4" />
+              <input
+                type="text"
+                placeholder="Search jobs by title, number, or customer..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-3 py-2 border border-zinc-200 rounded-lg text-sm focus:ring-1 focus:ring-zinc-400 focus:border-zinc-400"
+              />
+            </div>
+            {/* Sort Dropdown */}
+            <div className="relative" ref={sortMenuRef}>
+              <button
+                onClick={() => setIsSortMenuOpen(!isSortMenuOpen)}
+                className="flex items-center gap-2 px-3 py-2 border border-zinc-200 rounded-lg text-sm text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 transition-colors"
+              >
+                <ArrowUpDown className="w-4 h-4" />
+                {sortLabels[sortBy]}
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {isSortMenuOpen && (
+                <div className="absolute right-0 mt-1 w-44 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50">
+                  <button
+                    onClick={() => { setSortBy('recent'); setIsSortMenuOpen(false); }}
+                    className={cn(
+                      "w-full px-3 py-2 text-left text-sm flex items-center gap-2",
+                      sortBy === 'recent' ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900'
+                    )}
+                  >
+                    <Clock className="w-4 h-4" />
+                    Recently Added
+                  </button>
+                  <button
+                    onClick={() => { setSortBy('due'); setIsSortMenuOpen(false); }}
+                    className={cn(
+                      "w-full px-3 py-2 text-left text-sm flex items-center gap-2",
+                      sortBy === 'due' ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900'
+                    )}
+                  >
+                    <AlertCircle className="w-4 h-4" />
+                    Due Soon
+                  </button>
+                  <button
+                    onClick={() => { setSortBy('alpha'); setIsSortMenuOpen(false); }}
+                    className={cn(
+                      "w-full px-3 py-2 text-left text-sm flex items-center gap-2",
+                      sortBy === 'alpha' ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900'
+                    )}
+                  >
+                    <FileText className="w-4 h-4" />
+                    Alphabetical
+                  </button>
+                  <button
+                    onClick={() => { setSortBy('customer'); setIsSortMenuOpen(false); }}
+                    className={cn(
+                      "w-full px-3 py-2 text-left text-sm flex items-center gap-2",
+                      sortBy === 'customer' ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900'
+                    )}
+                  >
+                    <Building2 className="w-4 h-4" />
+                    Customer
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
+        </div>
+
+        {/* Quick Filters */}
+        <div className="px-4 py-2 border-b border-zinc-100 flex items-center gap-2 overflow-x-auto">
+          <Filter className="w-4 h-4 text-zinc-400 flex-shrink-0" />
+          <button
+            onClick={() => setQuickFilter('all')}
+            className={cn(
+              "px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors",
+              quickFilter === 'all'
+                ? "bg-zinc-900 text-white"
+                : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+            )}
+          >
+            All ({filterCounts.all})
+          </button>
+          {filterCounts.overdue > 0 && (
+            <button
+              onClick={() => setQuickFilter('overdue')}
+              className={cn(
+                "px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors flex items-center gap-1.5",
+                quickFilter === 'overdue'
+                  ? "bg-red-600 text-white"
+                  : "bg-red-100 text-red-700 hover:bg-red-200"
+              )}
+            >
+              <AlertCircle className="w-3.5 h-3.5" />
+              Overdue ({filterCounts.overdue})
+            </button>
+          )}
+          {filterCounts['due-soon'] > 0 && (
+            <button
+              onClick={() => setQuickFilter('due-soon')}
+              className={cn(
+                "px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors flex items-center gap-1.5",
+                quickFilter === 'due-soon'
+                  ? "bg-amber-600 text-white"
+                  : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+              )}
+            >
+              <Clock className="w-3.5 h-3.5" />
+              Due This Week ({filterCounts['due-soon']})
+            </button>
+          )}
+          {filterCounts['no-vendor'] > 0 && (
+            <button
+              onClick={() => setQuickFilter('no-vendor')}
+              className={cn(
+                "px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors",
+                quickFilter === 'no-vendor'
+                  ? "bg-zinc-900 text-white"
+                  : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+              )}
+            >
+              No Vendor ({filterCounts['no-vendor']})
+            </button>
+          )}
         </div>
 
         {/* Table */}
@@ -445,34 +678,51 @@ export function JobsView({
               </tr>
             </thead>
             <tbody>
-              {jobs
-                .filter(job => {
-                  if (!searchTerm) return true;
-                  const term = searchTerm.toLowerCase();
-                  return (
-                    job.number?.toLowerCase().includes(term) ||
-                    job.title?.toLowerCase().includes(term) ||
-                    job.customer?.name?.toLowerCase().includes(term) ||
-                    job.customerPONumber?.toLowerCase().includes(term)
-                  );
-                })
-                .map((job) => (
+              {filteredJobs.map((job) => {
+                const daysUntil = getDaysUntilDue(job);
+                const isOverdue = daysUntil !== null && daysUntil < 0;
+                const isDueSoon = daysUntil !== null && daysUntil >= 0 && daysUntil <= 3;
+                return (
                   <tr
                     key={job.id}
                     onClick={() => {
                       onSelectJob(job);
                       setIsDrawerOpen(true);
                     }}
-                    className="border-b border-zinc-100 hover:bg-zinc-50 cursor-pointer transition-colors"
+                    className={cn(
+                      "border-b border-zinc-100 hover:bg-zinc-50 cursor-pointer transition-colors",
+                      isOverdue && "bg-red-50/50 hover:bg-red-50"
+                    )}
                   >
-                    <td className="px-4 py-3 text-sm font-medium text-zinc-900">{job.number}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-zinc-900">{job.number}</span>
+                        {isNewJob(job) && (
+                          <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 text-blue-700 rounded">
+                            NEW
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-sm text-zinc-600 max-w-[200px] truncate">{job.title}</td>
                     <td className="px-4 py-3 text-sm text-zinc-600">{job.customer?.name || '-'}</td>
                     <td className="px-4 py-3">
                       <StatusBadge status={job.status} />
                     </td>
-                    <td className="px-4 py-3 text-sm text-zinc-600">
-                      {job.dueDate ? new Date(job.dueDate).toLocaleDateString() : '-'}
+                    <td className="px-4 py-3">
+                      {job.dueDate ? (
+                        <span className={cn(
+                          "text-sm",
+                          isOverdue && "text-red-600 font-medium",
+                          isDueSoon && !isOverdue && "text-amber-600 font-medium",
+                          !isOverdue && !isDueSoon && "text-zinc-600"
+                        )}>
+                          {new Date(job.dueDate).toLocaleDateString()}
+                          {isOverdue && " (Overdue)"}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-zinc-400">-</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-sm text-right font-medium text-green-600 tabular-nums">
                       {(job as any).sellPrice
@@ -480,29 +730,33 @@ export function JobsView({
                         : '-'}
                     </td>
                   </tr>
-                ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
 
         {/* Empty state */}
-        {jobs.filter(job => {
-          if (!searchTerm) return true;
-          const term = searchTerm.toLowerCase();
-          return (
-            job.number?.toLowerCase().includes(term) ||
-            job.title?.toLowerCase().includes(term) ||
-            job.customer?.name?.toLowerCase().includes(term)
-          );
-        }).length === 0 && (
+        {filteredJobs.length === 0 && (
           <div className="p-12 text-center">
             <FileText className="w-12 h-12 mx-auto mb-4 text-zinc-300" />
             <h3 className="text-lg font-medium text-zinc-900 mb-1">
-              {searchTerm ? 'No jobs found' : 'No jobs yet'}
+              {searchTerm || quickFilter !== 'all' ? 'No jobs found' : 'No jobs yet'}
             </h3>
             <p className="text-sm text-zinc-500 mb-4">
-              {searchTerm ? 'Try adjusting your search terms' : 'Get started by creating your first job'}
+              {searchTerm || quickFilter !== 'all'
+                ? 'Try adjusting your search or filters'
+                : 'Get started by creating your first job'}
             </p>
+            {(searchTerm || quickFilter !== 'all') && (
+              <Button
+                onClick={() => { setSearchTerm(''); setQuickFilter('all'); }}
+                variant="outline"
+                size="sm"
+              >
+                Clear filters
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -828,19 +1082,17 @@ export function JobsView({
         </>
       )}
 
-      {/* Broker Job Modal - Simplified view for production meetings */}
-      {selectedJob && (
-        <BrokerJobModal
-          isOpen={isDrawerOpen}
-          onClose={() => {
-            setIsDrawerOpen(false);
-            onSelectJob(null as any);
-          }}
-          job={selectedJob}
-          onEdit={() => onEditJob(selectedJob)}
-          onRefresh={onRefresh}
-        />
-      )}
+      {/* Job Drawer - Slide-out panel for job details */}
+      <JobDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => {
+          setIsDrawerOpen(false);
+          onSelectJob(null as any);
+        }}
+        job={selectedJob}
+        onEdit={() => selectedJob && onEditJob(selectedJob)}
+        onRefresh={onRefresh}
+      />
     </div>
   );
 }

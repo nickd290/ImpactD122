@@ -750,32 +750,6 @@ export const updateJob = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Job not found' });
     }
 
-    // Guard: Field locking after invoice generated
-    const LOCKED_AFTER_INVOICE = ['sellPrice', 'quantity', 'specs'];
-    if (existingJob.invoiceGeneratedAt) {
-      const attemptedLockedFields = LOCKED_AFTER_INVOICE.filter((field) => {
-        if (field === 'sellPrice' && req.body.sellPrice !== undefined) {
-          return Number(req.body.sellPrice) !== Number(existingJob.sellPrice);
-        }
-        if (field === 'quantity' && req.body.quantity !== undefined) {
-          return Number(req.body.quantity) !== Number(existingJob.quantity);
-        }
-        if (field === 'specs' && (req.body.specs !== undefined || req.body.lineItems !== undefined)) {
-          return true;
-        }
-        return false;
-      });
-
-      if (attemptedLockedFields.length > 0) {
-        return res.status(403).json({
-          error: 'Job is locked after invoice generation',
-          lockedFields: attemptedLockedFields,
-          invoiceGeneratedAt: existingJob.invoiceGeneratedAt,
-          hint: 'Create a credit memo or new job for changes',
-        });
-      }
-    }
-
     // Calculate quantity and totals from line items if provided
     let quantity = existingJob.quantity;
     let lineItemTotal = Number(existingJob.sellPrice) || 0;

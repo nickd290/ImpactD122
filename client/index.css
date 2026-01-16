@@ -194,11 +194,53 @@
     color: #1a1a1a;
   }
 
-  /* Job number styling */
+  /* Job number styling - prominent and readable */
   .job-number {
     font-family: var(--font-mono);
-    font-weight: 500;
+    font-weight: 600;
     letter-spacing: 0.02em;
+  }
+
+  /* Large job number for drawer header */
+  .job-number-lg {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 1.5rem;
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+  }
+
+  /* Drawer header styling */
+  .drawer-header {
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: 1.25rem;
+    letter-spacing: -0.01em;
+  }
+
+  /* Customer PO prominent styling */
+  .customer-po {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 1.125rem;
+    letter-spacing: 0.01em;
+    color: hsl(var(--muted-foreground));
+  }
+
+  /* Spec label styling - slightly larger than xs */
+  .spec-label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: hsl(var(--muted-foreground));
+  }
+
+  /* Spec value styling - readable body text */
+  .spec-value {
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: hsl(var(--foreground));
   }
 
   /* Editorial section header */

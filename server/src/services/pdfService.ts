@@ -559,9 +559,19 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
 
   currentY += 6;
   doc.setFont('helvetica', 'bold');
-  doc.text('CUSTOMER PO:', 20, currentY);
+  doc.text('PAYMENT TERMS:', 20, currentY);
   doc.setFont('helvetica', 'normal');
-  doc.text(jobData.customerPONumber || 'N/A', 60, currentY);
+  doc.text('Net 30', 60, currentY);
+
+  currentY += 6;
+  doc.setFont('helvetica', 'bold');
+  doc.text('DUE DATE:', 20, currentY);
+  doc.setFont('helvetica', 'normal');
+  const invoiceDueDate = new Date();
+  invoiceDueDate.setDate(invoiceDueDate.getDate() + 30);
+  doc.text(invoiceDueDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }), 60, currentY);
+
+  // Customer PO - PROMINENT (moved below info block)
 
   // Right Column - Customer Info with Grid Box
   const customerY = infoStartY;
@@ -581,7 +591,29 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
   // Vertical divider between columns
   drawVerticalDivider(doc, 110, infoStartY - 4, infoStartY + customerBoxHeight - 4);
 
-  currentY += 10;
+  currentY += 14;
+
+  // ===== CUSTOMER PO - PROMINENT BOX =====
+  if (jobData.customerPONumber) {
+    doc.setFillColor(219, 234, 254); // Light blue background
+    doc.setDrawColor(59, 130, 246); // Blue border
+    doc.setLineWidth(1.5);
+    doc.rect(20, currentY, 170, 14, 'FD');
+
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 64, 175); // Dark blue
+    doc.text('CUSTOMER PO:', 25, currentY + 9);
+
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(BRAND_BLACK);
+    doc.text(jobData.customerPONumber, 75, currentY + 9);
+
+    currentY += 18;
+  } else {
+    currentY += 4;
+  }
 
   // ===== PROJECT TITLE =====
   doc.setFillColor(240, 240, 240);
@@ -743,6 +775,12 @@ export const generateVendorPOPDF = (jobData: any): Buffer => {
   doc.setFontSize(16);
   doc.setTextColor(BRAND_ORANGE);
   doc.text('PURCHASE ORDER', 105, currentY + 16, { align: 'center' });
+
+  // Contact info - smaller, right aligned
+  doc.setFontSize(8);
+  doc.setTextColor(TEXT_GRAY);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Brandon@impactdirectprinting.com | 844-467-2280', 190, currentY + 4, { align: 'right' });
 
   // PO Number and Due Date in header - prominent
   doc.setFontSize(11);
