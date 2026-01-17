@@ -195,12 +195,12 @@ export async function matchEmailToJob(input: EmailMatchInput): Promise<MatchResu
   const domain = extractDomain(input.from);
 
   if (poNumber) {
-    const thirtyDaysAgo = subDays(new Date(), 30);
+    const tenDaysAgo = subDays(new Date(), 10);
 
     const candidates = await prisma.job.findMany({
       where: {
         customerPONumber: poNumber,
-        createdAt: { gte: thirtyDaysAgo },
+        createdAt: { gte: tenDaysAgo },
         deletedAt: null,
       },
       select: {
