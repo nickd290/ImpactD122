@@ -18,6 +18,8 @@ import vendorRfqRouter from './routes/vendorRfq';
 import portalRouter from './routes/portal';
 import filesRouter from './routes/files';
 import proofsRouter from './routes/proofs';
+import dashboardRouter from './routes/dashboard';
+import emailSyncRouter from './routes/emailSync';
 
 // Load environment variables
 // Use path relative to this file to find .env in the server directory
@@ -73,6 +75,8 @@ app.use('/api/vendor-rfqs', vendorRfqRouter);
 app.use('/api', portalRouter);
 app.use('/api', filesRouter);
 app.use('/api/proofs', proofsRouter);
+app.use('/api/dashboard', dashboardRouter);
+app.use('/api/email-sync', emailSyncRouter);
 
 // Serve frontend in production
 if (process.env.NODE_ENV === 'production') {

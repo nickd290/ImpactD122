@@ -280,6 +280,13 @@ model Job {
   proofOverrideBy           String?
   proofOverrideNote         String?
 
+  // === PROOF URGENCY TRACKING ===
+  proofUrgency              ProofUrgency?     // NORMAL, HOT, CRITICAL
+  proofUrgencyNote          String?           // "Approval today please" etc.
+  proofReceivedAt           DateTime?         // When vendor uploaded proof
+  proofSentToCustomerAt     DateTime?         // When we forwarded to customer
+  customerResponseDue       DateTime?         // Deadline for customer approval
+
   // Tracking Override: Manual tracking entry
   trackingOverride          String?
   trackingCarrierOverride   String?
@@ -341,6 +348,8 @@ model Job {
   EmailLog                  EmailLog[]       // Email send history for deduplication
   JobComponent              JobComponent[]   // Multi-component tracking
   ChangeOrder               ChangeOrder[]    // Change orders for this job
+  JobEmailThread            JobEmailThread[] // Gmail thread tracking
+  JobEvent                  JobEvent[]       // Email event sourcing
 
   @@index([customerId])
   @@index([pathway])
@@ -943,6 +952,12 @@ enum ProofStatus {
   CHANGES_REQUESTED
 }
 
+enum ProofUrgency {
+  NORMAL      // Standard turnaround
+  HOT         // Same-day approval needed
+  CRITICAL    // Blocking production
+}
+
 enum QuoteRequestStatus {
   PENDING
   QUOTED
@@ -1359,4 +1374,62 @@ model JobSequence {
   id           String   @id @default("job-seq")
   currentValue Int      @default(1000)  // First job gets J-1001
   updatedAt    DateTime @updatedAt
+}
+
+// ========================================
+// EMAIL THREAD SYNC - Gmail thread tracking
+// ========================================
+
+model JobEmailThread {
+  id                String     @id @default(cuid())
+  threadId          String     @unique  // Gmail thread ID
+  firstMessageId    String               // First message in thread
+  jobId             String?              // Nullable until job created
+  customerPONumber  String?              // NOT unique - multiple threads may reference same PO
+  customerDomain    String?              // e.g., "jjsainc.com"
+  subjectNormalized String               // Cleaned subject for matching
+  lastMessageAt     DateTime
+  lastSyncedAt      DateTime
+  createdAt         DateTime   @default(now())
+
+  job               Job?       @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  events            JobEvent[]
+
+  @@index([jobId])
+  @@index([customerPONumber])
+  @@index([threadId])
+}
+
+model JobEvent {
+  id          String        @id @default(cuid())
+  jobId       String?                // Nullable for unmatched events
+  threadId    String                 // Gmail thread ID (links to JobEmailThread)
+  messageId   String        @unique  // Gmail message ID - ensures idempotency
+  type        JobEventType
+  confidence  Float                  // 0-1
+  source      String                 // nick/rebecca/customer/vendor
+  signals     String[]               // Matched phrases that triggered classification
+  links       String[]               // Extracted Dropbox/proof URLs
+  needsReview Boolean       @default(false)  // True if human review required
+  reviewNote  String?                // Why review needed
+  createdAt   DateTime      @default(now())
+
+  job         Job?          @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  thread      JobEmailThread @relation(fields: [threadId], references: [threadId])
+
+  @@index([jobId])
+  @@index([threadId])
+  @@index([needsReview])
+  @@index([createdAt])
+}
+
+enum JobEventType {
+  JOB_CREATED
+  PROOF_RECEIVED
+  PROOF_SENT_TO_CUSTOMER
+  REVISION_REQUEST
+  APPROVED
+  APPROVAL_CONFIRMED
+  SHIPPED
+  OTHER
 }
