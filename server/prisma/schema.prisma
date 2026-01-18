@@ -613,20 +613,24 @@ model ProfitSplit {
 }
 
 model Proof {
-  id             String          @id
-  jobId          String
-  version        Int
-  status         ProofStatus     @default(PENDING)
-  fileId         String
-  adminNotes     String?
-  adminComments  String?
-  shareToken     String?         @unique
-  shareExpiresAt DateTime?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime
-  File           File            @relation(fields: [fileId], references: [id])
-  Job            Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  ProofApproval  ProofApproval[]
+  id               String          @id
+  jobId            String
+  version          Int
+  status           ProofStatus     @default(PENDING)
+  fileId           String?
+  adminNotes       String?
+  adminComments    String?
+  shareToken       String?         @unique
+  shareExpiresAt   DateTime?
+  approvedAt       DateTime?
+  approvedByName   String?
+  approvedByEmail  String?
+  approvalComments String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  File             File?           @relation(fields: [fileId], references: [id])
+  Job              Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  ProofApproval    ProofApproval[]
 
   @@unique([jobId, version])
   @@index([jobId])
