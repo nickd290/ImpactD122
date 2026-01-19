@@ -1609,6 +1609,26 @@ export const updateWorkflowStatus = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { status, clearOverride } = req.body;
 
+    // Log incoming request for debugging
+    console.log(`🔄 [updateWorkflowStatus] Request for jobId=${id} | status=${status} | clearOverride=${clearOverride}`);
+
+    // Check if job exists BEFORE attempting update
+    const existingJob = await prisma.job.findUnique({
+      where: { id },
+      select: { id: true, jobNo: true, workflowStatus: true, workflowStatusOverride: true },
+    });
+
+    if (!existingJob) {
+      console.warn(`⚠️ [updateWorkflowStatus] Job not found: id=${id}`);
+      return res.status(404).json({
+        error: 'Job not found',
+        jobId: id,
+        message: `No job exists with ID: ${id}`,
+      });
+    }
+
+    console.log(`📋 [updateWorkflowStatus] Found job ${existingJob.jobNo} (current workflow: ${existingJob.workflowStatus})`);
+
     const now = new Date();
     const updatedBy = 'staff'; // TODO: Get from auth context
 
@@ -1635,10 +1655,17 @@ export const updateWorkflowStatus = async (req: Request, res: Response) => {
     // Log activity
     await logJobChange(id, 'WORKFLOW_STATUS_OVERRIDE', 'workflowStatus', null, status || 'cleared');
 
+    console.log(`✅ [updateWorkflowStatus] Updated job ${job.jobNo} workflow status`);
     res.json(transformJob(job));
-  } catch (error) {
-    console.error('Update workflow status error:', error);
-    res.status(500).json({ error: 'Failed to update workflow status' });
+  } catch (error: any) {
+    console.error(`❌ [updateWorkflowStatus] Error for jobId=${req.params.id}:`, error);
+    console.error(`   Error code: ${error.code || 'N/A'}`);
+    console.error(`   Error message: ${error.message}`);
+    res.status(500).json({
+      error: 'Failed to update workflow status',
+      jobId: req.params.id,
+      message: error.message,
+    });
   }
 };
 
@@ -1648,8 +1675,24 @@ export const setJobTask = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { task } = req.body;
 
+    console.log(`📝 [setJobTask] Request for jobId=${id} | task=${task?.substring(0, 50)}...`);
+
     if (!task || !task.trim()) {
       return res.status(400).json({ error: 'Task text is required' });
+    }
+
+    // Check if job exists BEFORE attempting update
+    const existingJob = await prisma.job.findUnique({
+      where: { id },
+      select: { id: true, jobNo: true },
+    });
+
+    if (!existingJob) {
+      console.warn(`⚠️ [setJobTask] Job not found: id=${id}`);
+      return res.status(404).json({
+        error: 'Job not found',
+        jobId: id,
+      });
     }
 
     const now = new Date();
@@ -1667,10 +1710,11 @@ export const setJobTask = async (req: Request, res: Response) => {
     // Log to activity
     await logJobChange(id, 'TASK_SET', 'activeTask', null, task.trim());
 
+    console.log(`✅ [setJobTask] Set task on job ${job.jobNo}`);
     res.json(transformJob(job));
-  } catch (error) {
-    console.error('Set job task error:', error);
-    res.status(500).json({ error: 'Failed to set task' });
+  } catch (error: any) {
+    console.error(`❌ [setJobTask] Error for jobId=${req.params.id}:`, error.message);
+    res.status(500).json({ error: 'Failed to set task', jobId: req.params.id });
   }
 };
 
@@ -1679,11 +1723,21 @@ export const completeJobTask = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    // Get current task before clearing for logging
+    console.log(`✓ [completeJobTask] Request for jobId=${id}`);
+
+    // Get current task before clearing for logging (also serves as existence check)
     const currentJob = await prisma.job.findUnique({
       where: { id },
-      select: { activeTask: true },
+      select: { activeTask: true, jobNo: true },
     });
+
+    if (!currentJob) {
+      console.warn(`⚠️ [completeJobTask] Job not found: id=${id}`);
+      return res.status(404).json({
+        error: 'Job not found',
+        jobId: id,
+      });
+    }
 
     const now = new Date();
     const job = await prisma.job.update({
@@ -1702,10 +1756,11 @@ export const completeJobTask = async (req: Request, res: Response) => {
       await logJobChange(id, 'TASK_COMPLETED', 'activeTask', currentJob.activeTask, null);
     }
 
+    console.log(`✅ [completeJobTask] Cleared task on job ${currentJob.jobNo}`);
     res.json(transformJob(job));
-  } catch (error) {
-    console.error('Complete job task error:', error);
-    res.status(500).json({ error: 'Failed to complete task' });
+  } catch (error: any) {
+    console.error(`❌ [completeJobTask] Error for jobId=${req.params.id}:`, error.message);
+    res.status(500).json({ error: 'Failed to complete task', jobId: req.params.id });
   }
 };
 
