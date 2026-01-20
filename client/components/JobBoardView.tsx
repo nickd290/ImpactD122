@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { differenceInDays, parseISO } from 'date-fns';
 import { AlertCircle, Clock, ExternalLink, ChevronRight } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -190,10 +190,40 @@ function KanbanCard({ job, onClick, onStatusChange }: KanbanCardProps) {
   );
 }
 
-export function JobBoardView({ jobs, onJobClick, onEditJob, onRefresh }: JobBoardViewProps) {
+export function JobBoardView({ jobs: propJobs, onJobClick, onEditJob, onRefresh }: JobBoardViewProps) {
+  // Local jobs state - fetch our own data
+  const [localJobs, setLocalJobs] = useState<Job[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
   // Drawer state for slide-out panel
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  // Load jobs on mount
+  const loadJobs = async () => {
+    try {
+      setIsLoading(true);
+      const response = await jobsApi.getAll();
+      setLocalJobs(response.jobs || []);
+    } catch (error) {
+      console.error('Failed to load jobs:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadJobs();
+  }, []);
+
+  // Wrap onRefresh to also reload local jobs
+  const handleRefresh = async () => {
+    await loadJobs();
+    onRefresh?.();
+  };
+
+  // Use localJobs instead of prop jobs
+  const jobs = localJobs;
 
   const handleCardClick = (job: Job) => {
     setSelectedJob(job);
@@ -216,7 +246,7 @@ export function JobBoardView({ jobs, onJobClick, onEditJob, onRefresh }: JobBoar
   const handleStatusChange = async (jobId: string, newStatus: string): Promise<void> => {
     try {
       await jobsApi.updateWorkflowStatus(jobId, newStatus);
-      onRefresh?.();
+      await handleRefresh();
     } catch (error) {
       console.error('Failed to update status:', error);
       throw error;
@@ -252,6 +282,17 @@ export function JobBoardView({ jobs, onJobClick, onEditJob, onRefresh }: JobBoar
   }, [jobs]);
 
   const totalActiveJobs = columnData.reduce((sum, col) => sum + col.jobs.length, 0);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-zinc-900 mx-auto"></div>
+          <p className="mt-4 text-zinc-500 text-sm">Loading board...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 h-full flex flex-col animate-fade-in">
@@ -318,7 +359,7 @@ export function JobBoardView({ jobs, onJobClick, onEditJob, onRefresh }: JobBoar
         isOpen={isDrawerOpen}
         onClose={handleDrawerClose}
         onEdit={handleEdit}
-        onRefresh={onRefresh}
+        onRefresh={handleRefresh}
       />
     </div>
   );

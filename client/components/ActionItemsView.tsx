@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   AlertCircle, Clock, FileX, Mail, Receipt, ChevronRight,
   Upload, Send, CheckCircle, Filter, Inbox
@@ -6,6 +6,7 @@ import {
 import { differenceInDays, parseISO, format } from 'date-fns';
 import { cn } from '../lib/utils';
 import { Badge } from './ui';
+import { jobsApi } from '../lib/api';
 
 interface Job {
   id: string;
@@ -77,7 +78,7 @@ function getDaysOverdue(job: Job): number | null {
 }
 
 export function ActionItemsView({
-  jobs,
+  jobs: propJobs,
   communications = [],
   onJobClick,
   onCommunicationClick,
@@ -85,6 +86,30 @@ export function ActionItemsView({
   onSendInvoice,
 }: ActionItemsViewProps) {
   const [filter, setFilter] = useState<ActionCategory>('all');
+
+  // Local jobs state - fetch our own data
+  const [localJobs, setLocalJobs] = useState<Job[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load jobs on mount
+  const loadJobs = async () => {
+    try {
+      setIsLoading(true);
+      const response = await jobsApi.getAll();
+      setLocalJobs(response.jobs || []);
+    } catch (error) {
+      console.error('Failed to load jobs:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadJobs();
+  }, []);
+
+  // Use localJobs instead of prop jobs
+  const jobs = localJobs;
 
   const actionItems = useMemo(() => {
     const items: ActionItem[] = [];
@@ -210,6 +235,17 @@ export function ActionItemsView({
       onCommunicationClick(item.communication);
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-zinc-900 mx-auto"></div>
+          <p className="mt-4 text-zinc-500 text-sm">Loading action items...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-8 lg:p-12 max-w-4xl animate-fade-in">
