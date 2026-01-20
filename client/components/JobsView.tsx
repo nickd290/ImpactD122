@@ -79,9 +79,13 @@ export function JobsView({
   onShowExcelImporter,
 }: JobsViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'active' | 'archive'>('active');
+  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'archive'>('all');
   // Unified workflow view (no toggle needed)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  // Local jobs state - fetch our own data instead of relying on props
+  const [localJobs, setLocalJobs] = useState<Job[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Sorting state
   const [sortBy, setSortBy] = useState<'recent' | 'due' | 'alpha' | 'customer'>('recent');
@@ -102,14 +106,42 @@ export function JobsView({
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   const actionMenuRef = useRef<HTMLDivElement>(null);
 
+  // Load jobs on mount and when refresh is triggered
+  const loadLocalJobs = async () => {
+    try {
+      setIsLoading(true);
+      const response = await jobsApi.getAll();
+      setLocalJobs(response.jobs || []);
+    } catch (error) {
+      console.error('Failed to load jobs:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fetch jobs on mount
+  useEffect(() => {
+    loadLocalJobs();
+  }, []);
+
+  // Wrap onRefresh to also reload local jobs
+  const handleRefresh = async () => {
+    await loadLocalJobs();
+    onRefresh();
+  };
+
   // Filter jobs by active tab
+  // All = show all jobs (default, matches sidebar count)
   // Active = currently in progress (not completed/shipped/paid)
   // Archive = completed, shipped, paid, or cancelled
   const tabFilteredJobs = useMemo(() => {
     switch (activeTab) {
+      case 'all':
+        // Show all jobs - matches sidebar badge count
+        return localJobs;
       case 'active':
         // Active jobs that are not in terminal workflow states
-        return jobs.filter((job) => {
+        return localJobs.filter((job) => {
           if (job.status !== 'ACTIVE') return false;
           // Exclude jobs that are effectively done (COMPLETED, INVOICED, PAID workflow states)
           const effectiveStatus = (job as any).workflowStatusOverride || (job as any).workflowStatus || 'NEW_JOB';
@@ -117,35 +149,38 @@ export function JobsView({
         });
       case 'archive':
         // Jobs that are done: PAID status OR terminal workflow states
-        return jobs.filter((job) => {
+        return localJobs.filter((job) => {
           if (job.status === 'PAID' || job.status === 'CANCELLED') return true;
           const effectiveStatus = (job as any).workflowStatusOverride || (job as any).workflowStatus || 'NEW_JOB';
           return ['COMPLETED', 'INVOICED', 'PAID', 'CANCELLED'].includes(effectiveStatus);
         });
       default:
-        return jobs;
+        return localJobs;
     }
-  }, [jobs, activeTab, optimisticallyPaidIds]);
+  }, [localJobs, activeTab, optimisticallyPaidIds]);
 
   // Get counts for tabs
   const tabCounts = useMemo(() => {
-    const activeCount = jobs.filter((job) => {
+    const allCount = localJobs.length;
+
+    const activeCount = localJobs.filter((job) => {
       if (job.status !== 'ACTIVE') return false;
       const effectiveStatus = (job as any).workflowStatusOverride || (job as any).workflowStatus || 'NEW_JOB';
       return !['COMPLETED', 'INVOICED', 'PAID', 'CANCELLED'].includes(effectiveStatus);
     }).length;
 
-    const archiveCount = jobs.filter((job) => {
+    const archiveCount = localJobs.filter((job) => {
       if (job.status === 'PAID' || job.status === 'CANCELLED') return true;
       const effectiveStatus = (job as any).workflowStatusOverride || (job as any).workflowStatus || 'NEW_JOB';
       return ['COMPLETED', 'INVOICED', 'PAID', 'CANCELLED'].includes(effectiveStatus);
     }).length;
 
-    return { active: activeCount, archive: archiveCount };
-  }, [jobs, optimisticallyPaidIds]);
+    return { all: allCount, active: activeCount, archive: archiveCount };
+  }, [localJobs, optimisticallyPaidIds]);
 
-  // Define tabs - simplified to Active/Archive
+  // Define tabs - All (default), Active, Archive
   const tabs = [
+    { id: 'all', label: 'All', count: tabCounts.all },
     { id: 'active', label: 'Active', count: tabCounts.active },
     { id: 'archive', label: 'Archive', count: tabCounts.archive },
   ];
@@ -377,7 +412,7 @@ export function JobsView({
       const result = await response.json();
       alert(`Successfully deleted ${result.deleted} job${result.deleted > 1 ? 's' : ''}`);
       setSelectedJobIds(new Set());
-      await onRefresh();
+      await handleRefresh();
     } catch (error: any) {
       console.error('Failed to delete jobs:', error);
       alert(error.message || 'Failed to delete jobs. Please try again.');
@@ -426,7 +461,7 @@ export function JobsView({
       const result = await response.json();
       alert(`Successfully marked ${result.updated} job${result.updated > 1 ? 's' : ''} as ${paymentLabels[paymentType]}`);
       setSelectedJobIds(new Set());
-      await onRefresh();
+      await handleRefresh();
     } catch (error: any) {
       console.error('Failed to update payments:', error);
       alert(error.message || 'Failed to update payments. Please try again.');
@@ -443,7 +478,7 @@ export function JobsView({
 
     try {
       await jobsApi.markCustomerPaid(jobId);
-      onRefresh(); // Sync actual data in background
+      handleRefresh(); // Sync actual data in background
     } catch (error) {
       // Rollback on error
       setOptimisticallyPaidIds(prev => {
@@ -490,7 +525,7 @@ export function JobsView({
     });
 
     // Refresh to update tracking
-    setTimeout(() => onRefresh(), jobIds.length * 200 + 500);
+    setTimeout(() => handleRefresh(), jobIds.length * 200 + 500);
   };
 
   // Customer filter state
@@ -522,7 +557,7 @@ export function JobsView({
         <div>
           <h1 className="text-xl font-medium text-zinc-900">Jobs</h1>
           <p className="text-sm text-zinc-400 mt-0.5">
-            {tabCounts.active} active, {tabCounts.completed} completed
+            {tabCounts.all} total, {tabCounts.active} active, {tabCounts.archive} archived
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -769,7 +804,7 @@ export function JobsView({
             tabs={tabs}
             activeTab={activeTab}
             onTabChange={(tabId) => {
-              setActiveTab(tabId as 'active' | 'completed' | 'paid');
+              setActiveTab(tabId as 'all' | 'active' | 'archive');
               setSelectedJobIds(new Set());
               setSelectedCustomerId(null);
             }}
@@ -1091,7 +1126,7 @@ export function JobsView({
         }}
         job={selectedJob}
         onEdit={() => selectedJob && onEditJob(selectedJob)}
-        onRefresh={onRefresh}
+        onRefresh={handleRefresh}
       />
     </div>
   );
