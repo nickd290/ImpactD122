@@ -224,26 +224,19 @@ export function DashboardView({
       </div>
 
       {/* Jobs Needing Action */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide">
-            Jobs Needing Action
-          </h2>
-          {actionItems.length > 0 && (
+      {actionItems.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide">
+              Jobs Needing Action
+            </h2>
             <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
               overdueJobs.length > 0 ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
             }`}>
               {actionItems.length}
             </span>
-          )}
-        </div>
-
-        {actionItems.length === 0 ? (
-          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 text-center">
-            <p className="text-sm font-medium text-emerald-700">All caught up!</p>
-            <p className="text-xs text-emerald-600 mt-1">No jobs need immediate attention</p>
           </div>
-        ) : (
+
           <div className="bg-white border border-zinc-200 rounded-lg divide-y divide-zinc-100">
             {actionItems.map(({ job, reason }) => (
               <div
@@ -267,6 +260,85 @@ export function DashboardView({
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* All Jobs */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide">
+            All Jobs
+          </h2>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-zinc-100 text-zinc-700">
+              {jobs.length}
+            </span>
+            <button
+              onClick={onViewAllJobs}
+              className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+            >
+              View Full List →
+            </button>
+          </div>
+        </div>
+
+        {jobs.length === 0 ? (
+          <div className="bg-zinc-50 border border-zinc-200 rounded-lg p-4 text-center">
+            <p className="text-sm font-medium text-zinc-600">No jobs yet</p>
+            <p className="text-xs text-zinc-500 mt-1">Create your first job to get started</p>
+          </div>
+        ) : (
+          <div className="bg-white border border-zinc-200 rounded-lg divide-y divide-zinc-100">
+            {jobs.slice(0, 20).map((job) => {
+              const effectiveStatus = getEffectiveStatus(job);
+              return (
+                <div
+                  key={job.id}
+                  onClick={() => handleJobClick(job)}
+                  className="p-4 cursor-pointer hover:bg-zinc-50 transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">
+                        {job.number} - {job.title}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {job.customer?.name || 'No customer'}
+                        {job.vendor?.name && ` · ${job.vendor.name}`}
+                        {job.dueDate && ` · Due ${formatDate(job.dueDate)}`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 ml-4">
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded ${
+                        job.status === 'ACTIVE'
+                          ? 'bg-green-100 text-green-700'
+                          : job.status === 'PAID'
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'bg-zinc-100 text-zinc-600'
+                      }`}>
+                        {job.status}
+                      </span>
+                      {effectiveStatus && effectiveStatus !== 'NEW_JOB' && (
+                        <span className="text-xs text-muted-foreground">
+                          {effectiveStatus.replace(/_/g, ' ')}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {jobs.length > 20 && (
+              <div className="p-3 text-center">
+                <button
+                  onClick={onViewAllJobs}
+                  className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  View all {jobs.length} jobs →
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
