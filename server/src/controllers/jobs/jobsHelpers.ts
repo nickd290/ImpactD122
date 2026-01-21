@@ -266,6 +266,15 @@ export function transformJob(job: any) {
     // Preserve IDs explicitly for filtering
     customerId: job.customerId,
     vendorId: job.vendorId,
+
+    // === STANDARD FIELD NAMES (matches transformJobForWorkflow) ===
+    jobNo: job.jobNo,
+    deliveryDate: job.deliveryDate,
+    customerName: job.Company?.name || 'Unknown',
+    vendorName: job.Vendor?.name || 'Unassigned',
+    spread: profit.spread,  // Top-level spread for frontend consistency
+
+    // === LEGACY ALIASES (for backward compatibility) ===
     // Map jobNo to number for frontend compatibility
     number: job.jobNo,
     // Map deliveryDate to dueDate for frontend
