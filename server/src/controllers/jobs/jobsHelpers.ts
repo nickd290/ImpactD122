@@ -706,11 +706,26 @@ export function transformJobForWorkflow(job: any) {
  * Manual workflowStatusOverride takes precedence over everything
  */
 export function calculateWorkflowStage(job: any): string {
-  // Manual override takes precedence
+  // Manual override takes precedence over everything
   if (job.workflowStatusOverride) {
     return job.workflowStatusOverride;
   }
 
+  // Manual stages - require explicit staff action, cannot be auto-calculated
+  // Trust the stored workflowStatus for these
+  const MANUAL_STAGES = [
+    'PROOF_RECEIVED',
+    'PROOF_SENT_TO_CUSTOMER',
+    'INVOICED',
+    'PAID',
+    'CANCELLED',
+  ];
+
+  if (MANUAL_STAGES.includes(job.workflowStatus)) {
+    return job.workflowStatus;
+  }
+
+  // Auto-calculable stages - compute from job data signals
   const portal = job.JobPortal;
   const files = job.File || [];
   const latestProof = job.Proof?.[0] || null;
