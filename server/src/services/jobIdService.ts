@@ -56,10 +56,11 @@ export async function getNextMasterSequence(
   // - If row doesn't exist: create with MASTER_SEQ_START + 1 (first job gets 3001)
   const result = await prisma.masterSequence.upsert({
     where: { id: 'master-seq' },
-    update: { currentValue: { increment: 1 } },
+    update: { currentValue: { increment: 1 }, updatedAt: new Date() },
     create: {
       id: 'master-seq',
       currentValue: MASTER_SEQ_START + 1, // First job gets 3001
+      updatedAt: new Date(),
     },
   });
 

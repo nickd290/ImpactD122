@@ -100,8 +100,8 @@ export async function generateJobNo(
   // Use atomic upsert to prevent race conditions when multiple users create jobs simultaneously
   const result = await tx.jobSequence.upsert({
     where: { id: 'job-seq' },
-    update: { currentValue: { increment: 1 } },
-    create: { id: 'job-seq', currentValue: 1001 },  // First job gets J-1001
+    update: { currentValue: { increment: 1 }, updatedAt: new Date() },
+    create: { id: 'job-seq', currentValue: 1001, updatedAt: new Date() },  // First job gets J-1001
   });
 
   return `J-${result.currentValue.toString().padStart(4, '0')}`;
@@ -228,8 +228,11 @@ export async function createJobUnified(
     return executeInTransaction(existingTx);
   }
 
-  // Otherwise, create new transaction
-  return prisma.$transaction(executeInTransaction);
+  // Otherwise, create new transaction with increased timeout for Railway DB latency
+  return prisma.$transaction(executeInTransaction, {
+    maxWait: 10000,  // Maximum wait time to acquire a connection (10s)
+    timeout: 30000,  // Maximum transaction execution time (30s)
+  });
 }
 
 /**
@@ -248,6 +251,9 @@ export async function createJobsUnifiedBatch(
     }
 
     return results;
+  }, {
+    maxWait: 30000,  // Maximum wait time (30s)
+    timeout: 120000, // Batch operations may take longer (2min)
   });
 }
 
