@@ -1,7 +1,10 @@
 {
-  "name": "impactd122-monorepo",
+  "name": "impact-direct",
   "private": true,
   "version": "1.0.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "workspaces": [
     "client",
     "server"

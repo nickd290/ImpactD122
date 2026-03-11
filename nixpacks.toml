@@ -1,0 +1,15 @@
+# Railway Nixpacks configuration
+# Specify Node 20 to satisfy package requirements
+
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = ["npm install"]
+
+[phases.build]
+cmds = [
+  "npx prisma generate --schema=./server/prisma/schema.prisma",
+  "npm run build --workspace=server",
+  "npm run build --workspace=client"
+]

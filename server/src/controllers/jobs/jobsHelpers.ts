@@ -741,22 +741,21 @@ export function calculateWorkflowStage(job: any): string {
   const proofApproved = job.proofOverride === 'APPROVED' || latestProof?.status === 'APPROVED';
 
   // Priority order (most progressed → least)
+  let calculatedStage = 'NEW_JOB';
+
   if (portal?.vendorStatus === 'SHIPPED' || hasTracking) {
-    return 'COMPLETED';
+    calculatedStage = 'COMPLETED';
+  } else if (portal?.vendorStatus === 'IN_PRODUCTION' || portal?.vendorStatus === 'PRINTING_COMPLETE') {
+    calculatedStage = 'IN_PRODUCTION';
+  } else if (proofApproved) {
+    calculatedStage = 'APPROVED_PENDING_VENDOR';
+  } else if (hasVendorProof || latestProof) {
+    calculatedStage = 'AWAITING_CUSTOMER_RESPONSE';
+  } else if (vendorConfirmed) {
+    calculatedStage = 'AWAITING_PROOF_FROM_VENDOR';
   }
-  if (portal?.vendorStatus === 'IN_PRODUCTION' || portal?.vendorStatus === 'PRINTING_COMPLETE') {
-    return 'IN_PRODUCTION';
-  }
-  if (proofApproved) {
-    return 'APPROVED_PENDING_VENDOR';
-  }
-  if (hasVendorProof || latestProof) {
-    return 'AWAITING_CUSTOMER_RESPONSE';
-  }
-  if (vendorConfirmed) {
-    return 'AWAITING_PROOF_FROM_VENDOR';
-  }
-  return 'NEW_JOB';
+
+  return calculatedStage;
 }
 
 // ============================================================================

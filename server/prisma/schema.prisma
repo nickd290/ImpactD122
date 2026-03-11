@@ -26,6 +26,64 @@ model Account {
   @@index([userId])
 }
 
+model Campaign {
+  id                 String            @id
+  externalCampaignId String            @unique
+  customerId         String
+  name               String
+  sizeName           String
+  quantity           Int
+  frequency          CampaignFrequency
+  mailDay            Int
+  startDate          DateTime
+  endDate            DateTime?
+  isActive           Boolean           @default(true)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime
+  Company            Company           @relation(fields: [customerId], references: [id])
+  CampaignDrop       CampaignDrop[]
+
+  @@index([customerId])
+  @@index([isActive])
+}
+
+model CampaignDrop {
+  id             String     @id
+  campaignId     String
+  mailDate       DateTime
+  uploadDeadline DateTime
+  status         DropStatus @default(SCHEDULED)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime
+  Campaign       Campaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([mailDate])
+}
+
+model ChangeOrder {
+  id              String            @id
+  jobId           String
+  changeOrderNo   String            @unique
+  version         Int
+  summary         String
+  changes         Json
+  status          ChangeOrderStatus @default(DRAFT)
+  approvedAt      DateTime?
+  approvedBy      String?
+  rejectionReason String?
+  affectsVendors  String[]
+  requiresNewPO   Boolean           @default(false)
+  requiresReprice Boolean           @default(false)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime
+  Job             Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, version])
+  @@index([jobId])
+  @@index([status])
+}
+
 model Company {
   id                                                   String              @id
   name                                                 String
@@ -45,6 +103,23 @@ model Company {
   QuoteRequest                                         QuoteRequest[]
   ShipmentRecipient                                    ShipmentRecipient[]
   User                                                 User[]
+}
+
+model EmailLog {
+  id        String   @id
+  jobId     String
+  emailType String
+  sentTo    String
+  sentAt    DateTime @default(now())
+  success   Boolean
+  messageId String?
+  skipped   Boolean  @default(false)
+  error     String?
+  Job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, emailType])
+  @@index([jobId, emailType, sentAt])
+  @@index([sentAt])
 }
 
 model Employee {
@@ -125,245 +200,191 @@ model Invoice {
 }
 
 model Job {
-  id                        String           @id
-  jobNo                     String           @unique
-  quoteId                   String?
-  customerId                String
-  status                    JobStatus        @default(ACTIVE)
-  workflowStatus            JobWorkflowStatus @default(NEW_JOB)
-  workflowUpdatedAt         DateTime?
-  workflowStatusOverride    String?          // Manual override for workflow stage display
-  workflowStatusOverrideAt  DateTime?
-  workflowStatusOverrideBy  String?
+  id                                 String                    @id
+  jobNo                              String                    @unique
+  title                              String?
+  customerId                         String
+  vendorId                           String?
+  customerPONumber                   String?
+  notes                              String?
+  createdAt                          DateTime                  @default(now())
+  updatedAt                          DateTime
+  specs                              Json
+  activeTask                         String?
+  activeTaskCreatedAt                DateTime?
+  activeTaskCreatedBy                String?
+  approvedAt                         DateTime?
+  approvedBy                         String?
+  artOverride                        Boolean                   @default(false)
+  artOverrideAt                      DateTime?
+  artOverrideBy                      String?
+  artOverrideNote                    String?
+  artworkEmailedAt                   DateTime?
+  artworkEmailedTo                   String?
+  artworkSectionComplete             Boolean                   @default(false)
+  baseJobId                          String?                   @unique
+  bradfordBuyCost                    Decimal?                  @db.Decimal(10, 2)
+  bradfordPaperCostPerLb             Decimal?                  @db.Decimal(10, 4)
+  bradfordPaperLbs                   Decimal?                  @db.Decimal(10, 2)
+  bradfordPaperType                  String?
+  bradfordPaymentAmount              Decimal?
+  bradfordPaymentDate                DateTime?
+  bradfordPaymentPaid                Boolean                   @default(false)
+  bradfordPrintCPM                   Decimal?                  @db.Decimal(10, 4)
+  bradfordWaivesPaperMargin          Boolean                   @default(false)
+  completedAt                        DateTime?
+  customerJobNumber                  String?
+  customerPOFile                     String?
+  customerPaymentAmount              Decimal?
+  customerPaymentDate                DateTime?
+  dataFilesSectionComplete           Boolean                   @default(false)
+  dataIncludedWithArtwork            Boolean                   @default(false)
+  dataOverride                       String?
+  dataOverrideAt                     DateTime?
+  dataOverrideBy                     String?
+  dataOverrideNote                   String?
+  deletedAt                          DateTime?
+  deletedBy                          String?
+  deliveryDate                       DateTime?
+  description                        String?
+  effectiveCOVersion                 Int?
+  employeeId                         String?
+  envelopeComponents                 Int?
+  externalJobId                      String?                   @unique
+  externalSource                     String?
+  hasData                            Boolean                   @default(false)
+  hasSamples                         Boolean                   @default(false)
+  hasVersions                        Boolean                   @default(false)
+  inHomesDate                        DateTime?
+  invoiceEmailedAt                   DateTime?
+  invoiceEmailedCount                Int                       @default(0)
+  invoiceEmailedTo                   String?
+  invoiceGeneratedAt                 DateTime?
+  invoiceGeneratedCount              Int                       @default(0)
+  isReadyForProduction               Boolean                   @default(false)
+  jdInvoiceEmailedAt                 DateTime?
+  jdInvoiceEmailedTo                 String?
+  jdInvoiceGeneratedAt               DateTime?
+  jdInvoiceNumber                    String?
+  jdPaymentAmount                    Decimal?
+  jdPaymentDate                      DateTime?
+  jdPaymentPaid                      Boolean                   @default(false)
+  jdSuppliesPaper                    Boolean                   @default(false)
+  jobMetaType                        JobMetaType?
+  jobType                            JobType?
+  jobTypeCode                        String?
+  mailDate                           DateTime?
+  mailFormat                         MailFormat?
+  mailingVendorId                    String?
+  mailingVendorJobNo                 String?
+  mailingVendorPOSent                DateTime?
+  mailingVendorPOSentTo              String?
+  masterSeq                          Int?                      @unique
+  matchType                          String?
+  packingSlipNotes                   String?
+  paperInventoryId                   String?
+  paperSource                        PaperSource               @default(BRADFORD)
+  partnerPONumber                    String?
+  pathway                            Pathway?
+  poGeneratedAt                      DateTime?
+  poGeneratedCount                   Int                       @default(0)
+  proofOverride                      ProofStatus?
+  proofOverrideAt                    DateTime?
+  proofOverrideBy                    String?
+  proofOverrideNote                  String?
+  qcArtwork                          QcArtworkStatus           @default(PENDING)
+  qcArtworkNote                      String?
+  qcDataFiles                        QcDataFilesStatus         @default(NA)
+  qcDataFilesNote                    String?
+  qcMailing                          QcMailingStatus           @default(NA)
+  qcMailingNote                      String?
+  qcSuppliedMaterials                QcSuppliedMaterialsStatus @default(NA)
+  qcSuppliedMaterialsNote            String?
+  qcVersions                         QcVersionsStatus          @default(NA)
+  qcVersionsNote                     String?
+  quantity                           Int?
+  quoteGeneratedAt                   DateTime?
+  quoteGeneratedCount                Int                       @default(0)
+  quoteId                            String?
+  readinessCalculatedAt              DateTime?
+  readinessStatus                    ReadinessStatus           @default(INCOMPLETE)
+  requiredArtworkCount               Int?
+  requiredDataFileCount              Int?
+  requiresApproval                   Boolean                   @default(false)
+  routingType                        RoutingType               @default(BRADFORD_JD)
+  sellPrice                          Decimal?
+  sizeId                             String?
+  sizeName                           String?
+  submittedForProductionAt           DateTime?
+  trackingCarrierOverride            String?
+  trackingOverride                   String?
+  trackingOverrideAt                 DateTime?
+  trackingOverrideBy                 String?
+  vendorConfirmOverride              Boolean                   @default(false)
+  vendorConfirmOverrideAt            DateTime?
+  vendorConfirmOverrideBy            String?
+  vendorConfirmOverrideNote          String?
+  vendorCount                        Int?
+  vendorPaymentAmount                Decimal?
+  vendorPaymentDate                  DateTime?
+  vendorPaymentTerms                 String?
+  vendorShipToAddress                String?
+  vendorShipToCity                   String?
+  vendorShipToName                   String?
+  vendorShipToPhone                  String?
+  vendorShipToState                  String?
+  vendorShipToZip                    String?
+  vendorSpecialInstructions          String?
+  workflowStatus                     JobWorkflowStatus         @default(NEW_JOB)
+  workflowStatusOverride             String?
+  workflowStatusOverrideAt           DateTime?
+  workflowStatusOverrideBy           String?
+  workflowUpdatedAt                  DateTime?
+  status                             JobStatus                 @default(ACTIVE)
+  poEmailedAt                        DateTime?
+  poEmailedTo                        String?
+  customerResponseDue                DateTime?
+  proofReceivedAt                    DateTime?
+  proofSentToCustomerAt              DateTime?
+  proofUrgency                       ProofUrgency?
+  proofUrgencyNote                   String?
+  ChangeOrder                        ChangeOrder[]
+  EmailLog                           EmailLog[]
+  File                               File[]
+  Invoice                            Invoice[]
+  Company                            Company                   @relation(fields: [customerId], references: [id])
+  Employee                           Employee?                 @relation(fields: [employeeId], references: [id])
+  MailingVendor                      Vendor?                   @relation("Job_mailingVendorIdToVendor", fields: [mailingVendorId], references: [id])
+  PaperInventory                     PaperInventory?           @relation(fields: [paperInventoryId], references: [id])
+  Quote                              Quote?                    @relation(fields: [quoteId], references: [id])
+  Vendor                             Vendor?                   @relation("Job_vendorIdToVendor", fields: [vendorId], references: [id])
+  JobActivity                        JobActivity[]
+  JobCommunication                   JobCommunication[]
+  JobComponent                       JobComponent[]
+  JobEmailThread                     JobEmailThread[]
+  JobEvent                           JobEvent[]
+  JobPortal                          JobPortal?
+  Notification                       Notification[]
+  ProfitSplit                        ProfitSplit?
+  Proof                              Proof[]
+  PurchaseOrder                      PurchaseOrder[]
+  SampleShipment                     SampleShipment[]
+  Shipment                           Shipment[]
+  VendorRFQ                          VendorRFQ[]
 
-  // === ACTIVE TASK (Production Meeting Action Items) ===
-  activeTask                String?          // Task text (null = no active task)
-  activeTaskCreatedAt       DateTime?
-  activeTaskCreatedBy       String?
-
-  title                     String?
-  description               String?
-  notes                     String?
-  specs                     Json
-
-  // === EXTERNAL PORTAL INTEGRATION ===
-  externalJobId             String?          @unique  // ID from external portal (e.g., impact-customer-portal)
-  externalSource            String?          // Source system identifier (e.g., "impact-customer-portal")
-  sizeId                    String?
-  sizeName                  String?
-  quantity                  Int?
-
-  // === FINANCIALS ===
-  sellPrice                 Decimal?         // What customer pays (total)
-
-  deliveryDate              DateTime?
-  mailDate                  DateTime?
-  inHomesDate               DateTime?
-  packingSlipNotes          String?
-  customerPONumber          String?
-  customerJobNumber         String?          // Customer's internal job/reference number (e.g., Lahlouh OH######)
-  customerPOFile            String?
-  partnerPONumber           String?          // Bradford/Partner PO number (also used as payment reference)
-
-  // === PAYMENT TRACKING ===
-  // Customer → Impact (ALL jobs)
-  customerPaymentAmount     Decimal?         // Amount customer paid
-  customerPaymentDate       DateTime?        // When customer paid
-
-  // Impact → Vendor (ALL jobs)
-  vendorPaymentAmount       Decimal?         // Amount paid to vendor
-  vendorPaymentDate         DateTime?        // When vendor was paid
-
-  // Impact → Bradford (PARTNER jobs only - 50% split)
-  bradfordPaymentAmount     Decimal?         // Amount paid to Bradford
-  bradfordPaymentPaid       Boolean          @default(false)  // Has Bradford's 50% been paid?
-  bradfordPaymentDate       DateTime?        // When was Bradford paid
-
-  // JD → Bradford Invoice tracking
-  jdInvoiceNumber           String?          // JD invoice number (e.g., "JD-J-2068")
-  jdInvoiceGeneratedAt      DateTime?        // When JD invoice PDF was generated
-  jdInvoiceEmailedAt        DateTime?        // When JD invoice was emailed to Bradford
-  jdInvoiceEmailedTo        String?          // Email address JD invoice was sent to
-
-  // Bradford → JD payment tracking
-  jdPaymentPaid             Boolean          @default(false)  // Has Bradford paid JD?
-  jdPaymentDate             DateTime?        // When was JD paid by Bradford
-  jdPaymentAmount           Decimal?         // Amount Bradford paid to JD
-
-  // === DOCUMENT GENERATION TRACKING ===
-  quoteGeneratedAt          DateTime?        // Last time quote PDF was generated
-  quoteGeneratedCount       Int              @default(0)  // How many times quote was generated
-  poGeneratedAt             DateTime?        // Last time vendor PO PDF was generated
-  poGeneratedCount          Int              @default(0)  // How many times PO was generated
-  invoiceGeneratedAt        DateTime?        // Last time invoice PDF was generated
-  invoiceGeneratedCount     Int              @default(0)  // How many times invoice was generated
-
-  // === EMAIL TRACKING ===
-  invoiceEmailedAt          DateTime?        // Last time invoice was emailed to customer
-  invoiceEmailedTo          String?          // Email address invoice was sent to
-  invoiceEmailedCount       Int              @default(0)  // How many times invoice was emailed
-  artworkEmailedAt          DateTime?        // Last time artwork notification was emailed
-  artworkEmailedTo          String?          // Email address artwork notification was sent to
-  poEmailedAt               DateTime?        // Last time customer PO was emailed to vendor
-  poEmailedTo               String?          // Email address(es) customer PO was sent to
-
-  // === MAILING VENDOR TRACKING (Lahlouh → Three Z flow) ===
-  mailingVendorId           String?          // Link to mailing vendor (e.g., Three Z)
-  mailingVendorJobNo        String?          // Mailing vendor's job number (e.g., J-1234)
-  mailingVendorPOSent       DateTime?        // When PO was sent to mailing vendor
-  mailingVendorPOSentTo     String?          // Email address PO was sent to
-  matchType                 String?          // "2-WAY" | "3-WAY" for mail package matching
-
-  requiresApproval          Boolean          @default(false)
-  approvedBy                String?
-  approvedAt                DateTime?
-  requiredArtworkCount      Int?
-  requiredDataFileCount     Int?
-  isReadyForProduction      Boolean          @default(false)
-  submittedForProductionAt  DateTime?
-  createdAt                 DateTime         @default(now())
-  updatedAt                 DateTime
-  completedAt               DateTime?
-  artworkSectionComplete    Boolean          @default(false)
-  dataFilesSectionComplete  Boolean          @default(false)
-  bradfordWaivesPaperMargin Boolean          @default(false)
-  // @deprecated Use paperSource field instead. This field will be removed in a future migration.
-  // Kept for backward compatibility during transition.
-  jdSuppliesPaper           Boolean          @default(false)
-  paperInventoryId          String?          // Optional link to PaperInventory when Bradford supplies paper
-  routingType               RoutingType      @default(BRADFORD_JD)
-  paperSource               PaperSource      @default(BRADFORD)  // Who supplies paper
-  bradfordPaperLbs          Decimal?         @db.Decimal(10, 2)  // lbs of paper supplied by Bradford
-  bradfordPrintCPM          Decimal?         @db.Decimal(10, 4)  // Print cost per thousand from Bradford
-  bradfordBuyCost           Decimal?         @db.Decimal(10, 2)  // Total buy cost from Bradford
-  bradfordPaperCostPerLb    Decimal?         @db.Decimal(10, 4)  // Paper cost per lb from Bradford
-  bradfordPaperType         String?          // Paper type: "9 Point Gloss", "7 Point Matte", "100# Gloss Text"
-  vendorId                  String?
-  deletedAt                 DateTime?
-  deletedBy                 String?
-  employeeId                String?
-  jobType                   JobType?
-  vendorPaymentTerms        String?
-  vendorShipToAddress       String?
-  vendorShipToCity          String?
-  vendorShipToName          String?
-  vendorShipToPhone         String?
-  vendorShipToState         String?
-  vendorShipToZip           String?
-  vendorSpecialInstructions String?
-
-  // === QC OVERRIDE FIELDS ===
-  // Art Override: Mark as sent without uploading files
-  artOverride               Boolean          @default(false)
-  artOverrideAt             DateTime?
-  artOverrideBy             String?
-  artOverrideNote           String?
-
-  // Data Override: Mark as sent or N/A without uploading files
-  dataOverride              String?          // "SENT" | "NA" | null
-  dataOverrideAt            DateTime?
-  dataOverrideBy            String?
-  dataOverrideNote          String?
-
-  // Data included with artwork link (checkbox for when data is bundled in artwork link)
-  dataIncludedWithArtwork   Boolean          @default(false)
-
-  // Vendor Override: Mark as confirmed without portal action
-  vendorConfirmOverride     Boolean          @default(false)
-  vendorConfirmOverrideAt   DateTime?
-  vendorConfirmOverrideBy   String?
-  vendorConfirmOverrideNote String?
-
-  // Proof Override: Set status directly
-  proofOverride             ProofStatus?
-  proofOverrideAt           DateTime?
-  proofOverrideBy           String?
-  proofOverrideNote         String?
-
-  // === PROOF URGENCY TRACKING ===
-  proofUrgency              ProofUrgency?     // NORMAL, HOT, CRITICAL
-  proofUrgencyNote          String?           // "Approval today please" etc.
-  proofReceivedAt           DateTime?         // When vendor uploaded proof
-  proofSentToCustomerAt     DateTime?         // When we forwarded to customer
-  customerResponseDue       DateTime?         // Deadline for customer approval
-
-  // Tracking Override: Manual tracking entry
-  trackingOverride          String?
-  trackingCarrierOverride   String?
-  trackingOverrideAt        DateTime?
-  trackingOverrideBy        String?
-
-  // === JOB READINESS & QC STATUS ===
-  readinessStatus           ReadinessStatus           @default(INCOMPLETE)
-  readinessCalculatedAt     DateTime?
-
-  // QC Flags - what's the status of each requirement
-  qcArtwork                 QcArtworkStatus           @default(PENDING)
-  qcDataFiles               QcDataFilesStatus         @default(NA)
-  qcMailing                 QcMailingStatus           @default(NA)
-  qcSuppliedMaterials       QcSuppliedMaterialsStatus @default(NA)
-  qcVersions                QcVersionsStatus          @default(NA)
-
-  // QC Notes - why something is flagged
-  qcArtworkNote             String?
-  qcDataFilesNote           String?
-  qcMailingNote             String?
-  qcSuppliedMaterialsNote   String?
-  qcVersionsNote            String?
-
-  // === PATHWAY SYSTEM ===
-  pathway                   Pathway?            // P1 (Bradford Partner), P2 (Single Vendor), P3 (Multi-Vendor)
-  baseJobId                 String?   @unique   // Vendor-agnostic ID: ME2-3000
-  masterSeq                 Int?      @unique   // Raw sequence number for debugging
-  jobTypeCode               String?             // MS, MP, ME2, FJ, HJ, BJ
-  vendorCount               Int?                // Computed/cached from execution map
-  effectiveCOVersion        Int?                // Cached: latest approved Change Order version (null = base job)
-
-  // Pathway Meta Flags
-  jobMetaType               JobMetaType?        // MAILING or JOB
-  mailFormat                MailFormat?         // SELF_MAILER, POSTCARD, ENVELOPE
-  envelopeComponents        Int?                // Number of components for envelope mailings
-  hasData                   Boolean   @default(false)
-  hasSamples                Boolean   @default(false)
-  hasVersions               Boolean   @default(false)
-
-  File                      File[]
-  Invoice                   Invoice[]
-  Company                   Company          @relation(fields: [customerId], references: [id])
-  Employee                  Employee?        @relation(fields: [employeeId], references: [id])
-  PaperInventory            PaperInventory?  @relation(fields: [paperInventoryId], references: [id])
-  Quote                     Quote?           @relation(fields: [quoteId], references: [id])
-  Vendor                    Vendor?          @relation("JobVendor", fields: [vendorId], references: [id])
-  MailingVendor             Vendor?          @relation("JobMailingVendor", fields: [mailingVendorId], references: [id])
-  JobActivity               JobActivity[]
-  JobCommunication          JobCommunication[]  // Email relay communications
-  Notification              Notification[]
-  Proof                     Proof[]
-  PurchaseOrder             PurchaseOrder[]
-  SampleShipment            SampleShipment[]
-  Shipment                  Shipment[]
-  ProfitSplit               ProfitSplit?     // Calculated profit split for this job
-  VendorRFQs                VendorRFQ[]      // RFQs linked to this job
-  JobPortal                 JobPortal?       // Shareable portal for vendor access
-  EmailLog                  EmailLog[]       // Email send history for deduplication
-  JobComponent              JobComponent[]   // Multi-component tracking
-  ChangeOrder               ChangeOrder[]    // Change orders for this job
-  JobEmailThread            JobEmailThread[] // Gmail thread tracking
-  JobEvent                  JobEvent[]       // Email event sourcing
-
-  @@index([customerId])
-  @@index([pathway])
   @@index([baseJobId])
-  @@index([paperSource])
+  @@index([customerId])
   @@index([deletedAt])
   @@index([jobNo])
   @@index([jobType])
+  @@index([mailingVendorId])
   @@index([paperInventoryId])
+  @@index([paperSource])
+  @@index([pathway])
+  @@index([readinessStatus])
   @@index([routingType])
   @@index([status])
   @@index([vendorId])
-  @@index([mailingVendorId])
-  @@index([readinessStatus])
 }
 
 model JobActivity {
@@ -382,129 +403,162 @@ model JobActivity {
   @@index([jobId])
 }
 
-// ============================================
-// JOB PORTAL - Shareable file links for vendors
-// ============================================
-model JobPortal {
-  id          String    @id @default(cuid())
-  jobId       String    @unique
-  shareToken  String    @unique       // Random token for URL access
-  expiresAt   DateTime                // 14 days from creation
-  accessedAt  DateTime?               // Last access time
-  accessCount Int       @default(0)   // How many times viewed
-  createdAt   DateTime  @default(now())
-
-  // Vendor PO Confirmation
-  purchaseOrderId   String?
-  confirmedAt       DateTime?
-  confirmedByName   String?
-  confirmedByEmail  String?
-
-  // Vendor Status Tracking
-  vendorStatus      VendorPortalStatus  @default(PENDING)
-  statusUpdatedAt   DateTime?
-  trackingNumber    String?
-  trackingCarrier   String?
-
-  Job         Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  @@index([shareToken])
-  @@index([expiresAt])
-}
-
-enum VendorPortalStatus {
-  PENDING
-  PO_RECEIVED
-  IN_PRODUCTION
-  PRINTING_COMPLETE
-  SHIPPED
-}
-
-// ============================================
-// JOB COMMUNICATION - Email Relay/Proxy System
-// ============================================
 model JobCommunication {
-  id              String                  @id @default(cuid())
-  jobId           String
-  job             Job                     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  id                         String                       @id
+  jobId                      String
+  direction                  CommunicationDirection
+  senderType                 SenderType
+  originalFrom               String
+  originalTo                 String
+  originalSubject            String
+  maskedFrom                 String?
+  maskedSubject              String?
+  textBody                   String?
+  htmlBody                   String?
+  status                     CommunicationStatus          @default(RECEIVED)
+  forwardedAt                DateTime?
+  forwardedTo                String?
+  forwardedBy                String?
+  messageId                  String?
+  inReplyTo                  String?
+  internalNotes              String?
+  receivedAt                 DateTime                     @default(now())
+  createdAt                  DateTime                     @default(now())
+  updatedAt                  DateTime
+  Job                        Job                          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  JobCommunicationAttachment JobCommunicationAttachment[]
 
-  // Direction and parties
-  direction       CommunicationDirection
-  senderType      SenderType              // Who originally sent: CUSTOMER, VENDOR, INTERNAL
-
-  // Original email details (stored for audit)
-  originalFrom    String                  // Original sender email
-  originalTo      String                  // Original recipient(s)
-  originalSubject String
-
-  // What recipient actually sees
-  maskedFrom      String?                 // What we show as sender (e.g., info@impactdirectprinting.com)
-  maskedSubject   String?                 // Modified subject if needed
-
-  // Content
-  textBody        String?                 @db.Text
-  htmlBody        String?                 @db.Text
-
-  // Attachments stored as File references
-  attachments     JobCommunicationAttachment[]
-
-  // Processing status
-  status          CommunicationStatus     @default(RECEIVED)
-  forwardedAt     DateTime?
-  forwardedTo     String?                 // Who we forwarded to
-  forwardedBy     String?                 // User who clicked forward (manual mode)
-
-  // SendGrid metadata
-  messageId       String?                 // SendGrid message ID
-  inReplyTo       String?                 // For threading
-
-  // Notes for internal use
-  internalNotes   String?
-
-  receivedAt      DateTime                @default(now())
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
-
-  @@index([jobId])
-  @@index([status])
-  @@index([receivedAt])
   @@index([direction])
+  @@index([jobId])
+  @@index([receivedAt])
+  @@index([status])
 }
 
 model JobCommunicationAttachment {
-  id                String            @id @default(cuid())
-  communicationId   String
-  communication     JobCommunication  @relation(fields: [communicationId], references: [id], onDelete: Cascade)
-
-  fileName          String
-  mimeType          String
-  size              Int
-  objectKey         String?           // S3/storage key if uploaded
-  contentBase64     String?           @db.Text  // For small attachments, store inline
-
-  createdAt         DateTime          @default(now())
+  id               String           @id
+  communicationId  String
+  fileName         String
+  mimeType         String
+  size             Int
+  objectKey        String?
+  contentBase64    String?
+  createdAt        DateTime         @default(now())
+  JobCommunication JobCommunication @relation(fields: [communicationId], references: [id], onDelete: Cascade)
 
   @@index([communicationId])
 }
 
-enum CommunicationDirection {
-  CUSTOMER_TO_VENDOR    // Customer email that needs to go to vendor
-  VENDOR_TO_CUSTOMER    // Vendor reply that needs to go to customer
-  INTERNAL_NOTE         // Internal notes (not forwarded)
+model JobComponent {
+  id                String                  @id
+  jobId             String
+  name              String
+  description       String?
+  quantity          Int?
+  supplier          ComponentSupplier       @default(JD)
+  supplierName      String?
+  componentType     ComponentType?
+  owner             ComponentOwner?
+  vendorId          String?
+  status            ComponentStatus         @default(NOT_READY)
+  artworkRequired   Boolean?
+  dataRequired      Boolean?
+  dueDate           DateTime?
+  artworkStatus     ComponentArtworkStatus  @default(PENDING)
+  artworkLink       String?
+  artworkReceivedAt DateTime?
+  materialStatus    ComponentMaterialStatus @default(NA)
+  trackingNumber    String?
+  trackingCarrier   String?
+  expectedArrival   DateTime?
+  receivedAt        DateTime?
+  specs             Json?
+  notes             String?
+  sortOrder         Int                     @default(0)
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime
+  Job               Job                     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  Vendor            Vendor?                 @relation(fields: [vendorId], references: [id])
+
+  @@index([componentType])
+  @@index([jobId])
+  @@index([owner])
+  @@index([supplier])
+  @@index([vendorId])
 }
 
-enum SenderType {
-  CUSTOMER
-  VENDOR
-  INTERNAL
+model JobEmailThread {
+  id                String     @id
+  threadId          String     @unique
+  firstMessageId    String
+  jobId             String?
+  customerPONumber  String?
+  customerDomain    String?
+  subjectNormalized String
+  lastMessageAt     DateTime
+  lastSyncedAt      DateTime
+  createdAt         DateTime   @default(now())
+  Job               Job?       @relation(fields: [jobId], references: [id])
+  JobEvent          JobEvent[]
+
+  @@index([customerPONumber])
+  @@index([jobId])
+  @@index([threadId])
 }
 
-enum CommunicationStatus {
-  RECEIVED              // Just received, not yet processed
-  PENDING_REVIEW        // Waiting for manual review before forwarding
-  FORWARDED             // Successfully forwarded to other party
-  FAILED                // Failed to forward
-  SKIPPED               // Manually marked as skip (don't forward)
+model JobEvent {
+  id             String         @id
+  jobId          String?
+  threadId       String
+  messageId      String         @unique
+  type           JobEventType
+  confidence     Float
+  source         String
+  signals        String[]
+  links          String[]
+  needsReview    Boolean        @default(false)
+  reviewNote     String?
+  createdAt      DateTime       @default(now())
+  Job            Job?           @relation(fields: [jobId], references: [id])
+  JobEmailThread JobEmailThread @relation(fields: [threadId], references: [threadId])
+
+  @@index([createdAt])
+  @@index([jobId])
+  @@index([needsReview])
+  @@index([threadId])
+}
+
+model JobPortal {
+  id               String             @id
+  jobId            String             @unique
+  shareToken       String             @unique
+  expiresAt        DateTime
+  accessedAt       DateTime?
+  accessCount      Int                @default(0)
+  createdAt        DateTime           @default(now())
+  purchaseOrderId  String?
+  confirmedAt      DateTime?
+  confirmedByName  String?
+  confirmedByEmail String?
+  vendorStatus     VendorPortalStatus @default(PENDING)
+  statusUpdatedAt  DateTime?
+  trackingNumber   String?
+  trackingCarrier  String?
+  Job              Job                @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@index([shareToken])
+}
+
+model JobSequence {
+  id           String   @id @default("job-seq")
+  currentValue Int      @default(1000)
+  updatedAt    DateTime
+}
+
+model MasterSequence {
+  id           String   @id @default("master-seq")
+  currentValue Int      @default(3000)
+  updatedAt    DateTime
 }
 
 model Notification {
@@ -580,34 +634,23 @@ model PricingRule {
   @@index([sizeName])
 }
 
-// ============================================
-// PROFIT SPLIT - Calculated & Cached for Each Job
-// ============================================
 model ProfitSplit {
-  id              String    @id @default(cuid())
-  jobId           String    @unique
-  job             Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  // Inputs (cached for audit trail)
-  sellPrice       Decimal   // What customer pays
-  totalCost       Decimal   // Sum of all costs (from POs)
-  paperCost       Decimal   @default(0)  // Raw paper cost (before markup)
-  paperMarkup     Decimal   @default(0)  // Bradford's 18% paper markup
-
-  // Calculated values
-  grossMargin     Decimal   // sellPrice - totalCost
-  bradfordShare   Decimal   // paperMarkup + 50% of spread
-  impactShare     Decimal   // 50% of spread
-
-  // Override support
-  isOverridden    Boolean   @default(false)
-  overrideReason  String?
-  overriddenBy    String?
-  overriddenAt    DateTime?
-
-  // Calculation metadata
-  calculatedAt    DateTime  @default(now())
-  calculationVersion Int    @default(1)  // For tracking formula changes
+  id                 String    @id
+  jobId              String    @unique
+  sellPrice          Decimal
+  totalCost          Decimal
+  paperCost          Decimal   @default(0)
+  paperMarkup        Decimal   @default(0)
+  grossMargin        Decimal
+  bradfordShare      Decimal
+  impactShare        Decimal
+  isOverridden       Boolean   @default(false)
+  overrideReason     String?
+  overriddenBy       String?
+  overriddenAt       DateTime?
+  calculatedAt       DateTime  @default(now())
+  calculationVersion Int       @default(1)
+  Job                Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@index([jobId])
 }
@@ -622,12 +665,12 @@ model Proof {
   adminComments    String?
   shareToken       String?         @unique
   shareExpiresAt   DateTime?
-  approvedAt       DateTime?
-  approvedByName   String?
-  approvedByEmail  String?
-  approvalComments String?
   createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  updatedAt        DateTime
+  approvalComments String?
+  approvedAt       DateTime?
+  approvedByEmail  String?
+  approvedByName   String?
   File             File?           @relation(fields: [fileId], references: [id])
   Job              Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
   ProofApproval    ProofApproval[]
@@ -654,47 +697,31 @@ model PurchaseOrder {
   originCompanyId                                String
   targetCompanyId                                String?
   jobId                                          String?
-  poNumber                                       String?
+  poNumber                                       String?   @unique
   status                                         POStatus  @default(PENDING)
   createdAt                                      DateTime  @default(now())
   updatedAt                                      DateTime
-
-  // === PATHWAY SYSTEM ===
-  executionId                                    String?   @unique  // Vendor-specific: ME2-3000-4198.3
-
-  // === NEW SIMPLIFIED FIELDS ===
-  description                                    String?   // What this PO is for: "Covers", "Bodies", "Diecutting"
-  buyCost                                        Decimal?  // Total cost we pay vendor
-  vendorRef                                      String?   // Vendor's reference/confirmation number
-
-  // Optional breakdown (for Bradford jobs with paper)
-  paperCost                                      Decimal?  // Raw paper cost (before markup)
-  paperMarkup                                    Decimal?  // 18% markup Bradford keeps
-  mfgCost                                        Decimal?  // JD manufacturing cost (pass-through)
-
-  // CPM rates (for audit trail and recalculation)
-  printCPM                                       Decimal?  // Print cost per thousand (JD rate)
-  paperCPM                                       Decimal?  // Paper cost per thousand (Bradford rate)
-
-  issuedAt                                       DateTime? // When PO was issued
-  paidAt                                         DateTime? // When PO was paid
-
-  // PO tracking fields
+  executionId                                    String?   @unique
+  description                                    String?
+  buyCost                                        Decimal?
+  vendorRef                                      String?
+  paperCost                                      Decimal?
+  paperMarkup                                    Decimal?
+  mfgCost                                        Decimal?
+  printCPM                                       Decimal?
+  paperCPM                                       Decimal?
+  issuedAt                                       DateTime?
+  paidAt                                         DateTime?
   pdfFileId                                      String?
   targetVendorId                                 String?
   acceptedAt                                     DateTime?
   rejectedAt                                     DateTime?
   rejectionReason                                String?
-
-  // Email tracking
-  emailedAt                                      DateTime? // When PO was emailed to vendor
-  emailedTo                                      String?   // Email address PO was sent to
-
-  // PO Email Enhancement
-  artworkFilesLink                               String?   // URL for artwork (Dropbox, Drive, etc.)
-  specialInstructions                            String?   @db.Text  // Vendor-specific notes
-  pdfUrl                                         String?   // R2-hosted PDF link
-
+  emailedAt                                      DateTime?
+  emailedTo                                      String?
+  artworkFilesLink                               String?
+  specialInstructions                            String?
+  pdfUrl                                         String?
   Job                                            Job?      @relation(fields: [jobId], references: [id])
   Company_PurchaseOrder_originCompanyIdToCompany Company   @relation("PurchaseOrder_originCompanyIdToCompany", fields: [originCompanyId], references: [id])
   File                                           File?     @relation(fields: [pdfFileId], references: [id])
@@ -705,9 +732,6 @@ model PurchaseOrder {
   @@index([originCompanyId])
   @@index([targetCompanyId])
   @@index([targetVendorId])
-  // CRITICAL: poNumber must be unique when not null
-  // This prevents duplicate PO numbers which cause confusion in financial tracking
-  @@unique([poNumber])
 }
 
 model Quote {
@@ -761,21 +785,21 @@ model SampleShipment {
 }
 
 model Shipment {
-  id                 String              @id
-  jobId              String
-  carrier            String
-  trackingNo         String?
-  weight             Decimal?
-  boxes              Int?
-  scheduledAt        DateTime?
-  shippedAt          DateTime?
-  deliveredAt        DateTime?
-  trackingEmailedAt  DateTime?           // When tracking notification was sent
-  trackingEmailedTo  String?             // Email address tracking was sent to
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime
-  Job                Job                 @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  ShipmentRecipient  ShipmentRecipient[]
+  id                String              @id
+  jobId             String
+  carrier           String
+  trackingNo        String?
+  weight            Decimal?
+  boxes             Int?
+  scheduledAt       DateTime?
+  shippedAt         DateTime?
+  deliveredAt       DateTime?
+  trackingEmailedAt DateTime?
+  trackingEmailedTo String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime
+  Job               Job                 @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  ShipmentRecipient ShipmentRecipient[]
 
   @@index([jobId])
   @@index([trackingNo])
@@ -835,46 +859,104 @@ model User {
 }
 
 model Vendor {
-  id            String          @id
-  name          String
-  email         String?
-  phone         String?
-  isActive      Boolean         @default(true)
-  isPartner     Boolean         @default(false)
-  isInternal    Boolean         @default(false)  // True for Bradford/partner facilities (P1 routing)
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime
-  city          String?
-  country       String?         @default("USA")
-  state         String?
-  streetAddress String?
-  vendorCode    String?         @unique
-  zip           String?
-  Job           Job[]           @relation("JobVendor")
-  MailingJobs   Job[]           @relation("JobMailingVendor")
-  PurchaseOrder PurchaseOrder[]
-  contacts      VendorContact[]
-  rfqAssignments VendorRFQVendor[]
-  vendorQuotes   VendorQuote[]
-  JobComponent  JobComponent[]  // Components assigned to this vendor
+  id                              String            @id
+  name                            String
+  email                           String?
+  phone                           String?
+  isActive                        Boolean           @default(true)
+  isPartner                       Boolean           @default(false)
+  isInternal                      Boolean           @default(false)
+  createdAt                       DateTime          @default(now())
+  updatedAt                       DateTime
+  city                            String?
+  country                         String?           @default("USA")
+  state                           String?
+  streetAddress                   String?
+  vendorCode                      String?           @unique
+  zip                             String?
+  MailingJobs                     Job[]             @relation("Job_mailingVendorIdToVendor")
+  Jobs                            Job[]             @relation("Job_vendorIdToVendor")
+  JobComponent                    JobComponent[]
+  PurchaseOrder                   PurchaseOrder[]
+  VendorContact                   VendorContact[]
+  VendorQuote                     VendorQuote[]
+  VendorRFQVendor                 VendorRFQVendor[]
 
   @@index([isActive])
-  @@index([name])
   @@index([isInternal])
+  @@index([name])
 }
 
 model VendorContact {
-  id        String   @id @default(cuid())
+  id        String   @id
   vendorId  String
   name      String
   email     String
-  title     String?  // e.g., "CSR", "Account Manager", "Production"
+  title     String?
   isPrimary Boolean  @default(false)
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
+  updatedAt DateTime
   Vendor    Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 
+  @@index([vendorId])
+}
+
+model VendorQuote {
+  id             String            @id
+  rfqId          String
+  vendorId       String
+  quoteAmount    Decimal?          @db.Decimal(10, 2)
+  priceTiers     Json?
+  turnaroundDays Int?
+  notes          String?
+  status         VendorQuoteStatus @default(PENDING)
+  isAwarded      Boolean           @default(false)
+  respondedAt    DateTime?
+  emailContent   String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime
+  VendorRFQ      VendorRFQ         @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  Vendor         Vendor            @relation(fields: [vendorId], references: [id])
+
+  @@unique([rfqId, vendorId])
+  @@index([rfqId])
+  @@index([status])
+  @@index([vendorId])
+}
+
+model VendorRFQ {
+  id              String            @id
+  rfqNumber       String            @unique
+  title           String
+  specs           String
+  dueDate         DateTime
+  status          RFQStatus         @default(DRAFT)
+  notes           String?
+  jobId           String?
+  createdById     String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime
+  VendorQuote     VendorQuote[]
+  Job             Job?              @relation(fields: [jobId], references: [id])
+  VendorRFQVendor VendorRFQVendor[]
+
+  @@index([dueDate])
+  @@index([jobId])
+  @@index([status])
+}
+
+model VendorRFQVendor {
+  id         String    @id
+  rfqId      String
+  vendorId   String
+  sentAt     DateTime?
+  quoteToken String?   @unique
+  createdAt  DateTime  @default(now())
+  VendorRFQ  VendorRFQ @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  Vendor     Vendor    @relation(fields: [vendorId], references: [id])
+
+  @@unique([rfqId, vendorId])
+  @@index([rfqId])
   @@index([vendorId])
 }
 
@@ -890,6 +972,87 @@ model WebhookEvent {
   @@index([source])
 }
 
+enum CampaignFrequency {
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+}
+
+enum ChangeOrderStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+}
+
+enum CommunicationDirection {
+  CUSTOMER_TO_VENDOR
+  VENDOR_TO_CUSTOMER
+  INTERNAL_NOTE
+}
+
+enum CommunicationStatus {
+  RECEIVED
+  PENDING_REVIEW
+  FORWARDED
+  FAILED
+  SKIPPED
+}
+
+enum ComponentArtworkStatus {
+  RECEIVED
+  PENDING
+  NA
+}
+
+enum ComponentMaterialStatus {
+  RECEIVED
+  IN_TRANSIT
+  PENDING
+  NA
+}
+
+enum ComponentOwner {
+  INTERNAL
+  VENDOR
+  CUSTOMER
+}
+
+enum ComponentStatus {
+  NOT_READY
+  READY
+  SENT
+  APPROVED
+  COMPLETE
+}
+
+enum ComponentSupplier {
+  JD
+  LAHLOUH
+  THIRD_PARTY
+}
+
+enum ComponentType {
+  PRINT
+  FINISHING
+  BINDERY
+  DATA
+  PROOF
+  MAILING
+  SHIPPING
+  SAMPLES
+  OTHER
+}
+
+enum DropStatus {
+  SCHEDULED
+  AWAITING_FILES
+  FILES_RECEIVED
+  IN_PRODUCTION
+  MAILED
+  COMPLETED
+}
+
 enum FileKind {
   ARTWORK
   DATA_FILE
@@ -897,27 +1060,29 @@ enum FileKind {
   INVOICE
   PO_PDF
   VENDOR_PROOF
-  CUSTOMER_PO   // Customer's uploaded PO to forward to vendor
+  CUSTOMER_PO
+}
+
+enum JobEventType {
+  JOB_CREATED
+  PROOF_RECEIVED
+  PROOF_SENT_TO_CUSTOMER
+  REVISION_REQUEST
+  APPROVED
+  APPROVAL_CONFIRMED
+  SHIPPED
+  OTHER
+}
+
+enum JobMetaType {
+  MAILING
+  JOB
 }
 
 enum JobStatus {
-  ACTIVE      // Job is in progress (not paid)
-  PAID        // Job is paid/completed
-  CANCELLED   // Job was cancelled
-}
-
-enum JobWorkflowStatus {
-  NEW_JOB                    // Just created
-  AWAITING_PROOF_FROM_VENDOR // PO sent to JD, waiting for proof
-  PROOF_RECEIVED             // JD uploaded proof to portal
-  PROOF_SENT_TO_CUSTOMER     // Sent to customer for approval
-  AWAITING_CUSTOMER_RESPONSE // Waiting for customer approval
-  APPROVED_PENDING_VENDOR    // Customer approved, need to notify JD
-  IN_PRODUCTION              // JD is printing
-  COMPLETED                  // Job done
-  INVOICED                   // Invoice sent to customer
-  PAID                       // Payment received
-  CANCELLED                  // Cancelled
+  ACTIVE
+  PAID
+  CANCELLED
 }
 
 enum JobType {
@@ -925,6 +1090,26 @@ enum JobType {
   FOLDED
   BOOKLET_SELF_COVER
   BOOKLET_PLUS_COVER
+}
+
+enum JobWorkflowStatus {
+  NEW_JOB
+  AWAITING_PROOF_FROM_VENDOR
+  PROOF_RECEIVED
+  PROOF_SENT_TO_CUSTOMER
+  AWAITING_CUSTOMER_RESPONSE
+  APPROVED_PENDING_VENDOR
+  IN_PRODUCTION
+  COMPLETED
+  INVOICED
+  PAID
+  CANCELLED
+}
+
+enum MailFormat {
+  SELF_MAILER
+  POSTCARD
+  ENVELOPE
 }
 
 enum NotificationType {
@@ -950,6 +1135,18 @@ enum POStatus {
   REJECTED
 }
 
+enum PaperSource {
+  BRADFORD
+  VENDOR
+  CUSTOMER
+}
+
+enum Pathway {
+  P1
+  P2
+  P3
+}
+
 enum ProofStatus {
   PENDING
   APPROVED
@@ -957,9 +1154,41 @@ enum ProofStatus {
 }
 
 enum ProofUrgency {
-  NORMAL      // Standard turnaround
-  HOT         // Same-day approval needed
-  CRITICAL    // Blocking production
+  NORMAL
+  HOT
+  CRITICAL
+}
+
+enum QcArtworkStatus {
+  RECEIVED
+  PENDING
+  NA
+}
+
+enum QcDataFilesStatus {
+  IN_ARTWORK
+  SEPARATE_FILE
+  PENDING
+  NA
+}
+
+enum QcMailingStatus {
+  COMPLETE
+  INCOMPLETE
+  NA
+}
+
+enum QcSuppliedMaterialsStatus {
+  RECEIVED
+  TRACKING_RECEIVED
+  PENDING
+  NA
+}
+
+enum QcVersionsStatus {
+  COMPLETE
+  INCOMPLETE
+  NA
 }
 
 enum QuoteRequestStatus {
@@ -967,6 +1196,21 @@ enum QuoteRequestStatus {
   QUOTED
   APPROVED
   REJECTED
+}
+
+enum RFQStatus {
+  DRAFT
+  PENDING
+  QUOTED
+  AWARDED
+  CONVERTED
+  CANCELLED
+}
+
+enum ReadinessStatus {
+  INCOMPLETE
+  READY
+  SENT
 }
 
 enum Role {
@@ -980,64 +1224,10 @@ enum RoutingType {
   THIRD_PARTY_VENDOR
 }
 
-enum PaperSource {
-  BRADFORD        // Bradford supplies paper (gets 18% markup)
-  VENDOR          // Vendor (JD or third party) supplies paper
-  CUSTOMER        // Customer supplies paper (no paper cost)
-}
-
-// ========================================
-// PATHWAY SYSTEM - P1/P2/P3 Routing
-// ========================================
-
-enum Pathway {
-  P1  // Bradford Partner (Impact→Bradford→JD), 50/50 split
-  P2  // Single External Vendor, 65/35 split
-  P3  // Multi-Vendor, 65/35 split
-}
-
-enum JobMetaType {
-  MAILING   // Mailing job (postcards, letters, etc.)
-  JOB       // Non-mailing print job
-}
-
-enum MailFormat {
-  SELF_MAILER   // Self-mailer
-  POSTCARD      // Postcard mailing
-  ENVELOPE      // Envelope package mailing
-}
-
-enum ComponentType {
-  PRINT       // Print production
-  FINISHING   // Finishing (cutting, folding, etc.)
-  BINDERY     // Bindery work
-  DATA        // Data processing
-  PROOF       // Proof approval
-  MAILING     // Mailing services
-  SHIPPING    // Shipping/fulfillment
-  SAMPLES     // Sample production
-  OTHER       // Other services
-}
-
-enum ComponentOwner {
-  INTERNAL    // Bradford/JD handles internally
-  VENDOR      // External vendor handles
-  CUSTOMER    // Customer supplies
-}
-
-enum ComponentStatus {
-  NOT_READY   // Not ready for production
-  READY       // Ready for production
-  SENT        // Sent to vendor/production
-  APPROVED    // Approved/complete
-  COMPLETE    // Fully complete
-}
-
-enum ChangeOrderStatus {
-  DRAFT             // Draft, not yet submitted
-  PENDING_APPROVAL  // Awaiting approval
-  APPROVED          // Approved
-  REJECTED          // Rejected
+enum SenderType {
+  CUSTOMER
+  VENDOR
+  INTERNAL
 }
 
 enum SyncTrigger {
@@ -1045,85 +1235,12 @@ enum SyncTrigger {
   INVOICE_UPDATE
 }
 
-enum WebhookSource {
-  ZAPIER
-  BRADFORD
-  EMAIL
-}
-
-// ========================================
-// VENDOR RFQ SYSTEM
-// ========================================
-
-model VendorRFQ {
-  id              String          @id @default(cuid())
-  rfqNumber       String          @unique
-  title           String
-  specs           String          @db.Text    // Large free-text spec field
-  dueDate         DateTime                    // When vendor responses are due
-  status          RFQStatus       @default(DRAFT)
-  notes           String?
-  jobId           String?                     // Optional link to existing job
-  createdById     String?                     // User who created
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-
-  Job             Job?            @relation(fields: [jobId], references: [id])
-  vendors         VendorRFQVendor[]           // Multi-select vendors
-  quotes          VendorQuote[]               // Vendor responses
-
-  @@index([status])
-  @@index([jobId])
-  @@index([dueDate])
-}
-
-model VendorRFQVendor {
-  id          String    @id @default(cuid())
-  rfqId       String
-  vendorId    String
-  sentAt      DateTime?                       // When RFQ was sent to this vendor
-  quoteToken  String?   @unique @default(cuid())  // Unique token for quote submission link
-  createdAt   DateTime  @default(now())
-
-  VendorRFQ   VendorRFQ @relation(fields: [rfqId], references: [id], onDelete: Cascade)
-  Vendor      Vendor    @relation(fields: [vendorId], references: [id])
-
-  @@unique([rfqId, vendorId])
-  @@index([rfqId])
-  @@index([vendorId])
-}
-
-model VendorQuote {
-  id              String            @id @default(cuid())
-  rfqId           String
-  vendorId        String
-  quoteAmount     Decimal?          @db.Decimal(10, 2)  // Single price (backwards compat)
-  priceTiers      Json?             // [{ quantity: 500, price: 150 }, { quantity: 1000, price: 275 }]
-  turnaroundDays  Int?
-  notes           String?           @db.Text
-  status          VendorQuoteStatus @default(PENDING)
-  isAwarded       Boolean           @default(false)
-  respondedAt     DateTime?
-  emailContent    String?           @db.Text    // Store inbound email content
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-
-  VendorRFQ       VendorRFQ         @relation(fields: [rfqId], references: [id], onDelete: Cascade)
-  Vendor          Vendor            @relation(fields: [vendorId], references: [id])
-
-  @@unique([rfqId, vendorId])
-  @@index([rfqId])
-  @@index([vendorId])
-  @@index([status])
-}
-
-enum RFQStatus {
-  DRAFT
-  PENDING       // Sent to vendors, awaiting responses
-  QUOTED        // All/some vendors responded
-  AWARDED       // Vendor selected
-  CONVERTED     // Converted to Job
-  CANCELLED
+enum VendorPortalStatus {
+  PENDING
+  PO_RECEIVED
+  IN_PRODUCTION
+  PRINTING_COMPLETE
+  SHIPPED
 }
 
 enum VendorQuoteStatus {
@@ -1132,308 +1249,8 @@ enum VendorQuoteStatus {
   DECLINED
 }
 
-// ========================================
-// EMAIL LOG - Deduplication tracking
-// ========================================
-model EmailLog {
-  id          String   @id @default(cuid())
-  jobId       String
-  emailType   String   // VENDOR_PO, PROOF_REQUEST, CUSTOMER_CONFIRM, THREAD_INIT, etc.
-  sentTo      String
-  sentAt      DateTime @default(now())
-  success     Boolean
-  messageId   String?  // SendGrid message ID for tracking
-  skipped     Boolean  @default(false) // True if dedup prevented send
-  error       String?  // Error message if failed
-
-  job         Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  @@index([jobId, emailType])
-  @@index([sentAt])
-  @@index([jobId, emailType, sentAt]) // For cooldown queries
-}
-
-// ========================================
-// CAMPAIGN (from Customer Portal)
-// ========================================
-
-model Campaign {
-  id                  String              @id @default(cuid())
-  externalCampaignId  String              @unique    // ID from customer portal
-  customerId          String                          // Link to Company
-  name                String
-  sizeName            String
-  quantity            Int
-  frequency           CampaignFrequency
-  mailDay             Int                             // 0-6 (Sunday-Saturday)
-  startDate           DateTime
-  endDate             DateTime?
-  isActive            Boolean             @default(true)
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
-
-  Company             Company             @relation(fields: [customerId], references: [id])
-  CampaignDrop        CampaignDrop[]
-
-  @@index([customerId])
-  @@index([isActive])
-}
-
-model CampaignDrop {
-  id              String          @id @default(cuid())
-  campaignId      String
-  mailDate        DateTime
-  uploadDeadline  DateTime
-  status          DropStatus      @default(SCHEDULED)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-
-  Campaign        Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-
-  @@index([campaignId])
-  @@index([mailDate])
-}
-
-enum CampaignFrequency {
-  WEEKLY
-  BIWEEKLY
-  MONTHLY
-}
-
-enum DropStatus {
-  SCHEDULED
-  AWAITING_FILES
-  FILES_RECEIVED
-  IN_PRODUCTION
-  MAILED
-  COMPLETED
-}
-
-// ========================================
-// JOB READINESS & QC SYSTEM
-// ========================================
-
-enum ReadinessStatus {
-  INCOMPLETE    // Missing required info, PO blocked
-  READY         // All requirements met, PO can send
-  SENT          // PO sent to vendor
-}
-
-enum QcArtworkStatus {
-  RECEIVED      // Artwork files/links received
-  PENDING       // Waiting for artwork
-  NA            // Not applicable
-}
-
-enum QcDataFilesStatus {
-  IN_ARTWORK    // Data included in artwork link
-  SEPARATE_FILE // Data received as separate file
-  PENDING       // Waiting for data files
-  NA            // Not applicable (not a variable/mailing job)
-}
-
-enum QcMailingStatus {
-  COMPLETE      // All mailing info captured
-  INCOMPLETE    // Missing mailing details
-  NA            // Not a mailing job
-}
-
-enum QcSuppliedMaterialsStatus {
-  RECEIVED          // All supplied materials received
-  TRACKING_RECEIVED // Tracking info received, in transit
-  PENDING           // Waiting for materials
-  NA                // No supplied materials
-}
-
-enum QcVersionsStatus {
-  COMPLETE      // All versions captured
-  INCOMPLETE    // Missing version details
-  NA            // Single version job
-}
-
-// ========================================
-// JOB COMPONENT - Track multi-piece jobs
-// ========================================
-
-enum ComponentSupplier {
-  JD            // JD Graphic produces
-  LAHLOUH       // Lahlouh supplies
-  THIRD_PARTY   // Third party supplier
-}
-
-enum ComponentArtworkStatus {
-  RECEIVED      // Artwork received
-  PENDING       // Waiting for artwork
-  NA            // No artwork needed (supplied item)
-}
-
-enum ComponentMaterialStatus {
-  RECEIVED      // Physical material received
-  IN_TRANSIT    // Tracking received, on the way
-  PENDING       // Waiting for material
-  NA            // JD produces, no material needed
-}
-
-model JobComponent {
-  id                String                  @id @default(cuid())
-  jobId             String
-  name              String                  // e.g., "Letter", "Buckslip", "#10 Envelope", "Magnet"
-  description       String?                 // Additional details
-  quantity          Int?                    // Component quantity if different from job
-
-  // Who supplies this component (LEGACY - kept for backward compat)
-  supplier          ComponentSupplier       @default(JD)
-  supplierName      String?                 // Name if THIRD_PARTY
-
-  // === PATHWAY SYSTEM FIELDS (NEW) ===
-  componentType     ComponentType?          // PRINT, FINISHING, BINDERY, DATA, PROOF, MAILING, SHIPPING, SAMPLES, OTHER
-  owner             ComponentOwner?         // INTERNAL, VENDOR, CUSTOMER (replaces supplier concept)
-  vendorId          String?                 // Required for P2/P3 vendor-owned components
-  status            ComponentStatus         @default(NOT_READY)  // NOT_READY, READY, SENT, APPROVED, COMPLETE
-  artworkRequired   Boolean?                // null = inherit from component type defaults
-  dataRequired      Boolean?                // null = inherit from component type defaults
-  dueDate           DateTime?               // Due date for this component
-
-  // Artwork tracking
-  artworkStatus     ComponentArtworkStatus  @default(PENDING)
-  artworkLink       String?                 // ShareFile, Dropbox, etc.
-  artworkReceivedAt DateTime?
-
-  // Physical material tracking (for supplied items)
-  materialStatus    ComponentMaterialStatus @default(NA)
-  trackingNumber    String?
-  trackingCarrier   String?
-  expectedArrival   DateTime?
-  receivedAt        DateTime?
-
-  // Specs for this component
-  specs             Json?                   // Size, paper, ink, finishing, etc.
-
-  notes             String?
-  sortOrder         Int                     @default(0)
-
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
-
-  Job               Job                     @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  Vendor            Vendor?                 @relation(fields: [vendorId], references: [id])
-
-  @@index([jobId])
-  @@index([supplier])
-  @@index([vendorId])
-  @@index([componentType])
-  @@index([owner])
-}
-
-// ========================================
-// CHANGE ORDER - Immutable revision tracking
-// ========================================
-
-model ChangeOrder {
-  id              String            @id @default(cuid())
-  jobId           String
-  changeOrderNo   String            @unique  // Format: {baseJobId}-CO{N} e.g., ME2-3000-CO1
-  version         Int                        // 1, 2, 3...
-
-  // What changed
-  summary         String                     // Brief description of changes
-  changes         Json                       // Structured change details
-
-  // Approvals
-  status          ChangeOrderStatus @default(DRAFT)  // DRAFT, PENDING_APPROVAL, APPROVED, REJECTED
-  approvedAt      DateTime?
-  approvedBy      String?
-  rejectionReason String?
-
-  // Vendor impact (for P3 multi-vendor jobs)
-  affectsVendors  String[]                   // Vendor IDs affected by this change
-  requiresNewPO   Boolean           @default(false)
-  requiresReprice Boolean           @default(false)
-
-  // Files & proofs - stored in changes JSON or linked via File model
-  // Future: Add File[] relation if needed
-
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-
-  Job             Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  @@unique([jobId, version])
-  @@index([jobId])
-  @@index([status])
-}
-
-// ========================================
-// MASTER SEQUENCE - Atomic ID generation
-// ========================================
-
-model MasterSequence {
-  id           String   @id @default("master-seq")
-  currentValue Int      @default(3000)  // Starts at 3000 (fresh namespace)
-  updatedAt    DateTime @updatedAt
-}
-
-// Atomic sequence for J-XXXX job numbers (prevents race conditions)
-model JobSequence {
-  id           String   @id @default("job-seq")
-  currentValue Int      @default(1000)  // First job gets J-1001
-  updatedAt    DateTime @updatedAt
-}
-
-// ========================================
-// EMAIL THREAD SYNC - Gmail thread tracking
-// ========================================
-
-model JobEmailThread {
-  id                String     @id @default(cuid())
-  threadId          String     @unique  // Gmail thread ID
-  firstMessageId    String               // First message in thread
-  jobId             String?              // Nullable until job created
-  customerPONumber  String?              // NOT unique - multiple threads may reference same PO
-  customerDomain    String?              // e.g., "jjsainc.com"
-  subjectNormalized String               // Cleaned subject for matching
-  lastMessageAt     DateTime
-  lastSyncedAt      DateTime
-  createdAt         DateTime   @default(now())
-
-  job               Job?       @relation(fields: [jobId], references: [id], onDelete: SetNull)
-  events            JobEvent[]
-
-  @@index([jobId])
-  @@index([customerPONumber])
-  @@index([threadId])
-}
-
-model JobEvent {
-  id          String        @id @default(cuid())
-  jobId       String?                // Nullable for unmatched events
-  threadId    String                 // Gmail thread ID (links to JobEmailThread)
-  messageId   String        @unique  // Gmail message ID - ensures idempotency
-  type        JobEventType
-  confidence  Float                  // 0-1
-  source      String                 // nick/rebecca/customer/vendor
-  signals     String[]               // Matched phrases that triggered classification
-  links       String[]               // Extracted Dropbox/proof URLs
-  needsReview Boolean       @default(false)  // True if human review required
-  reviewNote  String?                // Why review needed
-  createdAt   DateTime      @default(now())
-
-  job         Job?          @relation(fields: [jobId], references: [id], onDelete: SetNull)
-  thread      JobEmailThread @relation(fields: [threadId], references: [threadId])
-
-  @@index([jobId])
-  @@index([threadId])
-  @@index([needsReview])
-  @@index([createdAt])
-}
-
-enum JobEventType {
-  JOB_CREATED
-  PROOF_RECEIVED
-  PROOF_SENT_TO_CUSTOMER
-  REVISION_REQUEST
-  APPROVED
-  APPROVAL_CONFIRMED
-  SHIPPED
-  OTHER
+enum WebhookSource {
+  ZAPIER
+  BRADFORD
+  EMAIL
 }

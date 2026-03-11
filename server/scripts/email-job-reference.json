@@ -1,0 +1,239 @@
+{
+  "generated": "2026-01-21",
+  "source": "Gmail email parsing",
+  "lahlouh_jobs": [
+    {
+      "customerPO": "OHP13794",
+      "customerJobNo": "OH175514",
+      "description": "PI'S PRINT & FOLD",
+      "quantity": 5025,
+      "dueDate": "1/22/26",
+      "emailDate": "2026-01-20"
+    },
+    {
+      "customerPO": "OHP13729",
+      "customerJobNo": "OH175367",
+      "description": "ART FILES & DATA+TRAY TAGS+PALLET FLAGS FOR MAIL DROP #1",
+      "dueDate": "1/15/26",
+      "emailDate": "2026-01-15"
+    },
+    {
+      "customerPO": "OHP13731",
+      "customerJobNo": null,
+      "description": "PRINT & TRIM (J# TO COME)",
+      "emailDate": "2026-01-13"
+    },
+    {
+      "customerPO": "OHP13503",
+      "customerJobNo": "OH175004",
+      "description": "2 VERS FINISHED FOLD SIZE / 2 SHIPMENT BREAK DOWN",
+      "dueDate": "1/9/26",
+      "emailDate": "2026-01-13"
+    },
+    {
+      "customerPO": "OHP13572",
+      "customerJobNo": "OH174382",
+      "description": "BLUE SHIELD- SECURE MONTHLY MAILING (Blue Shield of California BSC0223 NTM26 Q1 AGE-IN 64.0 (JAN) 6X9 DM)",
+      "size": "6x9",
+      "emailDate": "2026-01-09"
+    },
+    {
+      "customerPO": "OHP13562",
+      "customerJobNo": "OH174385",
+      "description": "BLUE SHIELD- SECURE MONTHLY MAILING (BSC0224 NTM26 Q1 AGE IN 64.5 (JAN) 6X9 PKG)",
+      "size": "6x9",
+      "emailDate": "2026-01-08"
+    },
+    {
+      "customerPO": "OHP13563",
+      "customerJobNo": "OH174398",
+      "description": "BSC0290 NTM26 Q1 AGE IN 64.7 (JAN) #10 PKG",
+      "emailDate": "2026-01-06"
+    },
+    {
+      "customerPO": "OHP13564",
+      "customerJobNo": "OH174456",
+      "description": "BLUE SHIELD MONTHLY MAILING (BSC0291 NTM26 Q1 AGE IN 64.9 (JAN) #10 PKG, 3VER)",
+      "emailDate": "2026-01-06"
+    },
+    {
+      "customerPO": "OHP13498",
+      "customerJobNo": "OH174966",
+      "description": "PRINT, TRIM, SCORE, AFFIX MAG., FOLD, INSERT, SEAL & MAIL",
+      "emailDate": "2026-01-06"
+    },
+    {
+      "customerPO": "OHP13548",
+      "customerJobNo": "OH175071",
+      "description": "PRINT ENVELOPES, PRINT LETTERS & MAIL",
+      "emailDate": "2026-01-06"
+    },
+    {
+      "customerPO": "OHP13475",
+      "customerJobNo": "OH174976",
+      "description": "SPLIT SHIPMENT - OH & CA (100,050 TOTAL WTY - 2 SHIPMENT BREAKDOWN)",
+      "quantity": 100050,
+      "emailDate": "2026-01-08"
+    },
+    {
+      "customerPO": "CAP13531",
+      "customerJobNo": "CA175030",
+      "description": "JD Graphic - Job CA175030 (MUST SHIP BY 12/31/25)",
+      "emailDate": "2026-01-06"
+    }
+  ],
+  "jjsa_jobs": [
+    {
+      "customerPO": "44495",
+      "description": "Bissinger's Raspberry Postcard (CANCELLED)",
+      "emailDate": "2026-01-19"
+    },
+    {
+      "customerPO": "44430",
+      "description": "NW FEB. OVERSIZED POSTCARD",
+      "emailDate": "2026-01-09"
+    },
+    {
+      "customerPO": "44517",
+      "description": "NW Limited offer postcard",
+      "emailDate": "2026-01-06",
+      "internalJobNo": "J-2102"
+    },
+    {
+      "customerPO": "44515.1",
+      "description": "Indicia Needed",
+      "emailDate": "2026-01-13"
+    },
+    {
+      "description": "Christopher Elbow 6pg. self mailer",
+      "emailDate": "2026-01-12"
+    },
+    {
+      "description": "Bissinger's new store postcards",
+      "emailDate": "2026-01-09"
+    },
+    {
+      "description": "Elbow Valentine's Day self-mailer",
+      "emailDate": "2025-12-31"
+    },
+    {
+      "description": "LaTienda Jan. postcard",
+      "emailDate": "2025-12-17"
+    },
+    {
+      "description": "NW Jan. 2026 oversized postcard",
+      "emailDate": "2025-11-25"
+    },
+    {
+      "description": "Bissingers Summer Raspberry postcard",
+      "emailDate": "2025-12-19"
+    }
+  ],
+  "ballantine_jobs": [
+    {
+      "description": "Years of Ripening Buckslip (Reprint)",
+      "emailDate": "2026-01-20"
+    },
+    {
+      "description": "Q2 Buckslip (2026)",
+      "emailDate": "2026-01-16"
+    },
+    {
+      "customerJobNo": "GOH",
+      "description": "GOH-01/15/26-NS",
+      "dueDate": "01/15/26",
+      "emailDate": "2026-01-16"
+    },
+    {
+      "customerJobNo": "AHI",
+      "description": "AHI-01/15/26-NS",
+      "dueDate": "01/15/26",
+      "emailDate": "2026-01-16"
+    },
+    {
+      "customerJobNo": "AHI",
+      "description": "AHI-01/09/26-NS",
+      "dueDate": "01/09/26",
+      "emailDate": "2026-01-13"
+    },
+    {
+      "customerJobNo": "GOH",
+      "description": "GOH-01/09/26-NS",
+      "dueDate": "01/09/26",
+      "emailDate": "2026-01-13"
+    },
+    {
+      "description": "Book of Prayer Buckslip",
+      "emailDate": "2026-01-12"
+    },
+    {
+      "description": "February Prayer Cards",
+      "emailDate": "2026-01-09"
+    },
+    {
+      "description": "6 Panel Selfmailer Project - Print (65# Cover)",
+      "emailDate": "2026-01-06"
+    },
+    {
+      "description": "AFS - Prayer Card",
+      "emailDate": "2025-12-22"
+    },
+    {
+      "description": "Perry Golf 2025 Catalog - Print + Mail (Jan Drop)",
+      "emailDate": "2025-12-22"
+    },
+    {
+      "description": "Spirit-Filled Reading Buckslip",
+      "emailDate": "2025-12-22"
+    },
+    {
+      "description": "Our Lady of Maryknoll Prayer Cards",
+      "emailDate": "2025-12-18"
+    },
+    {
+      "description": "Selling Guides",
+      "emailDate": "2025-12-09"
+    },
+    {
+      "description": "ACQ1, ACQ2 & LPS2 - Holiday Notecards",
+      "emailDate": "2025-12-08"
+    },
+    {
+      "description": "Years of Ripening Buckslip",
+      "emailDate": "2025-12-05"
+    },
+    {
+      "description": "Gohagan Checks",
+      "emailDate": "2025-12-02"
+    },
+    {
+      "description": "First Quarter Prayer Card",
+      "emailDate": "2025-12-02"
+    },
+    {
+      "description": "Prayer Guild Package - Prayer Cards (December)",
+      "emailDate": "2025-11-24"
+    }
+  ],
+  "matching_hints": {
+    "note": "Confirmed mappings found in emails - these can be updated in the database",
+    "confirmed_mappings": [
+      {
+        "internalJobNo": "J-2102",
+        "customer": "JJS&A Inc.",
+        "customerPO": "44517",
+        "description": "NW Limited offer postcard",
+        "size": "7x5 Flat",
+        "sellPrice": 800.00
+      },
+      {
+        "internalJobNo": "J-2039",
+        "customer": "Incremental Media",
+        "description": "Three Z mailing job (24pg proof)",
+        "vendor": "Three Z",
+        "sellPrice": 2025.00
+      }
+    ],
+    "potential_matches_by_amount": "Match jobs by customer + approximate sellPrice + date range"
+  }
+}

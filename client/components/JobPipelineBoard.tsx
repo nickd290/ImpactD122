@@ -306,11 +306,9 @@ function JobCard({ job, onClick, onAdvance, isUpdating }: JobCardProps) {
       </div>
 
       {/* Job Title */}
-      {job.title && (
-        <div className="text-xs font-medium text-slate-700 truncate mb-1" title={job.title}>
-          {job.title}
-        </div>
-      )}
+      <div className="text-xs font-medium text-slate-700 truncate mb-1" title={job.title || job.jobNo}>
+        {job.title || job.jobNo}
+      </div>
 
       {/* Size + Quantity */}
       {(job.sizeName || job.quantity > 0) && (
