@@ -3,6 +3,21 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+
+// Middleware
+import { requireInternalAuth } from './middleware/internal-auth';
+
+// Route imports — public (token-based, no auth)
+import portalPublicRouter from './routes/portalPublic';
+import vendorRfqPublicRouter from './routes/vendorRfqPublic';
+import intakePublicRouter from './routes/intakePublic';
+import ownerHubRouter from './routes/owner'; // bearer-token guarded inside the router
+
+// Route imports — own auth (webhook secret / email sync secret)
+import webhooksRouter from './routes/webhooks';
+import emailSyncRouter from './routes/emailSync';
+
+// Route imports — protected (behind internal auth gate)
 import jobsRouter from './routes/jobs';
 import entitiesRouter from './routes/entities';
 import aiRouter from './routes/ai';
@@ -13,13 +28,11 @@ import bradfordRouter from './routes/bradford';
 import paperInventoryRouter from './routes/paperInventory';
 import emailRouter from './routes/email';
 import communicationsRouter from './routes/communications';
-import webhooksRouter from './routes/webhooks';
-import vendorRfqRouter from './routes/vendorRfq';
-import portalRouter from './routes/portal';
+import vendorRfqAdminRouter from './routes/vendorRfqAdmin';
+import portalAdminRouter from './routes/portalAdmin';
 import filesRouter from './routes/files';
 import proofsRouter from './routes/proofs';
 import dashboardRouter from './routes/dashboard';
-import emailSyncRouter from './routes/emailSync';
 
 // Load environment variables
 // Use path relative to this file to find .env in the server directory
@@ -54,12 +67,33 @@ if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../../client/dist')));
 }
 
-// Health check
+// --- OPEN ROUTES ---
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// API routes
+// Serve public intake form
+app.get('/intake', (req, res) => {
+  res.sendFile(path.join(__dirname, '../../public/intake.html'));
+});
+
+// --- WEBHOOK ROUTES (own auth — X-Webhook-Secret / validateEmailSyncSecret) ---
+app.use('/api/webhooks', webhooksRouter);
+app.use('/api/email-sync', emailSyncRouter);
+
+// --- PUBLIC TOKEN ROUTES (no auth — token-based access) ---
+app.use('/api', portalPublicRouter);
+app.use('/api/vendor-rfqs', vendorRfqPublicRouter);
+app.use('/api', intakePublicRouter);
+
+// --- OWNER HUB (own auth — Bearer OWNER_HUB_TOKEN; mounted before INTERNAL gate) ---
+app.use('/api/owner', ownerHubRouter);
+
+// --- INTERNAL AUTH GATE ---
+// All routes below this line require Authorization: Bearer <INTERNAL_API_SECRET>
+app.use('/api', requireInternalAuth);
+
+// --- PROTECTED ROUTES ---
 app.use('/api/jobs', jobsRouter);
 app.use('/api/entities', entitiesRouter);
 app.use('/api/ai', aiRouter);
@@ -70,13 +104,11 @@ app.use('/api/bradford', bradfordRouter);
 app.use('/api/paper-inventory', paperInventoryRouter);
 app.use('/api/email', emailRouter);
 app.use('/api/communications', communicationsRouter);
-app.use('/api/webhooks', webhooksRouter);
-app.use('/api/vendor-rfqs', vendorRfqRouter);
-app.use('/api', portalRouter);
+app.use('/api/vendor-rfqs', vendorRfqAdminRouter);
+app.use('/api', portalAdminRouter);
 app.use('/api', filesRouter);
 app.use('/api/proofs', proofsRouter);
 app.use('/api/dashboard', dashboardRouter);
-app.use('/api/email-sync', emailSyncRouter);
 
 // Serve frontend in production
 if (process.env.NODE_ENV === 'production') {
