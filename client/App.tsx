@@ -126,25 +126,34 @@ function App() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [jobsResponse, customersData, vendorsData] = await Promise.all([
+      // Don't let one endpoint failure block the whole app refresh
+      const [jobsResult, customersResult, vendorsResult] = await Promise.allSettled([
         jobsApi.getAll(),
         entitiesApi.getAll('CUSTOMER'),
         entitiesApi.getAll('VENDOR'),
       ]);
-      // API now returns { jobs, counts } structure
-      const jobsData = jobsResponse.jobs || jobsResponse;
-      setJobs(jobsData);
-      setCustomers(customersData);
-      setVendors(vendorsData);
-      // Also load pending communications count
-      loadPendingCount();
-      // Update selectedJob with fresh data if one is currently selected
-      if (selectedJob) {
-        const updatedJob = jobsData.find((j: any) => j.id === selectedJob.id);
-        if (updatedJob) {
-          setSelectedJob(updatedJob);
+
+      if (jobsResult.status === 'fulfilled') {
+        const jobsData = jobsResult.value.jobs || jobsResult.value;
+        setJobs(jobsData);
+        if (selectedJob) {
+          const updatedJob = jobsData.find((j: any) => j.id === selectedJob.id);
+          if (updatedJob) setSelectedJob(updatedJob);
         }
+      } else {
+        console.error('Failed to load jobs:', jobsResult.reason);
       }
+      if (customersResult.status === 'fulfilled') {
+        setCustomers(customersResult.value);
+      } else {
+        console.error('Failed to load customers:', customersResult.reason);
+      }
+      if (vendorsResult.status === 'fulfilled') {
+        setVendors(vendorsResult.value);
+      } else {
+        console.error('Failed to load vendors:', vendorsResult.reason);
+      }
+      loadPendingCount();
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {

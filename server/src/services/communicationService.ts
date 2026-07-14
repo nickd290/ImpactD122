@@ -276,14 +276,14 @@ export async function determineSenderType(
       Company: true, // Customer
       Vendor: {
         include: {
-          contacts: true
+          VendorContact: true
         }
       },
       PurchaseOrder: {
         include: {
           Vendor: {
             include: {
-              contacts: true
+              VendorContact: true
             }
           }
         }
@@ -314,8 +314,8 @@ export async function determineSenderType(
       };
     }
 
-    if (job.Vendor.contacts) {
-      for (const contact of job.Vendor.contacts) {
+    if (job.Vendor.VendorContact) {
+      for (const contact of job.Vendor.VendorContact) {
         if (fromEmailLower.includes(contact.email.toLowerCase())) {
           return {
             senderType: SenderType.VENDOR,
@@ -336,8 +336,8 @@ export async function determineSenderType(
         };
       }
 
-      if (po.Vendor.contacts) {
-        for (const contact of po.Vendor.contacts) {
+      if (po.Vendor.VendorContact) {
+        for (const contact of po.Vendor.VendorContact) {
           if (fromEmailLower.includes(contact.email.toLowerCase())) {
             return {
               senderType: SenderType.VENDOR,
@@ -475,7 +475,7 @@ export async function storeInboundEmail(
       status: CommunicationStatus.PENDING_REVIEW, // Manual mode: wait for review
       receivedAt: new Date(),
       // Store attachments
-      attachments: payload.attachments?.length ? {
+      JobCommunicationAttachment: payload.attachments?.length ? {
         create: payload.attachments.map(att => ({
           fileName: att.filename,
           mimeType: att.type,
@@ -485,7 +485,7 @@ export async function storeInboundEmail(
       } : undefined
     },
     include: {
-      attachments: true
+      JobCommunicationAttachment: true
     }
   });
 
@@ -505,17 +505,17 @@ export async function forwardCommunication(
   const communication = await prisma.jobCommunication.findUnique({
     where: { id: communicationId },
     include: {
-      job: {
+      Job: {
         include: {
           Company: true, // Customer
           Vendor: {
             include: {
-              contacts: true
+              VendorContact: true
             }
           }
         }
       },
-      attachments: true
+      JobCommunicationAttachment: true
     }
   });
 
@@ -529,13 +529,13 @@ export async function forwardCommunication(
 
   if (communication.direction === CommunicationDirection.CUSTOMER_TO_VENDOR) {
     // Customer -> Vendor: forward to vendor
-    if (communication.job.Vendor?.email) {
-      recipientEmail = communication.job.Vendor.email;
-      recipientName = communication.job.Vendor.name;
+    if (communication.Job.Vendor?.email) {
+      recipientEmail = communication.Job.Vendor.email;
+      recipientName = communication.Job.Vendor.name;
     } else {
       // Try to find vendor contact
-      const primaryContact = communication.job.Vendor?.contacts.find(c => c.isPrimary);
-      const anyContact = communication.job.Vendor?.contacts[0];
+      const primaryContact = communication.Job.Vendor?.VendorContact.find(c => c.isPrimary);
+      const anyContact = communication.Job.Vendor?.VendorContact[0];
       const contact = primaryContact || anyContact;
 
       if (contact) {
@@ -547,11 +547,11 @@ export async function forwardCommunication(
     }
   } else {
     // Vendor -> Customer: forward to customer
-    if (!communication.job.Company?.email) {
+    if (!communication.Job.Company?.email) {
       return { success: false, error: 'No customer email configured for this job' };
     }
-    recipientEmail = communication.job.Company.email;
-    recipientName = communication.job.Company.name;
+    recipientEmail = communication.Job.Company.email;
+    recipientName = communication.Job.Company.name;
   }
 
   // Build the email
@@ -592,7 +592,7 @@ export async function forwardCommunication(
   }
 
   // Build email message with Reply-To for thread management
-  const jobEmailAddress = getJobEmailAddress(communication.job.jobNo);
+  const jobEmailAddress = getJobEmailAddress(communication.Job.jobNo);
   const msg: any = {
     to: recipientEmail,
     from: {
@@ -614,8 +614,8 @@ export async function forwardCommunication(
   };
 
   // Add attachments if any
-  if (communication.attachments.length > 0) {
-    msg.attachments = communication.attachments.map(att => ({
+  if (communication.JobCommunicationAttachment.length > 0) {
+    msg.attachments = communication.JobCommunicationAttachment.map(att => ({
       content: att.contentBase64,
       filename: att.fileName,
       type: att.mimeType,
@@ -688,7 +688,7 @@ export async function getJobCommunications(jobId: string) {
   return prisma.jobCommunication.findMany({
     where: { jobId },
     include: {
-      attachments: true
+      JobCommunicationAttachment: true
     },
     orderBy: {
       receivedAt: 'asc'
@@ -716,13 +716,13 @@ export async function getPendingCommunications() {
       status: CommunicationStatus.PENDING_REVIEW
     },
     include: {
-      job: {
+      Job: {
         include: {
           Company: true,
           Vendor: true
         }
       },
-      attachments: true
+      JobCommunicationAttachment: true
     },
     orderBy: {
       receivedAt: 'asc'
@@ -859,7 +859,7 @@ export async function createOutboundCommunication(
       Company: true,
       Vendor: {
         include: {
-          contacts: true
+          VendorContact: true
         }
       }
     }
@@ -886,7 +886,7 @@ export async function createOutboundCommunication(
       recipientEmail = job.Vendor.email;
       recipientName = job.Vendor.name;
     } else {
-      const contact = job.Vendor?.contacts.find(c => c.isPrimary) || job.Vendor?.contacts[0];
+      const contact = job.Vendor?.VendorContact.find(c => c.isPrimary) || job.Vendor?.VendorContact[0];
       if (!contact) {
         return { success: false, error: 'No vendor email configured' };
       }
@@ -1256,7 +1256,7 @@ export async function initiateVendorThread(
       include: {
         Vendor: {
           include: {
-            contacts: true
+            VendorContact: true
           }
         }
       }
@@ -1273,9 +1273,9 @@ export async function initiateVendorThread(
     if (job.Vendor?.email) {
       vendorEmail = job.Vendor.email;
       vendorName = job.Vendor.name;
-    } else if (job.Vendor?.contacts?.length) {
-      const primary = job.Vendor.contacts.find(c => c.isPrimary);
-      const contact = primary || job.Vendor.contacts[0];
+    } else if (job.Vendor?.VendorContact?.length) {
+      const primary = job.Vendor.VendorContact.find(c => c.isPrimary);
+      const contact = primary || job.Vendor.VendorContact[0];
       vendorEmail = contact.email;
       vendorName = contact.name;
     }

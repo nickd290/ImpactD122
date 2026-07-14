@@ -328,17 +328,17 @@ export async function getCommunicationHandler(req: Request, res: Response) {
     const communication = await prisma.jobCommunication.findUnique({
       where: { id },
       include: {
-        job: {
+        Job: {
           include: {
             Company: true,
             Vendor: {
               include: {
-                contacts: true
+                VendorContact: true
               }
             }
           }
         },
-        attachments: true
+        JobCommunicationAttachment: true
       }
     });
 
@@ -371,7 +371,7 @@ export async function updateCommunicationHandler(req: Request, res: Response) {
         ...(internalNotes !== undefined && { internalNotes })
       },
       include: {
-        attachments: true
+        JobCommunicationAttachment: true
       }
     });
 
