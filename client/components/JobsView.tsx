@@ -52,7 +52,7 @@ interface Job {
   paperSource?: string;
 }
 
-/** Client paid Impact → next money out is BGE (Bradford) and/or JD */
+/** Client paid Impact */
 function isClientPaid(job: Job): boolean {
   return !!(job.customerPaymentDate || job.status === 'PAID');
 }
@@ -65,11 +65,42 @@ function isJdPaid(job: Job): boolean {
   return !!(job.jdPaymentDate || job.jdPaymentPaid);
 }
 
-/** Customer paid us, and neither BGE nor JD paid yet — still on Work list */
+/**
+ * Who Impact pays for production (exclusive — never both):
+ *  BRADFORD paper → Impact pays BGE; Bradford pays JD downstream
+ *  JD / customer paper → Impact pays JD
+ */
+function impactProductionPayee(job: Job): 'BGE' | 'JD' {
+  const src = (job.paperSource || 'BRADFORD').toUpperCase();
+  if (src === 'VENDOR' || src === 'CUSTOMER') return 'JD';
+  return 'BGE';
+}
+
+function isImpactProductionPaid(job: Job): boolean {
+  return impactProductionPayee(job) === 'BGE' ? isBgePaid(job) : isJdPaid(job);
+}
+
+/** Client paid us, Impact still owes its one production payee (BGE or JD — not both) */
 function needsVendorPay(job: Job): boolean {
   if (!isClientPaid(job)) return false;
   if (job.status === 'CANCELLED') return false;
-  return !isBgePaid(job) && !isJdPaid(job);
+  return !isImpactProductionPaid(job);
+}
+
+function moneyStatus(job: Job): { label: string; className: string } {
+  if (job.status === 'CANCELLED') return { label: '—', className: 'text-zinc-400' };
+  if (!isClientPaid(job)) {
+    return { label: 'Await client', className: 'text-amber-700' };
+  }
+  const payee = impactProductionPayee(job);
+  if (!isImpactProductionPaid(job)) {
+    return {
+      label: payee === 'BGE' ? 'Pay BGE' : 'Pay JD',
+      className: 'text-[#C0512A]',
+    };
+  }
+  // Impact production paid; JD under Bradford is their payout, not ours
+  return { label: 'Settled', className: 'text-emerald-700' };
 }
 
 const WORKFLOW_SHORT: Record<string, string> = {
@@ -205,21 +236,14 @@ export function JobsView({
 
   /**
    * Work queue (default):
-   *  - Open ACTIVE jobs that are not money-complete
-   *  - Client paid but NEITHER BGE nor JD paid yet (still need to pay out)
-   * Off the list (Archive) when client paid AND (BGE or JD) paid — clearly done enough
+   *  - ACTIVE open jobs (client not settled yet), OR
+   *  - Client paid but Impact still owes its ONE payee (BGE or JD by paper route)
+   * Off list when Impact production paid (Bradford→JD is not Impact’s check).
    */
   const isWorkQueueJob = (job: Job) => {
     if (job.status === 'CANCELLED') return false;
-    // Client paid + BGE or JD already paid → completed for list purposes
-    if (isClientPaid(job) && (isBgePaid(job) || isJdPaid(job))) {
-      return false;
-    }
-    // Client paid, no vendor paid yet → still on list to pay BGE/JD
-    if (isClientPaid(job) && !isBgePaid(job) && !isJdPaid(job)) {
-      return true;
-    }
-    // Not client-paid: only show if still ACTIVE production
+    if (needsVendorPay(job)) return true;
+    if (isClientPaid(job) && isImpactProductionPaid(job)) return false;
     return job.status === 'ACTIVE';
   };
 
@@ -311,7 +335,7 @@ export function JobsView({
         return days >= 0 && days <= 7;
       }).length,
       'no-vendor': tabFilteredJobs.filter(j => !j.vendor?.name).length,
-      // Sheet rule: client paid → BGE/JD need pay
+      // Client paid → Impact still owes BGE or JD (one payee)
       'pay-vendors': tabFilteredJobs.filter((j) => needsVendorPay(j)).length,
       'client-unpaid': tabFilteredJobs.filter((j) => !isClientPaid(j) && j.status !== 'CANCELLED').length,
     };
@@ -346,7 +370,7 @@ export function JobsView({
         return !job.vendor?.name;
       }
       if (quickFilter === 'pay-vendors') {
-        // Client paid Impact → still need BGE and/or JD
+        // Client paid → Impact still owes production payee (BGE or JD)
         return needsVendorPay(job);
       }
       if (quickFilter === 'client-unpaid') {
@@ -484,11 +508,11 @@ export function JobsView({
     toast.message(`Selected ${unpaid.length} client-unpaid job${unpaid.length === 1 ? '' : 's'}`);
   };
 
-  /** Select jobs where client paid us but BGE/JD still due */
+  /** Select jobs where client paid us but Impact production payee still due */
   const handleSelectVendorDue = () => {
     const due = filteredJobs.filter((j) => needsVendorPay(j));
     setSelectedJobIds(new Set(due.map((j) => j.id)));
-    toast.message(`Selected ${due.length} job${due.length === 1 ? '' : 's'} — client paid, vendor pay due`);
+    toast.message(`Selected ${due.length} — client paid, Impact still owes BGE or JD`);
   };
 
   const handleSelectActiveOnly = () => {
@@ -743,7 +767,7 @@ export function JobsView({
           <p className="text-sm text-zinc-500 mt-1">
             <span className="font-mono tabular-nums text-[#2B3A4A]">{tabCounts.active}</span> on deck
             <span className="mx-1.5 text-zinc-300">·</span>
-            open + still owe BGE/JD
+            open · or client paid, Impact still owes BGE/JD
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -918,7 +942,7 @@ export function JobsView({
               <option value="due-soon">Due this week ({filterCounts['due-soon']})</option>
             )}
             {filterCounts['pay-vendors'] > 0 && (
-              <option value="pay-vendors">Pay BGE/JD ({filterCounts['pay-vendors']})</option>
+              <option value="pay-vendors">Pay BGE or JD ({filterCounts['pay-vendors']})</option>
             )}
             {filterCounts['client-unpaid'] > 0 && (
               <option value="client-unpaid">Client unpaid ({filterCounts['client-unpaid']})</option>
@@ -1019,26 +1043,7 @@ export function JobsView({
                 const isOverdue = daysUntil !== null && daysUntil < 0;
                 const isDueSoon = daysUntil !== null && daysUntil >= 0 && daysUntil <= 3;
                 const done = isJobDone(job);
-                // One money line: settled | pay BGE/JD | await client
-                let moneyLabel = '—';
-                let moneyClass = 'text-zinc-400';
-                if (isClientPaid(job) && isBgePaid(job) && isJdPaid(job)) {
-                  moneyLabel = 'Settled';
-                  moneyClass = 'text-emerald-700';
-                } else if (isClientPaid(job) && (isBgePaid(job) || isJdPaid(job))) {
-                  // One side paid — treated complete for Work list
-                  moneyLabel = isBgePaid(job) && !isJdPaid(job) ? 'BGE done' : !isBgePaid(job) && isJdPaid(job) ? 'JD done' : 'Settled';
-                  moneyClass = 'text-emerald-700';
-                } else if (isClientPaid(job) && !isBgePaid(job) && !isJdPaid(job)) {
-                  moneyLabel = 'Pay BGE/JD';
-                  moneyClass = 'text-[#C0512A]';
-                } else if (!isClientPaid(job) && job.status !== 'CANCELLED') {
-                  moneyLabel = 'Await client';
-                  moneyClass = 'text-amber-700';
-                } else if (job.status === 'PAID') {
-                  moneyLabel = 'Paid';
-                  moneyClass = 'text-emerald-700';
-                }
+                const { label: moneyLabel, className: moneyClass } = moneyStatus(job);
                 return (
                   <tr
                     key={job.id}
@@ -1093,7 +1098,14 @@ export function JobsView({
                     <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex flex-col gap-0.5 items-start">
                         <StatusDropdown status={job.status} onStatusChange={(s) => handleStatusChange(job.id, s)} />
-                        <span className={cn('text-[11px] font-medium', moneyClass)} title="Client → BGE → JD">
+                        <span
+                          className={cn('text-[11px] font-medium', moneyClass)}
+                          title={
+                            impactProductionPayee(job) === 'BGE'
+                              ? 'Impact → BGE (Bradford pays JD after)'
+                              : 'Impact → JD (JD paper route)'
+                          }
+                        >
                           {moneyLabel}
                         </span>
                       </div>
