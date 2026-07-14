@@ -518,7 +518,7 @@ export function buildInvoiceProjectTimeline(job: any): Array<{ label: string; at
       events.push({
         label: 'Artwork uploaded',
         at: firstArtwork.createdAt,
-        detail: firstArtwork.originalName || firstArtwork.filename || undefined,
+        detail: firstArtwork.fileName || firstArtwork.originalName || firstArtwork.filename || undefined,
       });
     }
   } else if (job.artOverrideAt && createdAt) {
