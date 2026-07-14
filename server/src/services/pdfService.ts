@@ -580,6 +580,37 @@ export function buildInvoiceProjectTimeline(job: any): Array<{ label: string; at
   return Array.from(byLabel.values());
 }
 
+/**
+ * Customer invoice notes must never leak vendor payees, costs, markups, or import junk.
+ * Strips internal lines from job.notes (often stuffed by Excel import).
+ */
+export function sanitizeCustomerInvoiceNotes(raw: string | null | undefined): string {
+  if (!raw) return '';
+  const blocked =
+    /^(vendors?\b|vendor\s*costs?|import\s*source|bradford\s*(buy|cost|share|total)|jd\s*(cost|total|share)|impact\s*(margin|share)|paper\s*markup|spread\b|buy\s*cost|ops?\s*fund|operations\s*fund|internal\b|cpm\b|margin\b)/i;
+
+  const lines = String(raw)
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .filter((line) => {
+      // Whole-line vendor/cost dumps
+      if (blocked.test(line)) return false;
+      // "$113.16" style cost dumps tagged as vendor
+      if (/vendor\s*cost/i.test(line)) return false;
+      if (/^operations\s*fund\b/i.test(line)) return false;
+      // Lone partner name lines left after "Vendors:" was split
+      if (/^(bradford|three\s*z|jd\s*graphic|operations\s*fund)\s*$/i.test(line)) return false;
+      // Dollar amounts that look like internal cost lines (not "Items:" product titles)
+      if (/:\s*\$[\d,]+(\.\d{2})?\s*$/i.test(line) && !/^(items?|paper|qty|quantity|description)\b/i.test(line)) {
+        return false;
+      }
+      return true;
+    });
+
+  return lines.join('\n').trim();
+}
+
 /** Normalize any job record (prisma include shape) for generateInvoicePDF. */
 export function prepareInvoiceJobData(job: any): any {
   const revenue = job.sellPrice
@@ -596,6 +627,9 @@ export function prepareInvoiceJobData(job: any): any {
   const jdJobRaw = job.customerJobNumber || job.externalJobId || job.mailingVendorJobNo || job.jdJobNumberRaw || null;
   const jdJobSuffix = extractJdJobSuffix(jdJobRaw);
 
+  // Customer-facing only — never vendorSpecialInstructions or internal cost notes
+  const customerNotes = sanitizeCustomerInvoiceNotes(job.notes);
+
   return {
     id: job.id,
     number: job.jobNo || job.number,
@@ -605,7 +639,7 @@ export function prepareInvoiceJobData(job: any): any {
     workflowStatus: job.workflowStatus,
     paperSource: job.paperSource,
     sizeName: job.sizeName || '',
-    notes: [job.notes, job.vendorSpecialInstructions].filter(Boolean).join('\n\n') || '',
+    notes: customerNotes,
     quantity,
     sellPrice: revenue,
     customerPONumber: job.customerPONumber || '',
@@ -707,19 +741,7 @@ function collectInvoiceSpecPairs(jobData: any, ccid: string | null, jdJob: strin
   }
   add('Paper / stock', specs.paperType || specs.paperStock || specs.stock || jobData.bradfordPaperType);
   add('Paper weight', specs.paperWeight || (specs.paperLbs != null && specs.paperLbs !== '' ? `${specs.paperLbs}#` : null));
-  if (jobData.bradfordPaperLbs != null && Number(jobData.bradfordPaperLbs) > 0) {
-    add('Paper lbs (job)', `${Number(jobData.bradfordPaperLbs).toLocaleString()} lbs`);
-  }
-  add(
-    'Paper source',
-    jobData.paperSource === 'VENDOR'
-      ? 'JD'
-      : jobData.paperSource === 'BRADFORD'
-        ? 'Bradford'
-        : jobData.paperSource === 'CUSTOMER'
-          ? 'Customer'
-          : jobData.paperSource
-  );
+  // Paper lbs / Bradford routing weights are internal — omit from customer invoice
   add('Colors', specs.colors);
   add('Front colors', specs.frontColors);
   add('Back colors', specs.backColors);
@@ -878,9 +900,9 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
   doc.setTextColor(TEXT_GRAY);
   const billLines = [jobData.customer?.email, jobData.customer?.phone].filter(Boolean) as string[];
   billLines.forEach((line, i) => doc.text(String(line).slice(0, 42), left, y + i * 4));
+  // Customer-facing only — no vendor / payee names on invoice
   const rightMeta = [
     jobData.customerPONumber ? `Cust PO  ${jobData.customerPONumber}` : null,
-    jobData.vendor?.name ? `Vendor  ${String(jobData.vendor.name).slice(0, 28)}` : null,
   ].filter(Boolean) as string[];
   rightMeta.forEach((line, i) => doc.text(line, left + colW + colGap, y + i * 4));
   y += Math.max(billLines.length, rightMeta.length, 1) * 4 + 7;
@@ -1044,10 +1066,12 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9.5);
     doc.setTextColor(BRAND_NAVY);
+    // Always re-sanitize — never dump raw job.notes (vendor costs, payees, etc.)
+    const safeNotes = sanitizeCustomerInvoiceNotes(jobData.notes);
     const notes: string[] = [];
-    if (jobData.notes) {
+    if (safeNotes) {
       notes.push(
-        ...String(jobData.notes)
+        ...safeNotes
           .split(/\n+/)
           .map((s) => s.trim())
           .filter(Boolean)
