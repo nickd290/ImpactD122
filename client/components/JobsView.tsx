@@ -65,11 +65,11 @@ function isJdPaid(job: Job): boolean {
   return !!(job.jdPaymentDate || job.jdPaymentPaid);
 }
 
-/** Customer paid us, but Bradford and/or JD still need to be paid */
+/** Customer paid us, and neither BGE nor JD paid yet — still on Work list */
 function needsVendorPay(job: Job): boolean {
   if (!isClientPaid(job)) return false;
   if (job.status === 'CANCELLED') return false;
-  return !isBgePaid(job) || !isJdPaid(job);
+  return !isBgePaid(job) && !isJdPaid(job);
 }
 
 const WORKFLOW_SHORT: Record<string, string> = {
@@ -204,18 +204,22 @@ export function JobsView({
   };
 
   /**
-   * Work queue (default "Active" tab):
-   *  - status ACTIVE (still in production / open), OR
-   *  - completed/client-paid but still need to pay BGE and/or JD
-   * Archive = settled (C+BGE+JD) or cancelled — not on the pay/work list.
+   * Work queue (default):
+   *  - Open ACTIVE jobs that are not money-complete
+   *  - Client paid but NEITHER BGE nor JD paid yet (still need to pay out)
+   * Off the list (Archive) when client paid AND (BGE or JD) paid — clearly done enough
    */
   const isWorkQueueJob = (job: Job) => {
     if (job.status === 'CANCELLED') return false;
-    // Fully settled cash chain — archive only
-    if (isClientPaid(job) && isBgePaid(job) && isJdPaid(job)) return false;
-    // Client paid, still owe BGE and/or JD (even if marked complete/paid status)
-    if (needsVendorPay(job)) return true;
-    // Still open / in production
+    // Client paid + BGE or JD already paid → completed for list purposes
+    if (isClientPaid(job) && (isBgePaid(job) || isJdPaid(job))) {
+      return false;
+    }
+    // Client paid, no vendor paid yet → still on list to pay BGE/JD
+    if (isClientPaid(job) && !isBgePaid(job) && !isJdPaid(job)) {
+      return true;
+    }
+    // Not client-paid: only show if still ACTIVE production
     return job.status === 'ACTIVE';
   };
 
@@ -1021,11 +1025,12 @@ export function JobsView({
                 if (isClientPaid(job) && isBgePaid(job) && isJdPaid(job)) {
                   moneyLabel = 'Settled';
                   moneyClass = 'text-emerald-700';
-                } else if (needsVendorPay(job)) {
-                  const parts: string[] = [];
-                  if (!isBgePaid(job)) parts.push('BGE');
-                  if (!isJdPaid(job)) parts.push('JD');
-                  moneyLabel = `Pay ${parts.join(' + ')}`;
+                } else if (isClientPaid(job) && (isBgePaid(job) || isJdPaid(job))) {
+                  // One side paid — treated complete for Work list
+                  moneyLabel = isBgePaid(job) && !isJdPaid(job) ? 'BGE done' : !isBgePaid(job) && isJdPaid(job) ? 'JD done' : 'Settled';
+                  moneyClass = 'text-emerald-700';
+                } else if (isClientPaid(job) && !isBgePaid(job) && !isJdPaid(job)) {
+                  moneyLabel = 'Pay BGE/JD';
                   moneyClass = 'text-[#C0512A]';
                 } else if (!isClientPaid(job) && job.status !== 'CANCELLED') {
                   moneyLabel = 'Await client';
