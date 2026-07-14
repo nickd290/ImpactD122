@@ -151,8 +151,17 @@ export const downloadFile = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'File not found on disk' });
     }
 
-    res.setHeader('Content-Disposition', `attachment; filename="${file.fileName}"`);
-    res.setHeader('Content-Type', file.mimeType);
+    const view =
+      req.query.view === '1' ||
+      req.query.view === 'true' ||
+      req.query.inline === '1' ||
+      req.query.inline === 'true';
+    const safeName = String(file.fileName || 'file').replace(/"/g, '');
+    res.setHeader(
+      'Content-Disposition',
+      `${view ? 'inline' : 'attachment'}; filename="${safeName}"`
+    );
+    res.setHeader('Content-Type', file.mimeType || 'application/octet-stream');
     res.sendFile(path.resolve(file.objectKey));
   } catch (error) {
     console.error('Download file error:', error);

@@ -645,24 +645,25 @@ export function JobDetailModal({
     if (!job?.id && kind !== 'po') return;
     const map: Record<string, { url: string; title: string }> = {
       invoice: {
-        url: `/api/pdf/invoice/${job!.id}`,
-        title: `Invoice — ${job?.number || job?.jobNo || ''}`,
+        url: `/api/pdf/invoice/${job!.id}?view=1`,
+        title: `Invoice — ${job?.number || job?.jobNo || ''}.pdf`,
       },
       quote: {
-        url: `/api/pdf/quote/${job!.id}`,
-        title: `Quote — ${job?.number || job?.jobNo || ''}`,
+        url: `/api/pdf/quote/${job!.id}?view=1`,
+        title: `Quote — ${job?.number || job?.jobNo || ''}.pdf`,
       },
       'vendor-po': {
-        url: `/api/pdf/vendor-po/${job!.id}`,
-        title: `Vendor PO — ${job?.number || job?.jobNo || ''}`,
+        url: `/api/pdf/vendor-po/${job!.id}?view=1`,
+        title: `Vendor PO — ${job?.number || job?.jobNo || ''}.pdf`,
       },
       po: {
-        url: id ? `/api/pdf/po/${id}` : '',
-        title: `PO — ${id || ''}`,
+        url: id ? `/api/pdf/po/${id}?view=1` : '',
+        title: `PO — ${id || ''}.pdf`,
       },
     };
     const entry = map[kind];
     if (!entry?.url) return;
+    // Always open modal viewer (blob fetch) — never window.open download
     setDocViewer({
       source: { type: 'url', url: entry.url, fileName: entry.title, mimeType: 'application/pdf' },
       title: entry.title,

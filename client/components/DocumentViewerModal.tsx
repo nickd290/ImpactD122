@@ -1,6 +1,6 @@
 /**
  * Popup viewer for invoices, POs, quotes, artwork, and other job files.
- * Preview in-modal; Download always available.
+ * Fetches as blob + iframes so the browser never auto-downloads PDFs.
  */
 import React, { useEffect, useState } from 'react';
 import { X, Download, Loader2, ExternalLink, FileText, Image as ImageIcon } from 'lucide-react';
@@ -20,9 +20,14 @@ function isImageMime(mime?: string, name?: string) {
   return /\.(png|jpe?g|gif|webp|tif{1,2}|bmp|svg)$/i.test(name || '');
 }
 
-function isPdfMime(mime?: string, name?: string) {
-  if (mime === 'application/pdf') return true;
-  return /\.pdf$/i.test(name || '');
+function withViewParam(url: string): string {
+  try {
+    const u = new URL(url, window.location.origin);
+    u.searchParams.set('view', '1');
+    return u.pathname + u.search;
+  } catch {
+    return url.includes('?') ? `${url}&view=1` : `${url}?view=1`;
+  }
 }
 
 export function DocumentViewerModal({ source, title, onClose }: DocumentViewerModalProps) {
@@ -30,12 +35,12 @@ export function DocumentViewerModal({ source, title, onClose }: DocumentViewerMo
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [resolvedMime, setResolvedMime] = useState<string | undefined>(source.mimeType);
 
   const fileName =
     title ||
     source.fileName ||
     (source.type === 'file' ? `File ${source.fileId.slice(0, 8)}` : 'Document');
-  const mime = source.mimeType;
 
   useEffect(() => {
     let cancelled = false;
@@ -47,28 +52,36 @@ export function DocumentViewerModal({ source, title, onClose }: DocumentViewerMo
       setPreviewUrl(null);
 
       try {
-        if (source.type === 'url') {
-          // Same-origin PDF endpoints stream directly
-          if (!cancelled) {
-            setPreviewUrl(source.url);
-            setLoading(false);
-          }
-          return;
+        const fetchUrl =
+          source.type === 'file'
+            ? `/api/files/${source.fileId}/download?view=1`
+            : withViewParam(source.url);
+
+        const response = await fetch(fetchUrl, { credentials: 'include' });
+        if (!response.ok) {
+          throw new Error(`Failed to load document (${response.status})`);
         }
 
-        const response = await fetch(`/api/files/${source.fileId}/download`, {
-          credentials: 'include',
-        });
-        if (!response.ok) throw new Error('Failed to load document');
+        const contentType = response.headers.get('content-type') || source.mimeType || '';
         const blob = await response.blob();
-        objectUrl = URL.createObjectURL(blob);
-        if (!cancelled) {
-          setBlobUrl(objectUrl);
-          setPreviewUrl(objectUrl);
-          setLoading(false);
-        } else {
+
+        // Force PDF mime so iframe renders instead of download
+        const typed =
+          contentType.includes('pdf') || /\.pdf$/i.test(fileName)
+            ? new Blob([blob], { type: 'application/pdf' })
+            : contentType
+              ? new Blob([blob], { type: contentType })
+              : blob;
+
+        objectUrl = URL.createObjectURL(typed);
+        if (cancelled) {
           URL.revokeObjectURL(objectUrl);
+          return;
         }
+        setResolvedMime(typed.type || contentType || source.mimeType);
+        setBlobUrl(objectUrl);
+        setPreviewUrl(objectUrl);
+        setLoading(false);
       } catch (err: any) {
         if (!cancelled) {
           setError(err.message || 'Failed to load document');
@@ -83,25 +96,13 @@ export function DocumentViewerModal({ source, title, onClose }: DocumentViewerMo
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [source.type === 'file' ? source.fileId : source.url]);
+  }, [source.type === 'file' ? source.fileId : source.url, fileName]);
 
-  // cleanup blob on unmount
   useEffect(() => {
     return () => {
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
   }, [blobUrl]);
-
-  const handleDownload = () => {
-    if (source.type === 'file') {
-      window.open(`/api/files/${source.fileId}/download`, '_blank');
-    } else {
-      window.open(source.url, '_blank');
-    }
-  };
-
-  const showImage = isImageMime(mime, fileName);
-  const showPdf = isPdfMime(mime, fileName) || source.type === 'url' || (!showImage && !!previewUrl);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -110,6 +111,35 @@ export function DocumentViewerModal({ source, title, onClose }: DocumentViewerMo
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  const handleDownload = async () => {
+    try {
+      const fetchUrl =
+        source.type === 'file'
+          ? `/api/files/${source.fileId}/download`
+          : source.url.replace(/([?&])view=1&?/, '$1').replace(/[?&]$/, '');
+      const response = await fetch(fetchUrl, { credentials: 'include' });
+      if (!response.ok) throw new Error('Download failed');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName.endsWith('.pdf') || fileName.includes('.') ? fileName : `${fileName}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      // Fallback: open raw URL
+      if (source.type === 'file') {
+        window.open(`/api/files/${source.fileId}/download`, '_blank');
+      } else {
+        window.open(source.url, '_blank');
+      }
+    }
+  };
+
+  const showImage = isImageMime(resolvedMime, fileName);
 
   return (
     <div
@@ -138,7 +168,9 @@ export function DocumentViewerModal({ source, title, onClose }: DocumentViewerMo
               Download
             </button>
             <button
-              onClick={handleDownload}
+              onClick={() => {
+                if (previewUrl) window.open(previewUrl, '_blank');
+              }}
               className="p-2 hover:bg-white/10 rounded-lg transition-colors"
               title="Open in new tab"
             >

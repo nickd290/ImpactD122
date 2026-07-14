@@ -14,6 +14,25 @@ function transformJobForPDF(job: any) {
   return prepareInvoiceJobData(job);
 }
 
+/** inline for popup viewer (?view=1), attachment for true downloads */
+function pdfDisposition(req: Request, filename: string): string {
+  const view =
+    req.query.view === '1' ||
+    req.query.view === 'true' ||
+    req.query.inline === '1' ||
+    req.query.inline === 'true';
+  const safe = String(filename).replace(/"/g, '');
+  return `${view ? 'inline' : 'attachment'}; filename="${safe}"`;
+}
+
+function sendPdf(req: Request, res: Response, buffer: Buffer, filename: string) {
+  res.contentType('application/pdf');
+  res.setHeader('Content-Disposition', pdfDisposition(req, filename));
+  res.setHeader('Content-Length', buffer.length);
+  res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+  res.send(buffer);
+}
+
 // Generate Quote PDF
 export const generateQuote = async (req: Request, res: Response) => {
   try {
@@ -55,10 +74,7 @@ export const generateQuote = async (req: Request, res: Response) => {
 
     const transformedJob = transformJobForPDF(job);
     const pdfBuffer = generateQuotePDF(transformedJob);
-
-    res.contentType('application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="Quote-${transformedJob.number}.pdf"`);
-    res.send(pdfBuffer);
+    sendPdf(req, res, pdfBuffer, `Quote-${transformedJob.number}.pdf`);
   } catch (error) {
     console.error('Generate quote error:', error);
     res.status(500).json({ error: 'Failed to generate quote' });
@@ -109,10 +125,7 @@ export const generateInvoice = async (req: Request, res: Response) => {
 
     const transformedJob = transformJobForPDF(job);
     const pdfBuffer = generateInvoicePDF(transformedJob);
-
-    res.contentType('application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="Invoice-${transformedJob.number}.pdf"`);
-    res.send(pdfBuffer);
+    sendPdf(req, res, pdfBuffer, `Invoice-${transformedJob.number}.pdf`);
   } catch (error) {
     console.error('Generate invoice error:', error);
     res.status(500).json({ error: 'Failed to generate invoice' });
@@ -166,10 +179,7 @@ export const generateVendorPO = async (req: Request, res: Response) => {
     console.log('📋 Vendor PO - Transformed lineItems:', JSON.stringify(transformedJob.lineItems, null, 2));
 
     const pdfBuffer = generateVendorPOPDF(transformedJob);
-
-    res.contentType('application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="PO-${transformedJob.number}.pdf"`);
-    res.send(pdfBuffer);
+    sendPdf(req, res, pdfBuffer, `PO-${transformedJob.number}.pdf`);
   } catch (error) {
     console.error('Generate vendor PO error:', error);
     res.status(500).json({ error: 'Failed to generate vendor PO' });
@@ -393,10 +403,7 @@ export const generatePurchaseOrderPDF = async (req: Request, res: Response) => {
     });
 
     const pdfBuffer = generatePOPDF(poData);
-
-    res.contentType('application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="PO-${poData.poNumber}.pdf"`);
-    res.send(pdfBuffer);
+    sendPdf(req, res, pdfBuffer, `PO-${poData.poNumber}.pdf`);
   } catch (error) {
     console.error('Generate PO PDF error:', error);
     res.status(500).json({ error: 'Failed to generate purchase order PDF' });
