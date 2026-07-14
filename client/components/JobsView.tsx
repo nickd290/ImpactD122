@@ -565,16 +565,21 @@ export function JobsView({
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Header — Impact editorial */}
+      <div className="flex items-end justify-between gap-4 border-b border-zinc-200/80 pb-4">
         <div>
-          <h1 className="text-xl font-medium text-zinc-900">Jobs</h1>
-          <p className="text-sm text-zinc-400 mt-0.5">
-            {tabCounts.all} total, {tabCounts.active} active, {tabCounts.archive} archived
+          <p className="text-[10px] uppercase tracking-[0.14em] text-[#C0512A] font-semibold mb-1">Production</p>
+          <h1 className="text-2xl font-semibold text-[#2B3A4A] tracking-tight">Jobs</h1>
+          <p className="text-sm text-zinc-500 mt-1">
+            <span className="font-mono tabular-nums text-[#2B3A4A]">{tabCounts.all}</span> total
+            <span className="mx-1.5 text-zinc-300">·</span>
+            <span className="font-mono tabular-nums">{tabCounts.active}</span> active
+            <span className="mx-1.5 text-zinc-300">·</span>
+            <span className="font-mono tabular-nums">{tabCounts.archive}</span> archived
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button onClick={onCreateJob} size="sm" className="bg-zinc-900 hover:bg-zinc-800">
+          <Button onClick={onCreateJob} size="sm" className="bg-[#2B3A4A] hover:bg-[#2B3A4A]/90 shadow-sm">
             <Plus className="w-4 h-4 mr-1.5" />
             New Job
           </Button>
@@ -582,9 +587,9 @@ export function JobsView({
       </div>
 
       {/* Jobs List Table */}
-      <div className="bg-white rounded-lg border border-zinc-200 overflow-visible">
+      <div className="bg-white rounded-xl border border-zinc-200 overflow-visible shadow-sm ring-1 ring-zinc-100">
         {/* Search and Sort */}
-        <div className="px-4 py-3 border-b border-zinc-200">
+        <div className="px-4 py-3 border-b border-zinc-100 bg-[#FAF9F7]/80">
           <div className="flex items-center gap-3">
             {/* Search */}
             <div className="relative flex-1">
@@ -594,7 +599,7 @@ export function JobsView({
                 placeholder="Search jobs by title, number, or customer..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-3 py-2 border border-zinc-200 rounded-lg text-sm focus:ring-1 focus:ring-zinc-400 focus:border-zinc-400"
+                className="w-full pl-10 pr-3 py-2 border border-zinc-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-[#C0512A]/25 focus:border-[#C0512A]/50"
               />
             </div>
             {/* Sort Dropdown */}
@@ -663,7 +668,7 @@ export function JobsView({
             className={cn(
               "px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors",
               quickFilter === 'all'
-                ? "bg-zinc-900 text-white"
+                ? "bg-[#2B3A4A] text-white shadow-sm"
                 : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
             )}
           >
@@ -715,14 +720,14 @@ export function JobsView({
         {/* Table */}
         <div className="overflow-x-auto">
           <table className="min-w-full">
-            <thead className="border-b border-zinc-200 bg-zinc-50">
+            <thead className="border-b border-zinc-200 bg-[#2B3A4A]">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Job #</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Title</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Customer</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Due Date</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Amount</th>
+                <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Job #</th>
+                <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Title</th>
+                <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Customer</th>
+                <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Status</th>
+                <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Due Date</th>
+                <th className="px-4 py-2.5 text-right text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Amount</th>
               </tr>
             </thead>
             <tbody>
@@ -738,21 +743,21 @@ export function JobsView({
                       setIsDrawerOpen(true);
                     }}
                     className={cn(
-                      "border-b border-zinc-100 hover:bg-zinc-50 cursor-pointer transition-colors",
+                      "border-b border-zinc-100 hover:bg-[#C0512A]/[0.04] cursor-pointer transition-colors",
                       isOverdue && "bg-red-50/50 hover:bg-red-50"
                     )}
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-zinc-900">{job.number}</span>
+                        <span className="text-sm font-mono font-semibold text-[#2B3A4A]">{job.number}</span>
                         {isNewJob(job) && (
-                          <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 text-blue-700 rounded">
+                          <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-[#C0512A]/12 text-[#C0512A] rounded border border-[#C0512A]/25">
                             NEW
                           </span>
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-zinc-600 max-w-[200px] truncate">{job.title}</td>
+                    <td className="px-4 py-3 text-sm text-zinc-700 max-w-[200px] truncate font-medium">{job.title}</td>
                     <td className="px-4 py-3 text-sm text-zinc-600">{job.customer?.name || '-'}</td>
                     <td className="px-4 py-3">
                       <StatusBadge status={job.status} />

@@ -32,16 +32,16 @@ function NavItem({ icon, label, active, onClick, badge, shortcut }: NavItemProps
     <button
       onClick={onClick}
       className={cn(
-        "group relative w-full flex items-center justify-between px-3 py-2 transition-colors",
+        "group relative w-full flex items-center justify-between px-3 py-2 rounded-lg mx-0 transition-colors",
         active
-          ? "text-zinc-900 font-medium border-l-2 border-zinc-900 -ml-px bg-zinc-50"
-          : "text-zinc-500 hover:text-zinc-900"
+          ? "text-[#2B3A4A] font-semibold bg-[#2B3A4A]/[0.06] shadow-[inset_3px_0_0_0_#C0512A]"
+          : "text-zinc-500 hover:text-[#2B3A4A] hover:bg-zinc-50"
       )}
     >
       <div className="flex items-center gap-3">
         <div className={cn(
           "transition-colors",
-          active ? "text-zinc-900" : "text-zinc-400 group-hover:text-zinc-600"
+          active ? "text-[#C0512A]" : "text-zinc-400 group-hover:text-zinc-600"
         )}>
           {React.cloneElement(icon as React.ReactElement, { className: "w-4 h-4", strokeWidth: 1.5 })}
         </div>
@@ -50,7 +50,10 @@ function NavItem({ icon, label, active, onClick, badge, shortcut }: NavItemProps
 
       <div className="flex items-center gap-2">
         {badge !== undefined && badge > 0 && (
-          <span className="text-xs tabular-nums text-zinc-400">
+          <span className={cn(
+            "text-[11px] tabular-nums font-medium px-1.5 py-0.5 rounded",
+            active ? "bg-[#C0512A]/15 text-[#C0512A]" : "text-zinc-400"
+          )}>
             {badge}
           </span>
         )}
@@ -78,22 +81,29 @@ export function Sidebar({
   onShowSearch,
 }: SidebarProps) {
   return (
-    <div className="w-60 bg-white border-r border-zinc-100 flex flex-col h-screen">
-      {/* Logo Header - Clean */}
-      <div className="px-4 py-5">
-        <h1 className="text-base font-semibold text-zinc-900">Impact Direct</h1>
-        <p className="text-xs text-zinc-400 mt-0.5">Print Brokerage</p>
+    <div className="w-60 bg-[#FAF9F7] border-r border-zinc-200/80 flex flex-col h-screen">
+      {/* Brand header — navy bar + rust accent */}
+      <div className="px-4 pt-5 pb-4 border-b border-zinc-200/80">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-md bg-[#C0512A] flex items-center justify-center shadow-sm">
+            <span className="text-white text-xs font-bold tracking-tight">ID</span>
+          </div>
+          <div>
+            <h1 className="text-[15px] font-semibold text-[#2B3A4A] leading-tight tracking-tight">Impact Direct</h1>
+            <p className="text-[10px] uppercase tracking-[0.12em] text-zinc-400 mt-0.5">Print · Mail · Ops</p>
+          </div>
+        </div>
       </div>
 
       {/* Search */}
-      <div className="px-3 pb-4">
+      <div className="px-3 py-3">
         <button
           onClick={onShowSearch}
-          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-400 hover:text-zinc-600 bg-zinc-50 rounded-md transition-colors"
+          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-500 hover:text-[#2B3A4A] bg-white border border-zinc-200 rounded-lg transition-colors shadow-sm"
         >
           <Search className="w-4 h-4" strokeWidth={1.5} />
-          <span>Search...</span>
-          <kbd className="ml-auto text-[10px] text-zinc-300">⌘K</kbd>
+          <span>Search…</span>
+          <kbd className="ml-auto text-[10px] text-zinc-400 font-mono">⌘K</kbd>
         </button>
       </div>
 
