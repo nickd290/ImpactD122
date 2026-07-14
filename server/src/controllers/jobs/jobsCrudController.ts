@@ -720,6 +720,7 @@ export const updateJob = async (req: Request, res: Response) => {
       title,
       status,
       customerPONumber,
+      partnerPONumber,
       dueDate,
       customerId,
       vendorId,
@@ -770,6 +771,8 @@ export const updateJob = async (req: Request, res: Response) => {
     if (title !== undefined) updateData.title = title;
     if (status !== undefined) updateData.status = status;
     if (customerPONumber !== undefined) updateData.customerPONumber = customerPONumber;
+    // BGE / Bradford PO — accept either field name
+    if (partnerPONumber !== undefined) updateData.partnerPONumber = partnerPONumber;
     if (bradfordRefNumber !== undefined) updateData.partnerPONumber = bradfordRefNumber;
     if (dueDate !== undefined) updateData.deliveryDate = dueDate ? new Date(dueDate) : null;
     if (mailDate !== undefined) updateData.mailDate = mailDate ? new Date(mailDate) : null;
