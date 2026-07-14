@@ -1,68 +1,17 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { prisma } from '../utils/prisma';
-import { generateQuotePDF, generateInvoicePDF, generateVendorPOPDF, generatePOPDF } from '../services/pdfService';
+import {
+  generateQuotePDF,
+  generateInvoicePDF,
+  generateVendorPOPDF,
+  generatePOPDF,
+  prepareInvoiceJobData,
+} from '../services/pdfService';
 
-// Helper to transform job to PDF-compatible format
+// Helper to transform job to PDF-compatible format (quotes / POs — lean)
 function transformJobForPDF(job: any) {
-  // Calculate revenue from sellPrice or customerTotal
-  const revenue = job.sellPrice ? Number(job.sellPrice) :
-                  job.impactCustomerTotal ? Number(job.impactCustomerTotal) :
-                  job.customerTotal ? Number(job.customerTotal) : 0;
-  const quantity = job.quantity || 0;
-  const unitPrice = quantity > 0 ? (revenue / quantity) : 0;
-
-  // Get stored lineItems from specs if available
-  const storedLineItems = job.specs?.lineItems;
-
-  return {
-    id: job.id,
-    number: job.jobNo,
-    title: job.title || '',
-    status: job.status,
-    // Combine all notes fields for vendor PO
-    notes: [job.notes, job.vendorSpecialInstructions].filter(Boolean).join('\n\n') || '',
-    quantity: quantity,
-    sizeName: job.sizeName || '',
-    customerPONumber: job.customerPONumber || '',
-    vendorPONumber: job.customerPONumber || job.jobNo, // Use as PO number
-    invoiceNumber: job.jobNo, // Use job number as invoice number
-    quoteNumber: job.jobNo,
-    dueDate: job.deliveryDate,
-    createdAt: job.createdAt,
-    // Transform Company to customer
-    customer: job.Company ? {
-      name: job.Company.name,
-      email: job.Company.email || '',
-      phone: job.Company.phone || '',
-      address: job.Company.address || '',
-      contactPerson: '',
-    } : { name: 'N/A', email: '', phone: '', address: '', contactPerson: '' },
-    // Transform Vendor - use job vendor or fallback to generic
-    vendor: job.Vendor ? {
-      name: job.Vendor.name,
-      email: job.Vendor.email || '',
-      phone: job.Vendor.phone || '',
-      address: [job.Vendor.streetAddress, job.Vendor.city, job.Vendor.state, job.Vendor.zip].filter(Boolean).join(', '),
-      contactPerson: '',
-    } : { name: 'External Vendor', email: '', phone: '', address: '', contactPerson: '' },
-    // Specs from JSON field
-    specs: job.specs || {},
-    // Use stored lineItems from specs, or create from job-level data
-    lineItems: storedLineItems || (quantity > 0 ? [{
-      description: job.title || 'Print Job',
-      quantity: quantity,
-      unitCost: 0,
-      unitPrice: unitPrice,
-    }] : []),
-    // Financials
-    financials: {
-      impactCustomerTotal: revenue,
-      jdServicesTotal: job.jdTotal ? Number(job.jdTotal) : 0,
-      bradfordPaperCost: job.bradfordTotal ? Number(job.bradfordTotal) : 0,
-      paperMarkupAmount: job.impactMargin ? Number(job.impactMargin) : 0,
-    },
-  };
+  return prepareInvoiceJobData(job);
 }
 
 // Generate Quote PDF
@@ -126,6 +75,9 @@ export const generateInvoice = async (req: Request, res: Response) => {
       include: {
         Company: true,
         Vendor: true,
+        PurchaseOrder: { include: { Vendor: true } },
+        File: true,
+        JobActivity: { orderBy: { createdAt: 'asc' }, take: 50 },
       },
     });
 

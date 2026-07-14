@@ -11,6 +11,7 @@ import {
   sendCustomerProofEmail,
   getJobEmailAddress,
 } from '../services/emailService';
+import { prepareInvoiceJobData } from '../services/pdfService';
 import { finalizeVendorPOExecutionId } from '../services/poService';
 import { checkAndAdvanceWorkflow } from './jobs/jobsHelpers';
 import sgMail from '@sendgrid/mail';
@@ -94,6 +95,9 @@ export const emailInvoice = async (req: Request, res: Response) => {
       include: {
         Company: true,
         Vendor: true,
+        PurchaseOrder: { include: { Vendor: true } },
+        File: true,
+        JobActivity: { orderBy: { createdAt: 'asc' }, take: 50 },
       },
     });
 
@@ -102,7 +106,7 @@ export const emailInvoice = async (req: Request, res: Response) => {
     }
 
     const customerName = job.Company?.name || 'Customer';
-    const jobData = transformJobForPDF(job);
+    const jobData = prepareInvoiceJobData(job);
 
     // Send the email
     const result = await sendInvoiceEmail(jobData, recipientEmail, customerName);

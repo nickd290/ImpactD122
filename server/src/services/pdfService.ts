@@ -475,7 +475,176 @@ export const generateQuotePDF = (jobData: any): Buffer => {
   return Buffer.from(doc.output('arraybuffer'));
 };
 
+/** JD job # like "26-15399" or "CUST-15399" → trailing digits only. */
+export function extractJdJobSuffix(raw?: string | null): string | null {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  const parts = s.split(/[-_/]/).filter(Boolean);
+  const last = parts[parts.length - 1] || s;
+  const m = last.match(/(\d+)\s*$/);
+  return m ? m[1] : last;
+}
+
+export function resolveBradfordPOFromJob(job: any): string | null {
+  const pos = job.PurchaseOrder || job.purchaseOrders || [];
+  const n =
+    pos.find((po: any) => po.originCompanyId === 'bradford' && po.targetCompanyId === 'jd-graphic')?.poNumber ||
+    pos.find((po: any) => po.originCompanyId === 'impact-direct' && po.targetCompanyId === 'bradford')?.poNumber ||
+    job.partnerPONumber ||
+    job.bradfordPONumber ||
+    null;
+  return n ? String(n).trim() : null;
+}
+
+/**
+ * Key milestones for invoice narrative.
+ * Artwork only if uploaded ≥2h after job create.
+ */
+export function buildInvoiceProjectTimeline(job: any): Array<{ label: string; at: Date; detail?: string }> {
+  const events: Array<{ label: string; at: Date; detail?: string }> = [];
+  const createdAt = job.createdAt ? new Date(job.createdAt) : null;
+  if (createdAt) events.push({ label: 'Job created', at: createdAt });
+
+  const files = job.File || job.files || [];
+  const firstArtwork = files
+    .filter((f: any) => f.kind === 'ARTWORK' && f.createdAt)
+    .map((f: any) => ({ ...f, createdAt: new Date(f.createdAt) }))
+    .sort((a: any, b: any) => a.createdAt - b.createdAt)[0];
+
+  if (firstArtwork?.createdAt && createdAt) {
+    const hoursLater = (firstArtwork.createdAt.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
+    if (hoursLater >= 2) {
+      events.push({
+        label: 'Artwork uploaded',
+        at: firstArtwork.createdAt,
+        detail: firstArtwork.originalName || firstArtwork.filename || undefined,
+      });
+    }
+  } else if (job.artOverrideAt && createdAt) {
+    const artAt = new Date(job.artOverrideAt);
+    if ((artAt.getTime() - createdAt.getTime()) / (1000 * 60 * 60) >= 2) {
+      events.push({ label: 'Artwork marked ready', at: artAt });
+    }
+  }
+
+  if (job.poEmailedAt) events.push({ label: 'PO sent to vendor', at: new Date(job.poEmailedAt) });
+  else if (job.poGeneratedAt) events.push({ label: 'PO generated', at: new Date(job.poGeneratedAt) });
+  if (job.proofReceivedAt) events.push({ label: 'Proof received', at: new Date(job.proofReceivedAt) });
+  if (job.proofSentToCustomerAt) events.push({ label: 'Proof sent to customer', at: new Date(job.proofSentToCustomerAt) });
+  if (job.approvedAt) {
+    events.push({ label: 'Proof approved', at: new Date(job.approvedAt), detail: job.approvedBy || undefined });
+  }
+  if (job.completedAt) {
+    events.push({ label: 'Job completed', at: new Date(job.completedAt) });
+  } else if (job.workflowStatus === 'COMPLETED' || job.status === 'PAID' || job.status === 'COMPLETED') {
+    const doneAt = job.workflowUpdatedAt || job.updatedAt;
+    if (doneAt) events.push({ label: 'Job completed', at: new Date(doneAt) });
+  }
+  if (job.customerPaymentDate) {
+    events.push({ label: 'Customer payment received', at: new Date(job.customerPaymentDate) });
+  }
+  if (job.invoiceEmailedAt) {
+    events.push({ label: 'Invoice emailed', at: new Date(job.invoiceEmailedAt) });
+  }
+
+  const byLabel = new Map<string, { label: string; at: Date; detail?: string }>();
+  for (const e of events.sort((a, b) => a.at.getTime() - b.at.getTime())) {
+    if (!byLabel.has(e.label)) byLabel.set(e.label, e);
+  }
+  return Array.from(byLabel.values());
+}
+
+/** Normalize any job record (prisma include shape) for generateInvoicePDF. */
+export function prepareInvoiceJobData(job: any): any {
+  const revenue = job.sellPrice
+    ? Number(job.sellPrice)
+    : job.impactCustomerTotal
+      ? Number(job.impactCustomerTotal)
+      : job.customerTotal
+        ? Number(job.customerTotal)
+        : 0;
+  const quantity = job.quantity || 0;
+  const unitPrice = quantity > 0 ? revenue / quantity : 0;
+  const storedLineItems = job.specs?.lineItems || job.lineItems;
+  const bradfordPO = resolveBradfordPOFromJob(job);
+  const jdJobRaw = job.customerJobNumber || job.externalJobId || job.mailingVendorJobNo || job.jdJobNumberRaw || null;
+  const jdJobSuffix = extractJdJobSuffix(jdJobRaw);
+
+  return {
+    id: job.id,
+    number: job.jobNo || job.number,
+    jobNo: job.jobNo || job.number,
+    title: job.title || '',
+    status: job.status,
+    workflowStatus: job.workflowStatus,
+    paperSource: job.paperSource,
+    sizeName: job.sizeName || '',
+    notes: [job.notes, job.vendorSpecialInstructions].filter(Boolean).join('\n\n') || '',
+    quantity,
+    sellPrice: revenue,
+    customerPONumber: job.customerPONumber || '',
+    invoiceNumber: job.invoiceNumber || job.jobNo || job.number,
+    dueDate: job.deliveryDate || job.dueDate,
+    mailDate: job.mailDate,
+    inHomesDate: job.inHomesDate,
+    createdAt: job.createdAt,
+    completedAt: job.completedAt,
+    partnerPONumber: bradfordPO,
+    bradfordPONumber: bradfordPO,
+    ccid: bradfordPO,
+    jdJobNumberRaw: jdJobRaw,
+    jdJobNumber: jdJobSuffix,
+    customerJobNumber: job.customerJobNumber || null,
+    timeline: job.timeline || buildInvoiceProjectTimeline(job),
+    purchaseOrders: job.purchaseOrders || job.PurchaseOrder || [],
+    customer: job.customer || (job.Company
+      ? {
+          name: job.Company.name,
+          email: job.Company.email || '',
+          phone: job.Company.phone || '',
+          address: job.Company.address || '',
+          contactPerson: '',
+        }
+      : { name: 'N/A', email: '', phone: '', address: '', contactPerson: '' }),
+    vendor: job.vendor || (job.Vendor
+      ? {
+          name: job.Vendor.name,
+          email: job.Vendor.email || '',
+          phone: job.Vendor.phone || '',
+          address: [job.Vendor.streetAddress, job.Vendor.city, job.Vendor.state, job.Vendor.zip]
+            .filter(Boolean)
+            .join(', '),
+          contactPerson: '',
+        }
+      : { name: 'External Vendor', email: '', phone: '', address: '', contactPerson: '' }),
+    specs: job.specs || {},
+    lineItems:
+      storedLineItems ||
+      (quantity > 0
+        ? [
+            {
+              description: job.title || 'Print Job',
+              quantity,
+              unitCost: 0,
+              unitPrice,
+            },
+          ]
+        : []),
+    financials: {
+      impactCustomerTotal: revenue,
+      jdServicesTotal: job.jdTotal ? Number(job.jdTotal) : 0,
+      bradfordPaperCost: job.bradfordTotal ? Number(job.bradfordTotal) : 0,
+      paperMarkupAmount: job.impactMargin ? Number(job.impactMargin) : 0,
+    },
+  };
+}
+
 export const generateInvoicePDF = (jobData: any): Buffer => {
+  // Accept raw prisma job or already-transformed payload
+  if (jobData && !jobData.timeline && (jobData.Company || jobData.File || jobData.createdAt)) {
+    jobData = prepareInvoiceJobData(jobData);
+  }
   const doc = new jsPDF();
   const pageW = doc.internal.pageSize.width;
   const pageH = doc.internal.pageSize.height;
@@ -525,7 +694,42 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
   doc.setLineWidth(0.3);
   doc.line(left, y + 1.6, right, y + 1.6);
 
-  y += 10;
+  y += 8;
+
+  // ===== JOB IDENTITY LINE =====
+  // Job # · CCID (Bradford PO) · JD Job # (trailing digits only)
+  const jobNo = jobData.jobNo || jobData.number || '—';
+  const ccid = jobData.ccid || jobData.bradfordPONumber || jobData.partnerPONumber || null;
+  const jdJob =
+    jobData.jdJobNumber ||
+    (jobData.jdJobNumberRaw
+      ? String(jobData.jdJobNumberRaw).split(/[-_/]/).filter(Boolean).pop()
+      : null);
+
+  doc.setFillColor(43, 58, 74); // navy
+  doc.roundedRect(left, y, contentW, 14, 1.2, 1.2, 'F');
+  doc.setFillColor(BRAND_RUST);
+  doc.rect(left, y, 2.4, 14, 'F');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(255, 255, 255);
+  const idParts: string[] = [`Job ${jobNo}`];
+  if (ccid) idParts.push(`CCID ${ccid}`);
+  if (jdJob) idParts.push(`JD #${jdJob}`);
+  doc.text(idParts.join('   ·   '), left + 6, y + 9);
+
+  // Legend under bar
+  y += 18;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(BRAND_GRAY);
+  doc.text(
+    'CCID = Costing Center ID (Bradford PO #)   ·   JD # = trailing digits of JD production job number',
+    left,
+    y
+  );
+  y += 6;
 
   // Bill to + project (two columns)
   const colGap = 8;
@@ -557,28 +761,24 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
   billLines.forEach((line, i) => doc.text(String(line), left, y + i * 4.2));
 
   const metaLines = [
-    `Job  ${jobData.jobNo || '—'}`,
-    jobData.customerPONumber ? `PO   ${jobData.customerPONumber}` : null,
+    jobData.customerPONumber ? `Customer PO  ${jobData.customerPONumber}` : null,
     jobData.quantity ? `Qty  ${Number(jobData.quantity).toLocaleString()}` : null,
+    jobData.sizeName || jobData.specs?.finishedSize
+      ? `Size  ${jobData.sizeName || jobData.specs?.finishedSize}`
+      : null,
+    jobData.paperSource ? `Paper  ${jobData.paperSource === 'VENDOR' ? 'JD' : jobData.paperSource}` : null,
+    jobData.mailDate
+      ? `Mail  ${new Date(jobData.mailDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+      : null,
+    jobData.dueDate || jobData.deliveryDate
+      ? `Due  ${new Date(jobData.dueDate || jobData.deliveryDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+      : null,
   ].filter(Boolean) as string[];
   metaLines.forEach((line, i) =>
     doc.text(line, left + colW + colGap, y + i * 4.2)
   );
 
-  y += Math.max(billLines.length, metaLines.length) * 4.2 + 8;
-
-  // Customer PO callout (if present) — subtle navy, not blue candy
-  if (jobData.customerPONumber) {
-    doc.setFillColor(43, 58, 74); // navy
-    doc.roundedRect(left, y, contentW, 11, 1.2, 1.2, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.setTextColor(255, 255, 255);
-    doc.text('CUSTOMER PO', left + 4, y + 7);
-    doc.setFontSize(11);
-    doc.text(String(jobData.customerPONumber), left + 36, y + 7.2);
-    y += 16;
-  }
+  y += Math.max(billLines.length || 1, metaLines.length || 1) * 4.2 + 8;
 
   // Specs
   const specs = jobData.specs || {};
@@ -597,6 +797,11 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
   if (specs.coating) specsData.push(['Coating', specs.coating]);
   if (specs.finishing) specsData.push(['Finishing', specs.finishing]);
   if (specs.bindingStyle) specsData.push(['Binding', specs.bindingStyle]);
+  if (ccid) specsData.push(['CCID / Bradford PO', String(ccid)]);
+  if (jdJob) specsData.push(['JD job #', String(jdJob)]);
+  if (jobData.jdJobNumberRaw && jobData.jdJobNumberRaw !== jdJob) {
+    specsData.push(['JD job (full)', String(jobData.jdJobNumberRaw)]);
+  }
 
   if (specsData.length > 0) {
     doc.setFont('helvetica', 'bold');
@@ -614,12 +819,63 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
         textColor: BRAND_NAVY,
       },
       columnStyles: {
-        0: { fontStyle: 'bold', cellWidth: 28, textColor: BRAND_GRAY },
-        1: { cellWidth: contentW - 28 },
+        0: { fontStyle: 'bold', cellWidth: 36, textColor: BRAND_GRAY },
+        1: { cellWidth: contentW - 36 },
       },
       margin: { left, right: 18 },
     });
-    y = (doc as any).lastAutoTable.finalY + 8;
+    y = (doc as any).lastAutoTable.finalY + 7;
+  }
+
+  // Project timeline — key activity that paints the job story
+  const timeline: Array<{ label: string; at: Date | string; detail?: string }> =
+    Array.isArray(jobData.timeline) ? jobData.timeline : [];
+
+  if (timeline.length > 0) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(BRAND_RUST);
+    doc.text('PROJECT TIMELINE', left, y);
+    y += 3;
+
+    const fmt = (d: Date | string) =>
+      new Date(d).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      });
+
+    const timelineRows = timeline.map((e) => [
+      fmt(e.at),
+      e.label,
+      e.detail ? String(e.detail).slice(0, 48) : '',
+    ]);
+
+    autoTable(doc, {
+      startY: y,
+      head: [['Date', 'Milestone', 'Notes']],
+      body: timelineRows,
+      theme: 'plain',
+      headStyles: {
+        fillColor: [250, 249, 247],
+        textColor: BRAND_NAVY,
+        fontSize: 7.5,
+        fontStyle: 'bold',
+        cellPadding: { top: 2.2, bottom: 2.2, left: 2, right: 2 },
+      },
+      bodyStyles: {
+        fontSize: 8,
+        textColor: BRAND_BLACK,
+        cellPadding: { top: 2, bottom: 2, left: 2, right: 2 },
+      },
+      columnStyles: {
+        0: { cellWidth: 28, fontStyle: 'bold', textColor: BRAND_GRAY },
+        1: { cellWidth: 55, fontStyle: 'bold', textColor: BRAND_NAVY },
+        2: { cellWidth: contentW - 83 },
+      },
+      margin: { left, right: 18 },
+    });
+    y = (doc as any).lastAutoTable.finalY + 7;
   }
 
   // Line items
