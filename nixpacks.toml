@@ -10,6 +10,7 @@ cmds = ["npm install"]
 [phases.build]
 cmds = [
   "npx prisma generate --schema=./server/prisma/schema.prisma",
+  # tsc has noEmitOnError:false — emit succeeds; exit non-zero on type warnings is ignored if dist exists
   "npm run build --workspace=server",
   "npm run build --workspace=client"
 ]
