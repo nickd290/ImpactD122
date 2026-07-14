@@ -179,6 +179,37 @@ export const createJobPO = async (req: Request, res: Response) => {
           Vendor: true,
         },
       });
+    } else if (poType === 'impact-bradford') {
+      // ===================================================================
+      // Impact → Bradford (paper + mfg outlay, counts as Impact cost)
+      // NO executionId — partner routing, not external vendor send
+      // ===================================================================
+      const timestamp = Date.now();
+      const random = Math.random().toString(36).substring(2, 6);
+      const poNumber = `PO-IB-${timestamp}-${random}`;
+
+      po = await prisma.purchaseOrder.create({
+        data: {
+          id: crypto.randomUUID(),
+          poNumber,
+          jobId,
+          originCompanyId: COMPANY_IDS.IMPACT_DIRECT,
+          targetCompanyId: COMPANY_IDS.BRADFORD,
+          description: description || 'Impact → Bradford',
+          buyCost: buyCost || 0,
+          paperCost: paperCost || null,
+          paperMarkup: paperMarkup || null,
+          mfgCost: mfgCost || null,
+          printCPM: printCPM || null,
+          paperCPM: paperCPM || null,
+          vendorRef: vendorRef || null,
+          status: status || 'PENDING',
+          updatedAt: new Date(),
+        },
+        include: {
+          Vendor: true,
+        },
+      });
     } else {
       // ===================================================================
       // P2/P3: Impact → Vendor (counts as our cost)

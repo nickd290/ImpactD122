@@ -19,6 +19,7 @@ import { WorkflowStatusBadge, getNextWorkflowStatuses, WORKFLOW_STAGES, getStage
 import { DocumentViewerModal, type DocumentSource } from './DocumentViewerModal';
 import { JobReadinessCard } from './job-form/JobReadinessCard';
 import { BlockingIssueCard } from './job-detail/BlockingIssueCard';
+import { VendorCostEntry } from './job-detail/VendorCostEntry';
 
 // Pathway badge styling - uses design system colors
 const PATHWAY_STYLES = {
@@ -3592,6 +3593,17 @@ export function JobDetailModal({
             )}
             {activeTab === 'financials' && job && (
               <div className="space-y-6">
+                {/* Click Bradford / JD → enter costs + Third Party Calculator */}
+                <VendorCostEntry
+                  jobId={job.id}
+                  quantity={job.quantity || job.specs?.quantity || 0}
+                  sellPrice={Number(job.sellPrice) || 0}
+                  sizeName={job.sizeName || job.specs?.finishedSize || job.specs?.flatSize}
+                  paperSource={(job as any).paperSource}
+                  purchaseOrders={job.purchaseOrders as any}
+                  onSaved={onRefresh}
+                />
+
                 {/* Financial Summary (primary source of truth) */}
                 <FinancialsTab job={job} onRefresh={onRefresh} />
 
