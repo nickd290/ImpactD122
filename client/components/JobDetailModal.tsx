@@ -731,14 +731,13 @@ export function JobDetailModal({
   const customerPayment = job.customerPaymentAmount || 0;
   const paymentMismatch = customerPayment > 0 && sellPrice > 0 && Math.abs(customerPayment - sellPrice) > 0.01;
 
-  // Calculate selected line items total for smart PO
-  const selectedTotal = useMemo(() => {
-    if (!job.lineItems) return 0;
-    return Array.from(selectedLineItems).reduce((sum, idx) => {
-      const item = job.lineItems![idx];
-      return sum + ((Number(item.unitCost) || 0) * (Number(item.quantity) || 0));
-    }, 0);
-  }, [selectedLineItems, job.lineItems]);
+  // Calculate selected line items total for smart PO (plain calc — no hook after early return)
+  const selectedTotal = !job.lineItems
+    ? 0
+    : Array.from(selectedLineItems).reduce((sum, idx) => {
+        const item = job.lineItems![idx];
+        return sum + ((Number(item.unitCost) || 0) * (Number(item.quantity) || 0));
+      }, 0);
 
   // Toggle line item selection
   const toggleLineItem = (index: number) => {
