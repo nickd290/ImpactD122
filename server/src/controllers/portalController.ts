@@ -44,6 +44,7 @@ export const getOrCreatePortal = async (req: Request, res: Response) => {
 
     const portal = await prisma.jobPortal.create({
       data: {
+        id: crypto.randomUUID(),
         jobId,
         shareToken,
         expiresAt,

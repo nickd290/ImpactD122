@@ -8,6 +8,8 @@
 import { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
 import crypto from 'crypto';
+import path from 'path';
+import fs from 'fs';
 import PDFDocument from 'pdfkit';
 
 /**
@@ -215,7 +217,7 @@ export async function generateProofSheet(req: Request, res: Response) {
 export async function createApprovalLink(req: Request, res: Response) {
   try {
     const { id } = req.params;
-    const { expirationDays = 14 } = req.body;
+    const { expirationDays = 14, recipientEmail, message, proofId } = req.body;
 
     const job = await prisma.job.findUnique({
       where: { id },
@@ -228,19 +230,24 @@ export async function createApprovalLink(req: Request, res: Response) {
       return res.status(404).json({ error: 'Job not found' });
     }
 
-    // Generate unique token
+    // Generate unique token (regenerating invalidates any previously sent link)
     const approvalToken = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + expirationDays);
 
-    // Check if proof record exists for this job
-    let proof = await prisma.proof.findFirst({
-      where: { jobId: id },
-      orderBy: { version: 'desc' },
-    });
+    // Target a specific proof if given, otherwise the latest (or create v1)
+    let proof = proofId
+      ? await prisma.proof.findUnique({ where: { id: proofId } })
+      : await prisma.proof.findFirst({
+          where: { jobId: id },
+          orderBy: { version: 'desc' },
+        });
+
+    if (proof && proof.jobId !== id) {
+      return res.status(400).json({ error: 'Proof does not belong to this job' });
+    }
 
     if (proof) {
-      // Update existing proof with new share token
       proof = await prisma.proof.update({
         where: { id: proof.id },
         data: {
@@ -249,7 +256,6 @@ export async function createApprovalLink(req: Request, res: Response) {
         },
       });
     } else {
-      // Create new proof record
       proof = await prisma.proof.create({
         data: {
           id: crypto.randomUUID(),
@@ -258,6 +264,7 @@ export async function createApprovalLink(req: Request, res: Response) {
           status: 'PENDING',
           shareToken: approvalToken,
           shareExpiresAt: expiresAt,
+          updatedAt: new Date(),
         },
       });
     }
@@ -266,15 +273,48 @@ export async function createApprovalLink(req: Request, res: Response) {
     const baseUrl = process.env.APP_URL || 'https://impactd122-server-production.up.railway.app';
     const approvalUrl = `${baseUrl}/approve/${approvalToken}`;
 
+    // Optionally email the review link to the customer
+    let emailedTo: string | null = null;
+    if (recipientEmail) {
+      const { sendProofReviewLinkEmail } = await import('../services/emailService');
+      const emailResult = await sendProofReviewLinkEmail(
+        { jobNo: job.jobNo, title: job.title, customerName: job.Company?.name || null },
+        recipientEmail,
+        approvalUrl,
+        message
+      );
+      if (!emailResult.success) {
+        return res.status(500).json({
+          success: false,
+          error: emailResult.error || 'Link created but email failed',
+          approvalUrl,
+          expiresAt,
+          proofId: proof.id,
+        });
+      }
+      emailedTo = recipientEmail;
+      await prisma.proof.update({
+        where: { id: proof.id },
+        data: { sentToCustomerAt: new Date(), sentToEmail: recipientEmail },
+      });
+      await prisma.job.update({
+        where: { id },
+        data: {
+          workflowStatus: 'AWAITING_CUSTOMER_RESPONSE',
+          workflowUpdatedAt: new Date(),
+        },
+      });
+    }
+
     // Log activity
     await prisma.jobActivity.create({
       data: {
         id: crypto.randomUUID(),
         jobId: id,
-        action: 'APPROVAL_LINK_CREATED',
+        action: emailedTo ? 'PROOF_SENT_TO_CUSTOMER' : 'APPROVAL_LINK_CREATED',
         field: 'approvalLink',
         oldValue: null,
-        newValue: `Expires ${expiresAt.toLocaleDateString()}`,
+        newValue: `${emailedTo ? `Sent to ${emailedTo}. ` : ''}Expires ${expiresAt.toLocaleDateString()}`,
         changedBy: 'admin',
         changedByRole: 'BROKER_ADMIN',
       },
@@ -285,6 +325,7 @@ export async function createApprovalLink(req: Request, res: Response) {
       approvalUrl,
       expiresAt,
       proofId: proof.id,
+      emailedTo,
     });
 
   } catch (error) {
@@ -304,6 +345,8 @@ export async function getApprovalPage(req: Request, res: Response) {
     const proof = await prisma.proof.findFirst({
       where: { shareToken: token },
       include: {
+        File: true,
+        ProofComment: { orderBy: { createdAt: 'asc' } },
         Job: {
           include: {
             Company: true,
@@ -328,6 +371,22 @@ export async function getApprovalPage(req: Request, res: Response) {
 
     const job = proof.Job;
     const specs = (job.specs as any) || {};
+
+    // Full version history for the rail
+    const versions = await prisma.proof.findMany({
+      where: { jobId: job.id },
+      orderBy: { version: 'asc' },
+      select: {
+        id: true,
+        version: true,
+        status: true,
+        proofUrl: true,
+        createdAt: true,
+        approvedAt: true,
+        approvedByName: true,
+        fileId: true,
+      },
+    });
 
     res.json({
       job: {
@@ -356,9 +415,22 @@ export async function getApprovalPage(req: Request, res: Response) {
         id: proof.id,
         status: proof.status,
         version: proof.version,
+        proofUrl: proof.proofUrl,
+        file: proof.File
+          ? { id: proof.File.id, name: proof.File.fileName, type: proof.File.mimeType }
+          : null,
         approvedAt: proof.approvedAt,
         approvedBy: proof.approvedByName,
+        approvalComments: proof.approvalComments,
       },
+      versions,
+      comments: proof.ProofComment.map((c) => ({
+        id: c.id,
+        authorName: c.authorName,
+        authorRole: c.authorRole,
+        body: c.body,
+        createdAt: c.createdAt,
+      })),
     });
 
   } catch (error) {
@@ -376,7 +448,7 @@ export async function submitApproval(req: Request, res: Response) {
     const { token } = req.params;
     const { status, name, email, comments } = req.body;
 
-    if (!status || !['APPROVED', 'CHANGES_REQUESTED', 'REJECTED'].includes(status)) {
+    if (!status || !['APPROVED', 'CHANGES_REQUESTED'].includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
 
@@ -384,10 +456,14 @@ export async function submitApproval(req: Request, res: Response) {
       return res.status(400).json({ error: 'Name and email are required' });
     }
 
+    if (status === 'CHANGES_REQUESTED' && !comments) {
+      return res.status(400).json({ error: 'Please describe the changes you need' });
+    }
+
     const proof = await prisma.proof.findFirst({
       where: { shareToken: token },
       include: {
-        Job: true,
+        Job: { include: { Vendor: true, JobPortal: true } },
       },
     });
 
@@ -397,6 +473,14 @@ export async function submitApproval(req: Request, res: Response) {
 
     if (proof.shareExpiresAt && proof.shareExpiresAt < new Date()) {
       return res.status(410).json({ error: 'Approval link has expired' });
+    }
+
+    // Reject re-decisions — a decided proof stays decided
+    if (proof.status !== 'PENDING') {
+      return res.status(409).json({
+        error: `This proof has already been ${proof.status === 'APPROVED' ? 'approved' : 'responded to'}.`,
+        status: proof.status,
+      });
     }
 
     // Update proof status
@@ -411,16 +495,25 @@ export async function submitApproval(req: Request, res: Response) {
       },
     });
 
-    // If approved, advance workflow to IN_PRODUCTION
-    if (status === 'APPROVED') {
-      await prisma.job.update({
-        where: { id: proof.jobId },
-        data: {
-          workflowStatus: 'IN_PRODUCTION',
-          workflowUpdatedAt: new Date(),
-        },
-      });
-    }
+    // Audit-trail row (parity with proofController.approveProof)
+    await prisma.proofApproval.create({
+      data: {
+        id: crypto.randomUUID(),
+        proofId: proof.id,
+        approved: status === 'APPROVED',
+        comments: comments || null,
+        approvedBy: `${name} (${email})`,
+      },
+    });
+
+    // Workflow transitions — approval means "vendor may proceed", NOT in production
+    await prisma.job.update({
+      where: { id: proof.jobId },
+      data: {
+        workflowStatus: status === 'APPROVED' ? 'APPROVED_PENDING_VENDOR' : 'AWAITING_PROOF_FROM_VENDOR',
+        workflowUpdatedAt: new Date(),
+      },
+    });
 
     // Log activity
     await prisma.jobActivity.create({
@@ -436,6 +529,29 @@ export async function submitApproval(req: Request, res: Response) {
       },
     });
 
+    // Notifications: internal + vendor (fire-and-forget — decision is already saved)
+    try {
+      const { sendProofDecisionNotifications } = await import('../services/emailService');
+      await sendProofDecisionNotifications(
+        {
+          jobNo: proof.Job.jobNo,
+          title: proof.Job.title,
+          vendorName: proof.Job.Vendor?.name || null,
+          vendorEmail: proof.Job.Vendor?.email || null,
+          vendorPortalToken: proof.Job.JobPortal?.shareToken || null,
+        },
+        {
+          decision: status as 'APPROVED' | 'CHANGES_REQUESTED',
+          version: proof.version,
+          reviewerName: name,
+          reviewerEmail: email,
+          comments: comments || null,
+        }
+      );
+    } catch (notifyError) {
+      console.error('Proof decision notification failed (decision saved):', notifyError);
+    }
+
     res.json({
       success: true,
       status: updatedProof.status,
@@ -445,5 +561,110 @@ export async function submitApproval(req: Request, res: Response) {
   } catch (error) {
     console.error('Error submitting approval:', error);
     res.status(500).json({ error: 'Failed to submit approval' });
+  }
+}
+
+/**
+ * GET /api/approve/:token/files/:fileId
+ * Token-scoped inline file serving so the review page can embed the proof.
+ * Restricted to PROOF / VENDOR_PROOF files belonging to the proof's job.
+ */
+export async function getApprovalFile(req: Request, res: Response) {
+  try {
+    const { token, fileId } = req.params;
+
+    const proof = await prisma.proof.findFirst({
+      where: { shareToken: token },
+      select: { jobId: true, shareExpiresAt: true },
+    });
+
+    if (!proof) {
+      return res.status(404).json({ error: 'Approval link not found' });
+    }
+    if (proof.shareExpiresAt && proof.shareExpiresAt < new Date()) {
+      return res.status(410).json({ error: 'Approval link has expired' });
+    }
+
+    const file = await prisma.file.findUnique({ where: { id: fileId } });
+    if (!file || file.jobId !== proof.jobId || !['PROOF', 'VENDOR_PROOF'].includes(file.kind)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    const filePath = path.join(__dirname, '../../uploads/', file.objectKey);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'File no longer available' });
+    }
+
+    res.setHeader('Content-Type', file.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${file.fileName}"`);
+    fs.createReadStream(filePath).pipe(res);
+  } catch (error) {
+    console.error('Error serving approval file:', error);
+    res.status(500).json({ error: 'Failed to serve file' });
+  }
+}
+
+/**
+ * POST /api/approve/:token/comments
+ * Customer adds a comment to the proof thread.
+ */
+export async function addApprovalComment(req: Request, res: Response) {
+  try {
+    const { token } = req.params;
+    const { name, email, body } = req.body;
+
+    if (!name || !body) {
+      return res.status(400).json({ error: 'Name and comment are required' });
+    }
+
+    const proof = await prisma.proof.findFirst({
+      where: { shareToken: token },
+      include: { Job: true },
+    });
+
+    if (!proof) {
+      return res.status(404).json({ error: 'Approval link not found' });
+    }
+    if (proof.shareExpiresAt && proof.shareExpiresAt < new Date()) {
+      return res.status(410).json({ error: 'Approval link has expired' });
+    }
+
+    const comment = await prisma.proofComment.create({
+      data: {
+        id: crypto.randomUUID(),
+        proofId: proof.id,
+        authorName: name,
+        authorEmail: email || null,
+        authorRole: 'CUSTOMER',
+        body,
+      },
+    });
+
+    await prisma.jobActivity.create({
+      data: {
+        id: crypto.randomUUID(),
+        jobId: proof.jobId,
+        action: 'PROOF_COMMENT_ADDED',
+        field: 'proofComment',
+        oldValue: null,
+        newValue: `${name}: ${body.slice(0, 200)}`,
+        changedBy: email || name,
+        changedByRole: 'CUSTOMER',
+      },
+    });
+
+    res.status(201).json({
+      success: true,
+      comment: {
+        id: comment.id,
+        authorName: comment.authorName,
+        authorRole: comment.authorRole,
+        body: comment.body,
+        createdAt: comment.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error('Error adding approval comment:', error);
+    res.status(500).json({ error: 'Failed to add comment' });
   }
 }

@@ -172,6 +172,20 @@ export async function getVendorPortal(req: Request, res: Response) {
       ? await prisma.purchaseOrder.findUnique({ where: { id: portal.purchaseOrderId } })
       : null;
 
+    // Latest proof + customer decision, so the vendor sees approve/changes status
+    const latestProof = await prisma.proof.findFirst({
+      where: { jobId: portal.jobId },
+      orderBy: { version: 'desc' },
+      select: {
+        version: true,
+        status: true,
+        proofUrl: true,
+        approvalComments: true,
+        approvedByName: true,
+        approvedAt: true,
+      },
+    });
+
     const job = portal.Job;
     const specs = (job.specs as any) || {};
 
@@ -231,6 +245,7 @@ export async function getVendorPortal(req: Request, res: Response) {
           }
         : null,
       files,
+      latestProof,
       portal: {
         confirmedAt: portal.confirmedAt,
         confirmedByName: portal.confirmedByName,
@@ -543,6 +558,25 @@ export async function uploadVendorProofs(req: Request, res: Response) {
       })
     );
 
+    // Create a Proof record for this upload batch so the admin proof UI
+    // and the customer review flow can see vendor-submitted proofs
+    const latestProof = await prisma.proof.findFirst({
+      where: { jobId: portal.jobId },
+      orderBy: { version: 'desc' },
+      select: { version: true },
+    });
+    const proof = await prisma.proof.create({
+      data: {
+        id: crypto.randomUUID(),
+        jobId: portal.jobId,
+        version: (latestProof?.version ?? 0) + 1,
+        status: 'PENDING',
+        fileId: createdFiles[0].id,
+        submittedBy: 'vendor',
+        updatedAt: new Date(),
+      },
+    });
+
     // Log activity
     await prisma.jobActivity.create({
       data: {
@@ -595,6 +629,7 @@ export async function uploadVendorProofs(req: Request, res: Response) {
 
     res.json({
       success: true,
+      proof: { id: proof.id, version: proof.version, status: proof.status },
       files: createdFiles.map((f) => ({
         id: f.id,
         name: f.fileName,
@@ -604,6 +639,114 @@ export async function uploadVendorProofs(req: Request, res: Response) {
   } catch (error) {
     console.error('Upload vendor proofs error:', error);
     res.status(500).json({ error: 'Failed to upload proofs' });
+  }
+}
+
+/**
+ * POST /api/portal/:token/proof-link
+ * Vendor submits a hosted proof as a URL instead of a file upload
+ */
+export async function submitVendorProofLink(req: Request, res: Response) {
+  try {
+    const { token } = req.params;
+    const { url, note } = req.body as { url?: string; note?: string };
+
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'Proof URL is required' });
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return res.status(400).json({ error: 'Invalid URL' });
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return res.status(400).json({ error: 'URL must be http(s)' });
+    }
+
+    const portal = await prisma.jobPortal.findUnique({
+      where: { shareToken: token },
+      include: {
+        Job: { include: { Vendor: true } },
+      },
+    });
+
+    if (!portal) {
+      return res.status(404).json({ error: 'Portal not found' });
+    }
+    if (portal.expiresAt < new Date()) {
+      return res.status(410).json({ error: 'Portal link has expired' });
+    }
+
+    const latestProof = await prisma.proof.findFirst({
+      where: { jobId: portal.jobId },
+      orderBy: { version: 'desc' },
+      select: { version: true },
+    });
+    const proof = await prisma.proof.create({
+      data: {
+        id: crypto.randomUUID(),
+        jobId: portal.jobId,
+        version: (latestProof?.version ?? 0) + 1,
+        status: 'PENDING',
+        proofUrl: url,
+        adminNotes: note || null,
+        submittedBy: 'vendor',
+        updatedAt: new Date(),
+      },
+    });
+
+    await prisma.jobActivity.create({
+      data: {
+        id: crypto.randomUUID(),
+        jobId: portal.jobId,
+        action: 'VENDOR_PROOF_LINK_SUBMITTED',
+        field: 'proofUrl',
+        oldValue: null,
+        newValue: url,
+        changedBy: 'vendor',
+        changedByRole: 'CUSTOMER',
+      },
+    });
+
+    await prisma.job.update({
+      where: { id: portal.jobId },
+      data: {
+        workflowStatus: 'PROOF_RECEIVED',
+        workflowUpdatedAt: new Date(),
+      },
+    });
+
+    const vendorName = portal.Job.Vendor?.name || 'Vendor';
+    await sendInternalNotification(
+      portal.Job.jobNo,
+      `[Job #${portal.Job.jobNo}] Vendor Proof Link Submitted - ${vendorName}`,
+      `
+        <div style="font-family: Arial, sans-serif;">
+          <h2 style="color: #8B5CF6;">New Vendor Proof Link</h2>
+          <p><strong>Job:</strong> #${portal.Job.jobNo}</p>
+          <p><strong>Vendor:</strong> ${vendorName}</p>
+          <p><strong>Proof Link:</strong> <a href="${url}">${url}</a></p>
+          ${note ? `<p><strong>Note:</strong> ${note}</p>` : ''}
+          <p><strong>Submitted At:</strong> ${new Date().toLocaleString()}</p>
+        </div>
+      `
+    );
+
+    await sendProofReceivedNotification(
+      portal.Job.jobNo,
+      portal.Job.title || '',
+      vendorName,
+      [url]
+    );
+
+    res.json({
+      success: true,
+      proof: { id: proof.id, version: proof.version, status: proof.status, proofUrl: url },
+    });
+  } catch (error) {
+    console.error('Submit vendor proof link error:', error);
+    res.status(500).json({ error: 'Failed to submit proof link' });
   }
 }
 
@@ -809,6 +952,7 @@ export async function createOrUpdateJobPortal(
     // Create new portal
     await prisma.jobPortal.create({
       data: {
+        id: crypto.randomUUID(),
         jobId,
         purchaseOrderId: purchaseOrderId || null,
         shareToken,
