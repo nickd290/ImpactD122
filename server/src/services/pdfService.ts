@@ -795,17 +795,17 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
   const doc = new jsPDF();
   const pageW = doc.internal.pageSize.width;
   const pageH = doc.internal.pageSize.height;
-  const left = 14;
-  const right = pageW - 14;
+  const left = 16;
+  const right = pageW - 16;
   const contentW = right - left;
-  // Hard one-page: reserve bottom for total + footer
-  const maxContentY = pageH - 40;
+  // Footer band reserves space for total + contact
+  const footerTop = pageH - 52;
 
   doc.setFillColor(BRAND_NAVY);
-  doc.rect(0, 0, pageW, 3.5, 'F');
+  doc.rect(0, 0, pageW, 4, 'F');
 
-  let y = 10;
-  drawLogo(doc, left, y, 12);
+  let y = 12;
+  drawLogo(doc, left, y, 14);
 
   const invNo = jobData.invoiceNumber || jobData.jobNo || '—';
   const invDate = new Date().toLocaleDateString('en-US', {
@@ -822,21 +822,21 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
   });
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
+  doc.setFontSize(20);
   doc.setTextColor(BRAND_NAVY);
-  doc.text('INVOICE', right, y + 5, { align: 'right' });
+  doc.text('INVOICE', right, y + 6, { align: 'right' });
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
+  doc.setFontSize(8.5);
   doc.setTextColor(BRAND_GRAY);
-  doc.text(`No. ${invNo}`, right, y + 10.5, { align: 'right' });
-  doc.text(`Date  ${invDate}`, right, y + 14.5, { align: 'right' });
-  doc.text(`Due    ${dueStr}  ·  Net 30`, right, y + 18.5, { align: 'right' });
+  doc.text(`No. ${invNo}`, right, y + 13, { align: 'right' });
+  doc.text(`Date  ${invDate}`, right, y + 18, { align: 'right' });
+  doc.text(`Due    ${dueStr}  ·  Net 30`, right, y + 23, { align: 'right' });
 
-  y = 32;
+  y = 38;
   doc.setDrawColor(BRAND_RUST);
-  doc.setLineWidth(1);
+  doc.setLineWidth(1.4);
   doc.line(left, y, right, y);
-  y += 5;
+  y += 7;
 
   const jobNo = jobData.jobNo || jobData.number || '—';
   const ccid = jobData.ccid || jobData.bradfordPONumber || jobData.partnerPONumber || null;
@@ -847,97 +847,94 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
       : null);
 
   doc.setFillColor(43, 58, 74);
-  doc.roundedRect(left, y, contentW, 11, 1, 1, 'F');
+  doc.roundedRect(left, y, contentW, 13, 1.2, 1.2, 'F');
   doc.setFillColor(BRAND_RUST);
-  doc.rect(left, y, 2, 11, 'F');
+  doc.rect(left, y, 2.5, 13, 'F');
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
+  doc.setFontSize(10.5);
   doc.setTextColor(255, 255, 255);
   const idParts: string[] = [`Job ${jobNo}`];
   if (ccid) idParts.push(`CCID ${ccid}`);
   if (jdJob) idParts.push(`JD #${jdJob}`);
-  doc.text(idParts.join('   ·   '), left + 5, y + 7.2);
-  y += 14;
+  doc.text(idParts.join('   ·   '), left + 6, y + 8.5);
+  y += 18;
 
-  const colGap = 6;
+  const colGap = 8;
   const colW = (contentW - colGap) / 2;
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7);
+  doc.setFontSize(7.5);
   doc.setTextColor(BRAND_RUST);
   doc.text('BILL TO', left, y);
   doc.text('PROJECT', left + colW + colGap, y);
-  y += 4;
+  y += 5;
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
+  doc.setFontSize(12);
   doc.setTextColor(BRAND_NAVY);
   doc.text(String(jobData.customer?.name || 'Customer').slice(0, 36), left, y);
-  doc.text(String(jobData.title || 'Custom Print Job').slice(0, 40), left + colW + colGap, y);
-  y += 4;
+  doc.text(String(jobData.title || 'Custom Print Job').slice(0, 38), left + colW + colGap, y);
+  y += 5;
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
+  doc.setFontSize(8.5);
   doc.setTextColor(TEXT_GRAY);
   const billLines = [jobData.customer?.email, jobData.customer?.phone].filter(Boolean) as string[];
-  billLines.forEach((line, i) => doc.text(String(line).slice(0, 42), left, y + i * 3.4));
+  billLines.forEach((line, i) => doc.text(String(line).slice(0, 42), left, y + i * 4));
   const rightMeta = [
     jobData.customerPONumber ? `Cust PO  ${jobData.customerPONumber}` : null,
     jobData.vendor?.name ? `Vendor  ${String(jobData.vendor.name).slice(0, 28)}` : null,
   ].filter(Boolean) as string[];
-  rightMeta.forEach((line, i) => doc.text(line, left + colW + colGap, y + i * 3.4));
-  y += Math.max(billLines.length, rightMeta.length, 1) * 3.4 + 4;
+  rightMeta.forEach((line, i) => doc.text(line, left + colW + colGap, y + i * 4));
+  y += Math.max(billLines.length, rightMeta.length, 1) * 4 + 7;
 
-  // Dense full specs (paper, flat, finished, colors, etc.)
   const specPairs = collectInvoiceSpecPairs(jobData, ccid, jdJob || null);
   if (specPairs.length > 0) {
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7);
+    doc.setFontSize(8);
     doc.setTextColor(BRAND_RUST);
     doc.text('JOB SPECIFICATIONS', left, y);
-    y += 2;
+    y += 3;
 
-    const maxPairs = 20;
-    const gridRows = packSpecGrid(specPairs.slice(0, maxPairs));
-
+    const gridRows = packSpecGrid(specPairs.slice(0, 22));
     autoTable(doc, {
       startY: y,
       body: gridRows,
       theme: 'plain',
       styles: {
-        fontSize: 7,
-        cellPadding: { top: 1.05, bottom: 1.05, left: 1.5, right: 2 },
+        fontSize: 8.5,
+        cellPadding: { top: 2.4, bottom: 2.4, left: 2, right: 3 },
         textColor: BRAND_NAVY,
         overflow: 'ellipsize',
+        minCellHeight: 7.5,
       },
       columnStyles: {
-        0: { fontStyle: 'bold', cellWidth: 26, textColor: BRAND_GRAY },
-        1: { cellWidth: contentW / 2 - 26 },
-        2: { fontStyle: 'bold', cellWidth: 26, textColor: BRAND_GRAY },
-        3: { cellWidth: contentW / 2 - 26 },
+        0: { fontStyle: 'bold', cellWidth: 28, textColor: BRAND_GRAY },
+        1: { cellWidth: contentW / 2 - 28 },
+        2: { fontStyle: 'bold', cellWidth: 28, textColor: BRAND_GRAY },
+        3: { cellWidth: contentW / 2 - 28 },
       },
-      margin: { left, right: 14 },
+      margin: { left, right: 16 },
     });
-    y = (doc as any).lastAutoTable.finalY + 3;
+    y = (doc as any).lastAutoTable.finalY + 7;
   }
 
-  // Timeline — compact, max 6
   const timeline: Array<{ label: string; at: Date | string; detail?: string }> = Array.isArray(
     jobData.timeline
   )
-    ? jobData.timeline.slice(0, 6)
+    ? jobData.timeline.slice(0, 8)
     : [];
 
-  if (timeline.length > 0 && y < maxContentY - 50) {
+  if (timeline.length > 0 && y < footerTop - 75) {
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7);
+    doc.setFontSize(8);
     doc.setTextColor(BRAND_RUST);
     doc.text('PROJECT TIMELINE', left, y);
-    y += 2;
+    y += 3;
 
     const fmt = (d: Date | string) =>
       new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
 
     const timelineRows = timeline.map((e) => [
       fmt(e.at),
-      e.label + (e.detail ? `  ·  ${String(e.detail).slice(0, 36)}` : ''),
+      e.label + (e.detail ? `  ·  ${String(e.detail).slice(0, 40)}` : ''),
     ]);
 
     autoTable(doc, {
@@ -945,17 +942,18 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
       body: timelineRows,
       theme: 'plain',
       styles: {
-        fontSize: 7,
-        cellPadding: { top: 0.85, bottom: 0.85, left: 1.5, right: 1.5 },
+        fontSize: 8.5,
+        cellPadding: { top: 2, bottom: 2, left: 2, right: 2 },
         textColor: BRAND_BLACK,
+        minCellHeight: 7,
       },
       columnStyles: {
-        0: { cellWidth: 24, fontStyle: 'bold', textColor: BRAND_GRAY },
-        1: { cellWidth: contentW - 24, textColor: BRAND_NAVY },
+        0: { cellWidth: 26, fontStyle: 'bold', textColor: BRAND_GRAY },
+        1: { cellWidth: contentW - 26, textColor: BRAND_NAVY },
       },
-      margin: { left, right: 14 },
+      margin: { left, right: 16 },
     });
-    y = (doc as any).lastAutoTable.finalY + 3;
+    y = (doc as any).lastAutoTable.finalY + 7;
   }
 
   const total =
@@ -972,7 +970,7 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
       const unitPrice = Number(item.unitPrice) || 0;
       const quantity = Number(item.quantity) || 0;
       return [
-        String(item.description || '—').slice(0, 55),
+        String(item.description || '—').slice(0, 60),
         quantity.toLocaleString(),
         `$${unitPrice.toFixed(2)}`,
         `$${(quantity * unitPrice).toFixed(2)}`,
@@ -983,28 +981,19 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
     const sell = Number(jobData.sellPrice) || 0;
     const qty = Number(jobData.quantity) || 1;
     tableData.push([
-      String(jobData.title || 'Print production').slice(0, 55),
+      String(jobData.title || 'Print production').slice(0, 60),
       qty.toLocaleString(),
       sell > 0 && qty > 0 ? `$${(sell / qty).toFixed(4)}` : '—',
       sell > 0 ? `$${sell.toFixed(2)}` : '—',
     ]);
   }
 
-  const roomForLines = Math.max(maxContentY - y - 6, 16);
-  const maxLineRows = Math.max(1, Math.floor((roomForLines - 8) / 5.2));
-  if (tableData.length > maxLineRows) {
-    const kept = tableData.slice(0, Math.max(1, maxLineRows - 1));
-    const rest = tableData.length - kept.length;
-    kept.push([`+ ${rest} more line item(s)`, '', '', '']);
-    tableData = kept;
-  }
-
-  if (y < maxContentY - 14) {
+  if (y < footerTop - 42) {
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7);
+    doc.setFontSize(8);
     doc.setTextColor(BRAND_RUST);
     doc.text('LINE ITEMS', left, y);
-    y += 2;
+    y += 3;
 
     autoTable(doc, {
       startY: y,
@@ -1014,62 +1003,116 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
       headStyles: {
         fillColor: BRAND_NAVY,
         textColor: 255,
-        fontSize: 7,
+        fontSize: 8.5,
         fontStyle: 'bold',
-        cellPadding: { top: 1.6, bottom: 1.6, left: 2, right: 2 },
+        cellPadding: { top: 3.4, bottom: 3.4, left: 3, right: 3 },
       },
       bodyStyles: {
-        fontSize: 7.5,
+        fontSize: 9.5,
         textColor: BRAND_BLACK,
-        cellPadding: { top: 1.4, bottom: 1.4, left: 2, right: 2 },
+        cellPadding: { top: 4, bottom: 4, left: 3, right: 3 },
+        minCellHeight: 11,
       },
       alternateRowStyles: { fillColor: [250, 249, 247] },
       columnStyles: {
-        0: { cellWidth: contentW - 70 },
-        1: { cellWidth: 20, halign: 'right' },
-        2: { cellWidth: 24, halign: 'right' },
-        3: { cellWidth: 26, halign: 'right', fontStyle: 'bold' },
+        0: { cellWidth: contentW - 78 },
+        1: { cellWidth: 22, halign: 'right' },
+        2: { cellWidth: 28, halign: 'right' },
+        3: { cellWidth: 28, halign: 'right', fontStyle: 'bold' },
       },
-      margin: { left, right: 14 },
+      margin: { left, right: 16 },
     });
-    y = (doc as any).lastAutoTable.finalY + 3;
+    y = (doc as any).lastAutoTable.finalY + 5;
   }
 
-  // Total pinned near bottom (always page 1)
-  const totalBoxW = 68;
-  const totalBoxX = right - totalBoxW;
-  const totalBoxY = Math.min(Math.max(y + 1, pageH - 36), pageH - 36);
+  // Fill remaining vertical space so page does not look half-empty
+  const fillTop = y + 2;
+  const fillBottom = footerTop - 3;
+  if (fillBottom - fillTop > 24) {
+    doc.setFillColor(250, 249, 247);
+    doc.setDrawColor(GRID_LIGHT);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(left, fillTop, contentW, fillBottom - fillTop, 2, 2, 'FD');
 
-  doc.setFillColor(BRAND_NAVY);
-  doc.roundedRect(totalBoxX, totalBoxY, totalBoxW, 15, 1.2, 1.2, 'F');
+    let fy = fillTop + 9;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(BRAND_RUST);
+    doc.text('NOTES & REMITTANCE', left + 6, fy);
+    fy += 7;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.5);
+    doc.setTextColor(BRAND_NAVY);
+    const notes: string[] = [];
+    if (jobData.notes) {
+      notes.push(
+        ...String(jobData.notes)
+          .split(/\n+/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .slice(0, 5)
+      );
+    }
+    if (!notes.length) {
+      notes.push('Thank you for your business with Impact Direct.');
+      notes.push('Payment is due within 30 days of invoice date (Net 30).');
+      notes.push('Please reference the Job # and CCID on your remittance.');
+    }
+    notes.forEach((line) => {
+      if (fy > fillBottom - 10) return;
+      const wrapped = doc.splitTextToSize(line, contentW - 14);
+      doc.text(wrapped, left + 6, fy);
+      fy += wrapped.length * 4.6 + 2.5;
+    });
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(BRAND_GRAY);
+    const recap = [
+      `Job ${jobNo}`,
+      ccid ? `CCID ${ccid}` : null,
+      jdJob ? `JD #${jdJob}` : null,
+      jobData.customerPONumber ? `Cust PO ${jobData.customerPONumber}` : null,
+    ]
+      .filter(Boolean)
+      .join('  ·  ');
+    doc.text(recap, left + 6, fillBottom - 6);
+  }
+
+  // Full-width total band
+  const totalBoxY = footerTop;
+  doc.setFillColor(43, 58, 74);
+  doc.rect(left, totalBoxY, contentW, 24, 'F');
   doc.setFillColor(BRAND_RUST);
-  doc.rect(totalBoxX, totalBoxY, 2, 15, 'F');
-  doc.setTextColor(255, 255, 255);
+  doc.rect(left, totalBoxY, 3.5, 24, 'F');
+
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  doc.text('TOTAL DUE', totalBoxX + 5, totalBoxY + 5.2);
+  doc.setFontSize(8.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text('Payment terms: Net 30', left + 9, totalBoxY + 9);
+  doc.setFontSize(8);
+  doc.setTextColor(200, 205, 210);
+  doc.text('Remit to Impact Direct Printing', left + 9, totalBoxY + 17);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(200, 205, 210);
+  doc.text('TOTAL DUE', right - 9, totalBoxY + 8, { align: 'right' });
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
+  doc.setFontSize(17);
+  doc.setTextColor(255, 255, 255);
   doc.text(
     `$${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-    right - 3.5,
-    totalBoxY + 11.5,
+    right - 9,
+    totalBoxY + 18,
     { align: 'right' }
   );
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
-  doc.setTextColor(BRAND_NAVY);
-  doc.text('Payment terms', left, totalBoxY + 5);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  doc.setTextColor(TEXT_GRAY);
-  doc.text('Net 30. Remit to Impact Direct Printing.', left, totalBoxY + 9.5);
-
   doc.setDrawColor(GRID_LIGHT);
   doc.setLineWidth(0.3);
-  doc.line(left, pageH - 11, right, pageH - 11);
-  doc.setFontSize(7);
+  doc.line(left, pageH - 12, right, pageH - 12);
+  doc.setFontSize(7.5);
   doc.setTextColor(BRAND_GRAY);
   doc.setFont('helvetica', 'normal');
   doc.text(
@@ -1079,7 +1122,7 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
     { align: 'center' }
   );
   doc.setFillColor(BRAND_RUST);
-  doc.rect(0, pageH - 3, pageW, 3, 'F');
+  doc.rect(0, pageH - 3.5, pageW, 3.5, 'F');
 
   return Buffer.from(doc.output('arraybuffer'));
 };
