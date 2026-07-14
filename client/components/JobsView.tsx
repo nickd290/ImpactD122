@@ -106,12 +106,6 @@ function moneyStatus(job: Job): { label: string; className: string } {
   };
 }
 
-/** Main Work list focus: JJSA, Ballantine, Incremental only */
-function isFocusCustomer(job: Job): boolean {
-  const n = (job.customer?.name || '').toLowerCase();
-  return n.includes('ballantine') || n.includes('incremental') || n.includes('jjs');
-}
-
 const WORKFLOW_SHORT: Record<string, string> = {
   NEW_JOB: 'New',
   AWAITING_PROOF_FROM_VENDOR: 'Await proof',
@@ -133,6 +127,25 @@ function effectiveWorkflow(job: Job): string {
 function isJobDone(job: Job): boolean {
   if (job.status === 'PAID' || job.status === 'CANCELLED') return true;
   return ['COMPLETED', 'INVOICED', 'PAID', 'CANCELLED'].includes(effectiveWorkflow(job));
+}
+
+/**
+ * Board buckets (3 — keep it simple):
+ *  Production → still on the floor (proof / make / ship)
+ *  Invoiced  → done producing, client not paid yet
+ *  Paid      → client paid (vendor pay is a filter, not a 4th tab)
+ */
+type BoardTab = 'production' | 'invoiced' | 'paid' | 'all';
+
+function getBoardBucket(
+  job: Job,
+  optimisticallyPaidIds?: Set<string>
+): 'production' | 'invoiced' | 'paid' | 'cancelled' {
+  if (job.status === 'CANCELLED') return 'cancelled';
+  if (optimisticallyPaidIds?.has(job.id) || isClientPaid(job)) return 'paid';
+  const wf = effectiveWorkflow(job);
+  if (wf === 'COMPLETED' || wf === 'INVOICED' || wf === 'PAID') return 'invoiced';
+  return 'production';
 }
 
 interface JobsViewProps {
@@ -179,8 +192,8 @@ export function JobsView({
   onCloseDrawer,
 }: JobsViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  /** Default = work queue: active + completed still owing BGE/JD */
-  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'archive'>('active');
+  /** Default = production board; complete → Invoiced or Paid */
+  const [activeTab, setActiveTab] = useState<BoardTab>('production');
   // Local open state; parent can also force open (search / action items)
   const [localOpen, setLocalOpen] = useState(false);
   useEffect(() => {
@@ -243,48 +256,36 @@ export function JobsView({
     onRefresh();
   };
 
-  /**
-   * Work queue (default):
-   *  Focus customers only (JJSA / Ballantine / Incremental)
-   *  + ACTIVE open (await client / production), OR
-   *  + client paid but Impact still owes BGE or JD (one payee)
-   * Off when Impact paid BGE (Bradford then pays JD) or paid JD direct.
-   */
-  const isWorkQueueJob = (job: Job) => {
-    if (job.status === 'CANCELLED') return false;
-    if (!isFocusCustomer(job)) return false;
-    if (needsVendorPay(job)) return true;
-    if (isClientPaid(job) && isImpactProductionPaid(job)) return false;
-    return job.status === 'ACTIVE';
-  };
-
   const tabFilteredJobs = useMemo(() => {
-    switch (activeTab) {
-      case 'all':
-        return localJobs;
-      case 'active':
-        return localJobs.filter(isWorkQueueJob);
-      case 'archive':
-        return localJobs.filter((job) => !isWorkQueueJob(job));
-      default:
-        return localJobs;
-    }
+    if (activeTab === 'all') return localJobs;
+    return localJobs.filter(
+      (job) => getBoardBucket(job, optimisticallyPaidIds) === activeTab
+    );
   }, [localJobs, activeTab, optimisticallyPaidIds]);
 
   const tabCounts = useMemo(() => {
-    const activeCount = localJobs.filter(isWorkQueueJob).length;
+    let production = 0;
+    let invoiced = 0;
+    let paid = 0;
+    for (const job of localJobs) {
+      const b = getBoardBucket(job, optimisticallyPaidIds);
+      if (b === 'production') production++;
+      else if (b === 'invoiced') invoiced++;
+      else if (b === 'paid') paid++;
+    }
     return {
+      production,
+      invoiced,
+      paid,
       all: localJobs.length,
-      active: activeCount,
-      archive: localJobs.length - activeCount,
     };
   }, [localJobs, optimisticallyPaidIds]);
 
-  // Define tabs - All (default), Active, Archive
-  const tabs = [
+  const tabs: { id: BoardTab; label: string; count: number }[] = [
+    { id: 'production', label: 'Production', count: tabCounts.production },
+    { id: 'invoiced', label: 'Invoiced', count: tabCounts.invoiced },
+    { id: 'paid', label: 'Paid', count: tabCounts.paid },
     { id: 'all', label: 'All', count: tabCounts.all },
-    { id: 'active', label: 'Active', count: tabCounts.active },
-    { id: 'archive', label: 'Archive', count: tabCounts.archive },
   ];
 
   // Close dropdowns when clicking outside
@@ -660,7 +661,7 @@ export function JobsView({
             : j
         )
       );
-      toast.success('Marked complete');
+      toast.success('Complete — moved to Invoiced');
       onRefresh();
     } catch (error) {
       console.error('Failed to mark complete:', error);
@@ -668,7 +669,7 @@ export function JobsView({
     }
   };
 
-  /** Re-open a completed/archived job back to active production */
+  /** Re-open a completed job back onto the Production board */
   const handleReopenJob = async (jobId: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
     try {
@@ -686,7 +687,7 @@ export function JobsView({
             : j
         )
       );
-      toast.success('Job reopened');
+      toast.success('Back on Production board');
       onRefresh();
     } catch (error) {
       console.error('Failed to reopen job:', error);
@@ -773,12 +774,12 @@ export function JobsView({
       {/* Header — Impact editorial */}
       <div className="flex items-end justify-between gap-4 border-b border-zinc-200/80 pb-4">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.14em] text-[#C0512A] font-semibold mb-1">Production</p>
+          <p className="text-[10px] uppercase tracking-[0.14em] text-[#C0512A] font-semibold mb-1">Jobs board</p>
           <h1 className="text-2xl font-semibold text-[#2B3A4A] tracking-tight">Jobs</h1>
           <p className="text-sm text-zinc-500 mt-1">
-            <span className="font-mono tabular-nums text-[#2B3A4A]">{tabCounts.active}</span> on deck
+            <span className="font-mono tabular-nums text-[#2B3A4A]">{tabCounts.production}</span> in production
             <span className="mx-1.5 text-zinc-300">·</span>
-            open · or client paid, Impact still owes BGE/JD
+            complete → Invoiced · client pays → Paid
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -914,11 +915,7 @@ export function JobsView({
         {/* Tabs + one filter control — keep it quiet */}
         <div className="px-4 py-2.5 border-b border-zinc-100 flex items-center gap-3">
           <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-zinc-100/80">
-            {([
-              { id: 'active' as const, label: 'Work', count: tabCounts.active },
-              { id: 'archive' as const, label: 'Archive', count: tabCounts.archive },
-              { id: 'all' as const, label: 'All', count: tabCounts.all },
-            ]).map((t) => (
+            {tabs.map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -932,6 +929,15 @@ export function JobsView({
                     ? 'bg-white text-[#2B3A4A] shadow-sm'
                     : 'text-zinc-500 hover:text-zinc-800'
                 )}
+                title={
+                  t.id === 'production'
+                    ? 'On the floor — not complete yet'
+                    : t.id === 'invoiced'
+                      ? 'Complete / invoiced — waiting on client pay'
+                      : t.id === 'paid'
+                        ? 'Client paid (use filter for Pay BGE/JD)'
+                        : 'Everything'
+                }
               >
                 {t.label}
                 <span className={cn('ml-1.5 tabular-nums text-xs', activeTab === t.id ? 'text-zinc-400' : 'text-zinc-400')}>
@@ -1253,7 +1259,7 @@ export function JobsView({
             tabs={tabs}
             activeTab={activeTab}
             onTabChange={(tabId) => {
-              setActiveTab(tabId as 'all' | 'active' | 'archive');
+              setActiveTab(tabId as BoardTab);
               setSelectedJobIds(new Set());
               setSelectedCustomerId(null);
             }}
@@ -1451,7 +1457,7 @@ export function JobsView({
                     {/* Actions - show on hover */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {activeTab === 'completed' && (
+                        {activeTab === 'invoiced' && (
                           <Button
                             onClick={(e) => handleMarkPaid(job.id, e)}
                             variant="outline"
