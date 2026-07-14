@@ -1,16 +1,19 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// Impact Direct Brand Colors (from logo analysis)
-const BRAND_ORANGE = '#FF8C42'; // Orange accent (from logo)
-const BRAND_BLACK = '#1A1A1A';  // Primary black (from "IDP" text)
-const BRAND_GRAY = '#666666';   // Secondary gray
-const TEXT_GRAY = '#505050';    // Body text
+// Impact Direct Brand Colors — print-ops letterhead (not generic AI orange)
+const BRAND_NAVY = '#2B3A4A';   // Primary brand navy
+const BRAND_RUST = '#C0512A';   // Accent rust (logo)
+const BRAND_ORANGE = '#C0512A'; // alias — keep call sites working
+const BRAND_BLACK = '#1A1A1A';
+const BRAND_GRAY = '#5C6570';
+const TEXT_GRAY = '#4A5560';
+const PAPER = '#FAF9F7';        // Warm paper background tone (used sparingly)
 
 // Blueprint Grid Color Hierarchy
-const GRID_HEAVY = '#444444';   // Heavy structural grid lines
-const GRID_MEDIUM = '#888888';  // Section dividers
-const GRID_LIGHT = '#CCCCCC';   // Internal grids, crosshairs
+const GRID_HEAVY = '#2B3A4A';
+const GRID_MEDIUM = '#A8B0B8';
+const GRID_LIGHT = '#D4D8DC';
 
 // ===== CLEAN PDF HELPER FUNCTIONS =====
 
@@ -74,47 +77,26 @@ const drawSectionHeader = (doc: any, text: string, x: number, y: number, width: 
   doc.text(text, x + 3, y + 5.5);
 };
 
-// Logo helper function - draws the "IDP" logo in top left with complete grid box
+// Logo helper — compact ID badge + wordmark (print letterhead)
 const drawLogo = (doc: any, x: number, y: number, size: number = 20) => {
-  const boxWidth = size * 3;
-  const boxHeight = size * 1.2;
-  const padding = 4;
-
-  // Draw complete grid box around logo
-  doc.setDrawColor(GRID_MEDIUM);
-  doc.setLineWidth(0.8);
-  doc.rect(x - padding, y - padding, boxWidth, boxHeight);
-
-  // Draw internal corner crosshair marks
-  const markSize = 2;
-  doc.setDrawColor(GRID_LIGHT);
-  doc.setLineWidth(0.4);
-
-  // Top-left corner mark
-  doc.line(x - padding, y - padding, x - padding + markSize, y - padding);
-  doc.line(x - padding, y - padding, x - padding, y - padding + markSize);
-
-  // Top-right corner mark
-  doc.line(x - padding + boxWidth, y - padding, x - padding + boxWidth - markSize, y - padding);
-  doc.line(x - padding + boxWidth, y - padding, x - padding + boxWidth, y - padding + markSize);
-
-  // Bottom-left corner mark
-  doc.line(x - padding, y - padding + boxHeight, x - padding + markSize, y - padding + boxHeight);
-  doc.line(x - padding, y - padding + boxHeight, x - padding, y - padding + boxHeight - markSize);
-
-  // Bottom-right corner mark
-  doc.line(x - padding + boxWidth, y - padding + boxHeight, x - padding + boxWidth - markSize, y - padding + boxHeight);
-  doc.line(x - padding + boxWidth, y - padding + boxHeight, x - padding + boxWidth, y - padding + boxHeight - markSize);
-
-  // Draw "IDP" text
-  doc.setFontSize(size);
-  doc.setTextColor(BRAND_BLACK);
+  const badge = size * 0.95;
+  // Rust ID badge
+  doc.setFillColor(BRAND_RUST);
+  doc.roundedRect(x, y, badge, badge, 1.5, 1.5, 'F');
+  doc.setFontSize(size * 0.55);
+  doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
-  doc.text('IDP', x, y + size * 0.7);
+  doc.text('ID', x + badge / 2, y + badge * 0.68, { align: 'center' });
 
-  // Draw orange accent circle
-  doc.setFillColor(BRAND_ORANGE);
-  doc.circle(x + size * 2.2, y + size * 0.55, size * 0.2, 'F');
+  // Navy wordmark
+  doc.setFontSize(size * 0.42);
+  doc.setTextColor(BRAND_NAVY);
+  doc.setFont('helvetica', 'bold');
+  doc.text('IMPACT DIRECT', x + badge + 3.5, y + badge * 0.45);
+  doc.setFontSize(size * 0.22);
+  doc.setTextColor(BRAND_GRAY);
+  doc.setFont('helvetica', 'normal');
+  doc.text('PRINT  ·  MAIL  ·  PRODUCTION', x + badge + 3.5, y + badge * 0.78);
 };
 
 // Build full description text from parsed specs (for Vendor PO to match customer PO format)
@@ -495,262 +477,270 @@ export const generateQuotePDF = (jobData: any): Buffer => {
 
 export const generateInvoicePDF = (jobData: any): Buffer => {
   const doc = new jsPDF();
+  const pageW = doc.internal.pageSize.width;
+  const pageH = doc.internal.pageSize.height;
+  const left = 18;
+  const right = pageW - 18;
+  const contentW = right - left;
 
-  // ===== CROSSHAIR REGISTRATION MARKS =====
-  drawCrosshairs(doc);
+  // Top navy bar
+  doc.setFillColor(BRAND_NAVY);
+  doc.rect(0, 0, pageW, 4, 'F');
 
-  let currentY = 15;
+  let y = 14;
+  drawLogo(doc, left, y, 14);
 
-  // ===== LOGO (Top Left) =====
-  drawLogo(doc, 20, currentY, 16);
-
-  // ===== HEADER SECTION (Right Side) =====
-  doc.setFontSize(24);
-  doc.setTextColor(BRAND_BLACK);
-  doc.setFont('helvetica', 'bold');
-  doc.text('IMPACT DIRECT', 105, currentY + 8, { align: 'center' });
-
-  doc.setFontSize(10);
-  doc.setTextColor(TEXT_GRAY);
-  doc.setFont('helvetica', 'normal');
-  doc.text('PRINT-NATIVE AGENCY', 105, currentY + 14, { align: 'center' });
-
-  doc.setFontSize(9);
-  doc.text('Brandon@impactdirectprinting.com | 844-467-2280', 105, currentY + 20, { align: 'center' });
-
-  currentY += 28;
-
-  // ===== OUTLINED DOCUMENT TITLE =====
-  drawOutlinedText(doc, 'INVOICE', 105, currentY, { align: 'center', fontSize: 22 });
-
-  // Heavy divider below title
-  currentY += 4;
-  drawHeavyDivider(doc, 20, 190, currentY);
-
-  // Orange accent line
-  doc.setLineWidth(0.8);
-  doc.setDrawColor(BRAND_ORANGE);
-  doc.line(20, currentY + 1, 190, currentY + 1);
-
-  currentY += 10;
-
-  // ===== TWO-COLUMN LAYOUT WITH GRID BOXES =====
-  const infoStartY = currentY;
-
-  // Left Column - Invoice Info
-  doc.setFontSize(10);
-  doc.setTextColor(0, 0, 0);
-  doc.setFont('helvetica', 'bold');
-  doc.text('INVOICE NUMBER:', 20, currentY);
-  doc.setFont('helvetica', 'normal');
-  doc.text(jobData.invoiceNumber || jobData.jobNo || 'N/A', 60, currentY);
-
-  currentY += 6;
-  doc.setFont('helvetica', 'bold');
-  doc.text('INVOICE DATE:', 20, currentY);
-  doc.setFont('helvetica', 'normal');
-  doc.text(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), 60, currentY);
-
-  currentY += 6;
-  doc.setFont('helvetica', 'bold');
-  doc.text('JOB NUMBER:', 20, currentY);
-  doc.setFont('helvetica', 'normal');
-  doc.text(jobData.jobNo || 'N/A', 60, currentY);
-
-  currentY += 6;
-  doc.setFont('helvetica', 'bold');
-  doc.text('PAYMENT TERMS:', 20, currentY);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Net 30', 60, currentY);
-
-  currentY += 6;
-  doc.setFont('helvetica', 'bold');
-  doc.text('DUE DATE:', 20, currentY);
-  doc.setFont('helvetica', 'normal');
-  const invoiceDueDate = new Date();
-  invoiceDueDate.setDate(invoiceDueDate.getDate() + 30);
-  doc.text(invoiceDueDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }), 60, currentY);
-
-  // Customer PO - PROMINENT (moved below info block)
-
-  // Right Column - Customer Info with Grid Box
-  const customerY = infoStartY;
-  const customerBoxHeight = 28;
-
-  // Draw grid box around "BILL TO:" section
-  drawSectionGrid(doc, 118, customerY - 4, 72, customerBoxHeight);
+  // Right-aligned invoice meta block
+  const invNo = jobData.invoiceNumber || jobData.jobNo || '—';
+  const invDate = new Date().toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+  const due = new Date();
+  due.setDate(due.getDate() + 30);
+  const dueStr = due.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
 
   doc.setFont('helvetica', 'bold');
-  doc.text('BILL TO:', 120, customerY);
+  doc.setFontSize(20);
+  doc.setTextColor(BRAND_NAVY);
+  doc.text('INVOICE', right, y + 6, { align: 'right' });
   doc.setFont('helvetica', 'normal');
-  doc.text(jobData.customer?.name || 'N/A', 120, customerY + 5);
-  doc.text(jobData.customer?.contactPerson || '', 120, customerY + 10);
-  doc.text(jobData.customer?.email || '', 120, customerY + 15);
-  doc.text(jobData.customer?.phone || '', 120, customerY + 20);
+  doc.setFontSize(8);
+  doc.setTextColor(BRAND_GRAY);
+  doc.text(`No. ${invNo}`, right, y + 12, { align: 'right' });
+  doc.text(`Date  ${invDate}`, right, y + 17, { align: 'right' });
+  doc.text(`Due    ${dueStr}  ·  Net 30`, right, y + 22, { align: 'right' });
 
-  // Vertical divider between columns
-  drawVerticalDivider(doc, 110, infoStartY - 4, infoStartY + customerBoxHeight - 4);
+  y = 42;
+  // Thin rust accent under header
+  doc.setDrawColor(BRAND_RUST);
+  doc.setLineWidth(1.2);
+  doc.line(left, y, right, y);
+  doc.setDrawColor(GRID_LIGHT);
+  doc.setLineWidth(0.3);
+  doc.line(left, y + 1.6, right, y + 1.6);
 
-  currentY += 14;
+  y += 10;
 
-  // ===== CUSTOMER PO - PROMINENT BOX =====
-  if (jobData.customerPONumber) {
-    doc.setFillColor(219, 234, 254); // Light blue background
-    doc.setDrawColor(59, 130, 246); // Blue border
-    doc.setLineWidth(1.5);
-    doc.rect(20, currentY, 170, 14, 'FD');
+  // Bill to + project (two columns)
+  const colGap = 8;
+  const colW = (contentW - colGap) / 2;
 
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(30, 64, 175); // Dark blue
-    doc.text('CUSTOMER PO:', 25, currentY + 9);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(BRAND_RUST);
+  doc.text('BILL TO', left, y);
+  doc.text('PROJECT', left + colW + colGap, y);
 
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(BRAND_BLACK);
-    doc.text(jobData.customerPONumber, 75, currentY + 9);
-
-    currentY += 18;
-  } else {
-    currentY += 4;
-  }
-
-  // ===== PROJECT TITLE =====
-  doc.setFillColor(240, 240, 240);
-  doc.rect(20, currentY, 170, 10, 'F');
+  y += 5;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  doc.text('PROJECT:', 22, currentY + 6.5);
+  doc.setTextColor(BRAND_NAVY);
+  doc.text(jobData.customer?.name || 'Customer', left, y);
+  const projectTitle = (jobData.title || 'Custom Print Job').slice(0, 42);
+  doc.text(projectTitle, left + colW + colGap, y);
+
+  y += 5;
   doc.setFont('helvetica', 'normal');
-  doc.text(jobData.title || 'Custom Print Job', 45, currentY + 6.5);
+  doc.setFontSize(9);
+  doc.setTextColor(TEXT_GRAY);
+  const billLines = [
+    jobData.customer?.contactPerson,
+    jobData.customer?.email,
+    jobData.customer?.phone,
+  ].filter(Boolean) as string[];
+  billLines.forEach((line, i) => doc.text(String(line), left, y + i * 4.2));
 
-  currentY += 15;
+  const metaLines = [
+    `Job  ${jobData.jobNo || '—'}`,
+    jobData.customerPONumber ? `PO   ${jobData.customerPONumber}` : null,
+    jobData.quantity ? `Qty  ${Number(jobData.quantity).toLocaleString()}` : null,
+  ].filter(Boolean) as string[];
+  metaLines.forEach((line, i) =>
+    doc.text(line, left + colW + colGap, y + i * 4.2)
+  );
 
-  // ===== SPECIFICATIONS SECTION WITH GRID HEADER =====
-  const hasInvoiceSpecs = jobData.specs || jobData.lineItems?.length > 0;
+  y += Math.max(billLines.length, metaLines.length) * 4.2 + 8;
 
-  if (hasInvoiceSpecs) {
-    drawSectionHeader(doc, 'PRINT SPECIFICATIONS', 20, currentY, 170);
-    currentY += 10;
-
-    doc.setFontSize(9);
-    doc.setTextColor(0, 0, 0);
-    doc.setFont('helvetica', 'normal');
-
-    const specs = jobData.specs || {};
-    const specsData: string[][] = [];
-
-    if (specs.productType) specsData.push(['Product Type:', specs.productType]);
-
-    // Quantity - sum all line items
-    const totalQuantity = jobData.lineItems?.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0) || 0;
-    if (totalQuantity > 0) {
-      specsData.push(['Quantity:', totalQuantity.toLocaleString()]);
-    }
-
-    // Page Count for books - show prominently
-    if (specs.productType === 'BOOK' && specs.pageCount) {
-      specsData.push(['Page Count:', specs.pageCount.toString() + ' pages']);
-    }
-
-    if (specs.flatSize) specsData.push(['Flat Size:', specs.flatSize]);
-    if (specs.finishedSize) specsData.push(['Finished Size:', specs.finishedSize]);
-    if (specs.paperType) specsData.push(['Paper Stock:', specs.paperType]);
-    if (specs.colors) specsData.push(['Colors:', specs.colors]);
-    if (specs.coating) specsData.push(['Coating:', specs.coating]);
-    if (specs.finishing) specsData.push(['Finishing:', specs.finishing]);
-
-    if (specs.productType === 'BOOK') {
-      if (specs.bindingStyle) specsData.push(['Binding:', specs.bindingStyle]);
-      if (specs.coverType) specsData.push(['Cover Type:', specs.coverType === 'PLUS' ? 'Plus Cover' : 'Self Cover']);
-      if (specs.coverPaperType) specsData.push(['Cover Stock:', specs.coverPaperType]);
-    }
-
-    if (specsData.length > 0) {
-      autoTable(doc, {
-        startY: currentY,
-        body: specsData,
-        theme: 'plain',
-        styles: { fontSize: 9, cellPadding: 2 },
-        columnStyles: {
-          0: { fontStyle: 'bold', cellWidth: 40 },
-          1: { cellWidth: 130 },
-        },
-      });
-      currentY = (doc as any).lastAutoTable.finalY + 8;
-    }
+  // Customer PO callout (if present) — subtle navy, not blue candy
+  if (jobData.customerPONumber) {
+    doc.setFillColor(43, 58, 74); // navy
+    doc.roundedRect(left, y, contentW, 11, 1.2, 1.2, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(255, 255, 255);
+    doc.text('CUSTOMER PO', left + 4, y + 7);
+    doc.setFontSize(11);
+    doc.text(String(jobData.customerPONumber), left + 36, y + 7.2);
+    y += 16;
   }
 
-  // ===== LINE ITEMS TABLE WITH GRID HEADER =====
-  drawSectionHeader(doc, 'ITEMS', 20, currentY, 170);
-  currentY += 10;
+  // Specs
+  const specs = jobData.specs || {};
+  const specsData: string[][] = [];
+  if (specs.productType) specsData.push(['Product', specs.productType]);
+  const totalQuantity =
+    jobData.lineItems?.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0) ||
+    Number(jobData.quantity) ||
+    0;
+  if (totalQuantity > 0) specsData.push(['Quantity', totalQuantity.toLocaleString()]);
+  if (specs.pageCount) specsData.push(['Pages', `${specs.pageCount}`]);
+  if (specs.flatSize) specsData.push(['Flat size', specs.flatSize]);
+  if (specs.finishedSize) specsData.push(['Finished', specs.finishedSize]);
+  if (specs.paperType) specsData.push(['Stock', specs.paperType]);
+  if (specs.colors) specsData.push(['Colors', specs.colors]);
+  if (specs.coating) specsData.push(['Coating', specs.coating]);
+  if (specs.finishing) specsData.push(['Finishing', specs.finishing]);
+  if (specs.bindingStyle) specsData.push(['Binding', specs.bindingStyle]);
 
-  const tableData = jobData.lineItems?.map((item: any) => {
-    const unitPrice = Number(item.unitPrice) || 0;
-    const quantity = Number(item.quantity) || 0;
-    return [
-      item.description,
-      quantity.toLocaleString(),
-      `$${unitPrice.toFixed(2)}`,
-      `$${(quantity * unitPrice).toFixed(2)}`
-    ];
-  }) || [];
+  if (specsData.length > 0) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(BRAND_RUST);
+    doc.text('SPECIFICATIONS', left, y);
+    y += 3;
+    autoTable(doc, {
+      startY: y,
+      body: specsData,
+      theme: 'plain',
+      styles: {
+        fontSize: 8.5,
+        cellPadding: { top: 1.6, bottom: 1.6, left: 0, right: 4 },
+        textColor: BRAND_NAVY,
+      },
+      columnStyles: {
+        0: { fontStyle: 'bold', cellWidth: 28, textColor: BRAND_GRAY },
+        1: { cellWidth: contentW - 28 },
+      },
+      margin: { left, right: 18 },
+    });
+    y = (doc as any).lastAutoTable.finalY + 8;
+  }
+
+  // Line items
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(BRAND_RUST);
+  doc.text('LINE ITEMS', left, y);
+  y += 3;
+
+  const tableData =
+    jobData.lineItems?.map((item: any) => {
+      const unitPrice = Number(item.unitPrice) || 0;
+      const quantity = Number(item.quantity) || 0;
+      return [
+        item.description || '—',
+        quantity.toLocaleString(),
+        `$${unitPrice.toFixed(2)}`,
+        `$${(quantity * unitPrice).toFixed(2)}`,
+      ];
+    }) || [];
+
+  // Fallback single line from sell price when no line items
+  if (tableData.length === 0) {
+    const sell = Number(jobData.sellPrice) || 0;
+    const qty = Number(jobData.quantity) || 1;
+    tableData.push([
+      jobData.title || 'Print production',
+      qty.toLocaleString(),
+      sell > 0 && qty > 0 ? `$${(sell / qty).toFixed(4)}` : '—',
+      sell > 0 ? `$${sell.toFixed(2)}` : '—',
+    ]);
+  }
 
   autoTable(doc, {
-    startY: currentY,
-    head: [['Description', 'Quantity', 'Unit Price', 'Line Total']],
+    startY: y,
+    head: [['Description', 'Qty', 'Unit', 'Amount']],
     body: tableData,
-    theme: 'striped',
-    headStyles: { fillColor: BRAND_ORANGE, fontSize: 10, fontStyle: 'bold' },
-    styles: { fontSize: 9 },
+    theme: 'plain',
+    headStyles: {
+      fillColor: BRAND_NAVY,
+      textColor: 255,
+      fontSize: 8,
+      fontStyle: 'bold',
+      cellPadding: { top: 3.2, bottom: 3.2, left: 3, right: 3 },
+    },
+    bodyStyles: {
+      fontSize: 9,
+      textColor: BRAND_BLACK,
+      cellPadding: { top: 3, bottom: 3, left: 3, right: 3 },
+    },
+    alternateRowStyles: { fillColor: [250, 249, 247] },
     columnStyles: {
-      0: { cellWidth: 90 },
-      1: { cellWidth: 30, halign: 'center' },
-      2: { cellWidth: 30, halign: 'right' },
-      3: { cellWidth: 30, halign: 'right' },
+      0: { cellWidth: contentW - 78 },
+      1: { cellWidth: 22, halign: 'right' },
+      2: { cellWidth: 28, halign: 'right' },
+      3: { cellWidth: 28, halign: 'right', fontStyle: 'bold' },
+    },
+    margin: { left, right: 18 },
+    didDrawPage: () => {
+      // page footer drawn later
     },
   });
 
-  const finalY = (doc as any).lastAutoTable.finalY || currentY + 20;
+  const finalY = (doc as any).lastAutoTable.finalY || y + 20;
 
-  // ===== TOTAL DUE WITH GRID BORDER =====
-  const total = jobData.lineItems?.reduce((sum: number, item: any) =>
-    sum + (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0), 0) || 0;
+  const total =
+    jobData.lineItems?.reduce(
+      (sum: number, item: any) =>
+        sum + (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0),
+      0
+    ) ||
+    Number(jobData.sellPrice) ||
+    0;
 
-  // Draw grid border around total box
-  drawSectionGrid(doc, 118, finalY + 6, 74, 22);
-
-  // Larger, more prominent total box
-  doc.setFillColor(BRAND_ORANGE);
-  doc.rect(120, finalY + 8, 70, 18, 'F');
+  // Total block — right aligned, navy bar + rust edge
+  const totalBoxW = 72;
+  const totalBoxX = right - totalBoxW;
+  const totalBoxY = finalY + 8;
+  doc.setFillColor(BRAND_NAVY);
+  doc.roundedRect(totalBoxX, totalBoxY, totalBoxW, 18, 1.5, 1.5, 'F');
+  doc.setFillColor(BRAND_RUST);
+  doc.rect(totalBoxX, totalBoxY, 2.2, 18, 'F');
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(14);
-  doc.setFont('helvetica', 'bold');
-  doc.text('TOTAL DUE:', 125, finalY + 19.5);
-  doc.setFontSize(18);
-  doc.text(`$${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 185, finalY + 19.5, { align: 'right' });
-
-  // ===== PAYMENT TERMS =====
-  currentY = finalY + 20;
-  doc.setFontSize(10);
-  doc.setTextColor(0, 0, 0);
-  doc.setFont('helvetica', 'bold');
-  doc.text('PAYMENT TERMS:', 20, currentY);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.text('Net 30 days. Payment due within 30 days of invoice date.', 20, currentY + 5);
+  doc.setFontSize(7.5);
+  doc.text('TOTAL DUE', totalBoxX + 6, totalBoxY + 6.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text(
+    `$${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    right - 4,
+    totalBoxY + 13.5,
+    { align: 'right' }
+  );
 
-  // ===== FOOTER =====
-  const pageHeight = doc.internal.pageSize.height;
+  // Terms (left of total)
+  doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
-  doc.setTextColor(100, 100, 100);
-  doc.setFont('helvetica', 'italic');
-  doc.text('Thank you for your business!', 105, pageHeight - 20, { align: 'center' });
-  doc.text('Questions? Contact Brandon at 844-467-2280 or Brandon@impactdirectprinting.com', 105, pageHeight - 15, { align: 'center' });
+  doc.setTextColor(BRAND_NAVY);
+  doc.text('Payment terms', left, totalBoxY + 6);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(TEXT_GRAY);
+  doc.text('Net 30. Payment due within 30 days of invoice date.', left, totalBoxY + 11);
+  doc.text('Remit to Impact Direct Printing.', left, totalBoxY + 15.5);
 
-  doc.setDrawColor(BRAND_ORANGE);
-  doc.setLineWidth(0.3);
-  doc.line(20, pageHeight - 10, 190, pageHeight - 10);
+  // Footer
+  doc.setDrawColor(GRID_LIGHT);
+  doc.setLineWidth(0.4);
+  doc.line(left, pageH - 16, right, pageH - 16);
+  doc.setFontSize(7.5);
+  doc.setTextColor(BRAND_GRAY);
+  doc.setFont('helvetica', 'normal');
+  doc.text(
+    'Brandon@impactdirectprinting.com  ·  844-467-2280  ·  impactdirectprinting.com',
+    105,
+    pageH - 11,
+    { align: 'center' }
+  );
+  doc.setFillColor(BRAND_RUST);
+  doc.rect(0, pageH - 3.5, pageW, 3.5, 'F');
 
   return Buffer.from(doc.output('arraybuffer'));
 };

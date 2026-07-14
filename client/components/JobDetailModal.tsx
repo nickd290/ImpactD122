@@ -3030,64 +3030,98 @@ export function JobDetailModal({
         onClick={handleBackdropClick}
       >
         <div
-          className={`bg-background rounded-xl shadow-2xl w-full max-w-6xl max-h-[92vh] overflow-hidden flex flex-col transform transition-transform duration-200 ${
+          className={`bg-card rounded-2xl shadow-[0_24px_80px_-12px_rgba(26,32,44,0.35)] ring-1 ring-border/80 w-full max-w-6xl max-h-[92vh] overflow-hidden flex flex-col transform transition-transform duration-200 ${
             isOpen ? 'scale-100' : 'scale-95'
           }`}
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
-          {/* Header - Editorial Style */}
-          <div className={`border-b px-6 py-5 flex-shrink-0 ${isEditMode ? 'bg-status-info-bg border-status-info-border' : 'bg-card border-border'}`}>
+          {/* Header — print-ops editorial: navy identity strip + clear hierarchy */}
+          <div className={`relative flex-shrink-0 border-b border-border ${isEditMode ? 'bg-status-info-bg/40' : 'bg-card'}`}>
+            <div className="absolute inset-x-0 top-0 h-1 bg-[#2B3A4A]" />
+            <div className="absolute inset-x-0 top-1 h-0.5 bg-[#C0512A]" />
+
+            <div className="px-6 pt-5 pb-4">
             {isLoadingJob && (
-              <div className="mb-2 text-xs text-muted-foreground">Loading full job detail…</div>
+              <div className="mb-2 text-[11px] uppercase tracking-[0.12em] text-muted-foreground font-medium">
+                Loading job…
+              </div>
             )}
             {isEditMode && (
               <div className="flex items-center gap-2 text-status-info text-sm font-medium mb-3">
                 <Edit2 className="w-4 h-4" />
-                Edit Mode - Make changes below and click Save
+                Edit mode — save when done
               </div>
             )}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4 flex-1 min-w-0">
-                {/* Job Number + Base Job ID - Editorial mono styling */}
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <h2 className="job-number text-2xl text-foreground">{jobNumber}</h2>
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                  <h2 className="font-mono text-[1.65rem] font-semibold tracking-tight text-[#2B3A4A] leading-none">
+                    {jobNumber}
+                  </h2>
                   {job.baseJobId && (
-                    <>
-                      <span className="text-muted-foreground/30">|</span>
-                      <span className="text-sm font-mono text-muted-foreground tracking-wider" title="Canonical Job ID">
-                        {job.baseJobId}
-                      </span>
-                    </>
+                    <span className="text-[11px] font-mono text-muted-foreground tracking-wider" title="Canonical Job ID">
+                      {job.baseJobId}
+                    </span>
+                  )}
+                  {job.pathway && PATHWAY_STYLES[job.pathway] && (
+                    <span
+                      className={`px-2 py-0.5 ${PATHWAY_STYLES[job.pathway].bg} ${PATHWAY_STYLES[job.pathway].text} text-[10px] font-semibold rounded tracking-[0.06em] uppercase`}
+                      title={`Pathway ${job.pathway}`}
+                    >
+                      {PATHWAY_STYLES[job.pathway].label}
+                    </span>
+                  )}
+                  {job.paperSource && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold tracking-[0.06em] uppercase bg-secondary text-secondary-foreground border border-border">
+                      Paper · {job.paperSource === 'VENDOR' ? 'JD' : job.paperSource}
+                    </span>
+                  )}
+                  {job.vendor?.isPartner && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold tracking-[0.06em] uppercase bg-[#C0512A]/10 text-[#C0512A] border border-[#C0512A]/25">
+                      Partner
+                    </span>
                   )}
                 </div>
-                <span className="text-border flex-shrink-0">•</span>
                 {isEditMode ? (
                   <input
                     type="text"
                     value={editedJob.title ?? job.title ?? ''}
                     onChange={(e) => updateEditedField('title', e.target.value)}
-                    className="flex-1 px-3 py-1.5 text-foreground border border-status-info-border rounded-md focus:ring-2 focus:ring-status-info focus:border-status-info"
+                    className="mt-2 w-full max-w-xl px-3 py-1.5 text-foreground border border-status-info-border rounded-md focus:ring-2 focus:ring-status-info focus:border-status-info"
                     placeholder="Job title"
                   />
                 ) : (
-                  <span className="text-muted-foreground truncate text-sm">{job.title}</span>
+                  <p className="mt-1.5 text-[15px] text-foreground/90 font-medium truncate leading-snug">
+                    {job.title || 'Untitled job'}
+                  </p>
                 )}
-                {/* Pathway Badge - Editorial styling */}
-                {job.pathway && PATHWAY_STYLES[job.pathway] && (
-                  <span
-                    className={`px-2.5 py-1 ${PATHWAY_STYLES[job.pathway].bg} ${PATHWAY_STYLES[job.pathway].text} text-xs font-semibold rounded-md flex-shrink-0 tracking-wide`}
-                    title={`Pathway ${job.pathway}`}
-                  >
-                    {PATHWAY_STYLES[job.pathway].label}
-                  </span>
-                )}
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                  {job.customer?.name && (
+                    <span className="inline-flex items-center gap-1">
+                      <span className="text-muted-foreground/60 uppercase tracking-wider text-[10px]">Customer</span>
+                      <span className="text-foreground/80 font-medium">{job.customer.name}</span>
+                    </span>
+                  )}
+                  {job.customerPONumber && (
+                    <span className="inline-flex items-center gap-1">
+                      <span className="text-muted-foreground/60 uppercase tracking-wider text-[10px]">PO</span>
+                      <span className="font-mono text-foreground/80">{job.customerPONumber}</span>
+                    </span>
+                  )}
+                  {job.status && (
+                    <span className="inline-flex items-center gap-1">
+                      <span className="text-muted-foreground/60 uppercase tracking-wider text-[10px]">Status</span>
+                      <span className="font-medium text-foreground/80">{job.status}</span>
+                    </span>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center">
+              <div className="flex items-center gap-0.5 flex-shrink-0">
                 {onDelete && (
                   <button
                     onClick={onDelete}
-                    className="p-2 hover:bg-status-danger-bg rounded-lg transition-colors text-muted-foreground hover:text-status-danger"
+                    className="p-2 rounded-lg transition-colors text-muted-foreground hover:bg-status-danger-bg hover:text-status-danger"
                     aria-label="Delete job"
                     title="Delete job"
                   >
@@ -3096,10 +3130,10 @@ export function JobDetailModal({
                 )}
                 <button
                   onClick={onClose}
-                  className="p-2 hover:bg-accent rounded-lg transition-colors ml-1"
+                  className="p-2 rounded-lg transition-colors text-muted-foreground hover:bg-muted hover:text-foreground"
                   aria-label="Close modal"
                 >
-                  <X className="w-5 h-5 text-muted-foreground" />
+                  <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
@@ -3126,163 +3160,146 @@ export function JobDetailModal({
               </div>
             )}
 
-            {/* Action Bar - Document Actions */}
+            {/* Action bar */}
             {!isEditMode && (
-              <div className="flex gap-4 mt-5">
-                {/* Document & Email Actions */}
-                <div className="flex-1 flex flex-col gap-2">
-                  {/* Top row: Edit + Documents grouped */}
-                  <div className="flex items-center gap-3">
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setIsEditMode(true)}
+                  className="inline-flex items-center gap-2 px-3.5 py-2 bg-[#2B3A4A] text-white rounded-lg hover:bg-[#2B3A4A]/90 text-sm font-medium active:scale-[0.98] transition-all"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  Edit
+                </button>
+
+                <div className="inline-flex items-center rounded-lg border border-border bg-background overflow-hidden shadow-sm">
+                  {onDownloadQuote && (
                     <button
-                      onClick={() => setIsEditMode(true)}
-                      className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-sm font-medium active:scale-[0.98] transition-all"
+                      onClick={onDownloadQuote}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-foreground hover:bg-secondary border-r border-border transition-colors"
                     >
-                      <Edit2 className="w-4 h-4" />
-                      Edit
+                      <FileText className="w-3.5 h-3.5 text-muted-foreground" />
+                      Quote
                     </button>
+                  )}
+                  {onDownloadPO && (
+                    <button
+                      onClick={onDownloadPO}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-foreground hover:bg-secondary border-r border-border transition-colors"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-muted-foreground" />
+                      PO
+                    </button>
+                  )}
+                  {onDownloadInvoice && (
+                    <button
+                      onClick={onDownloadInvoice}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-foreground hover:bg-secondary transition-colors"
+                    >
+                      <Receipt className="w-3.5 h-3.5 text-muted-foreground" />
+                      Invoice
+                    </button>
+                  )}
+                </div>
 
-                    {/* Document buttons grouped */}
-                    <div className="flex items-center border border-border rounded-md bg-muted/50 overflow-hidden">
-                      {onDownloadQuote && (
-                        <button
-                          onClick={onDownloadQuote}
-                          className="flex items-center gap-1.5 px-3 py-2 text-foreground hover:bg-accent text-sm border-r border-border transition-colors"
-                        >
-                          <FileText className="w-4 h-4" />
-                          Quote
-                        </button>
-                      )}
-                      {onDownloadPO && (
-                        <button
-                          onClick={onDownloadPO}
-                          className="flex items-center gap-1.5 px-3 py-2 text-foreground hover:bg-accent text-sm border-r border-border transition-colors"
-                        >
-                          <Printer className="w-4 h-4" />
-                          PO
-                        </button>
-                      )}
-                      {onDownloadInvoice && (
-                        <button
-                          onClick={onDownloadInvoice}
-                          className="flex items-center gap-1.5 px-3 py-2 text-foreground hover:bg-accent text-sm transition-colors"
-                        >
-                          <Receipt className="w-4 h-4" />
-                          Invoice
-                        </button>
-                      )}
-                    </div>
+                <div className="relative" data-email-dropdown>
+                  <button
+                    onClick={() => setShowEmailDropdown(!showEmailDropdown)}
+                    className="inline-flex items-center gap-2 px-3 py-2 border border-[#C0512A]/30 bg-[#C0512A]/8 text-[#C0512A] rounded-lg hover:bg-[#C0512A] hover:text-white text-sm font-medium transition-colors"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    Send
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showEmailDropdown ? 'rotate-180' : ''}`} />
+                  </button>
 
-                    {/* Send Email Dropdown */}
-                    <div className="relative" data-email-dropdown>
+                  {showEmailDropdown && (
+                    <div className="absolute top-full left-0 mt-1.5 w-72 bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
                       <button
-                        onClick={() => setShowEmailDropdown(!showEmailDropdown)}
-                        className="flex items-center gap-2 px-3 py-2 bg-status-info-bg border border-status-info-border text-status-info rounded-md hover:bg-status-info hover:text-white text-sm transition-colors"
+                        onClick={() => {
+                          setEmailType('invoice');
+                          setShowEmailInvoiceModal(true);
+                          setShowEmailDropdown(false);
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm hover:bg-secondary border-b border-border"
                       >
-                        <Send className="w-4 h-4" />
-                        Send Email
-                        <ChevronDown className={`w-4 h-4 transition-transform ${showEmailDropdown ? 'rotate-180' : ''}`} />
+                        <Receipt className="w-4 h-4 text-muted-foreground" />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-foreground">Invoice to customer</div>
+                          <div className="text-xs text-muted-foreground truncate">{job.customer?.email || 'No email'}</div>
+                        </div>
+                        {job.invoiceEmailedAt && (
+                          <span className="text-xs text-status-success flex items-center gap-1">
+                            <Check className="w-3 h-3" />
+                            Sent
+                          </span>
+                        )}
                       </button>
 
-                      {showEmailDropdown && (
-                        <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
-                          {/* Invoice to Customer */}
-                          <button
-                            onClick={() => {
-                              setEmailType('invoice');
-                              setShowEmailInvoiceModal(true);
-                              setShowEmailDropdown(false);
-                            }}
-                            className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm hover:bg-gray-50 border-b border-gray-100"
-                          >
-                            <Receipt className="w-4 h-4 text-gray-500" />
-                            <div className="flex-1">
-                              <div className="font-medium text-gray-900">Invoice to Customer</div>
-                              <div className="text-xs text-gray-500">{job.customer?.email || 'No email'}</div>
-                            </div>
-                            {job.invoiceEmailedAt && (
-                              <span className="text-xs text-green-600 flex items-center gap-1">
-                                <Check className="w-3 h-3" />
-                                Sent
-                              </span>
-                            )}
-                          </button>
-
-                          {/* PO to Vendor(s) */}
-                          {job.purchaseOrders && job.purchaseOrders.length > 0 ? (
-                            job.purchaseOrders.map((po: any) => {
-                              const hasEmail = getPOEmailStatus(po);
-                              const vendorDisplayName = po.vendor?.name || po.targetCompany?.name || job.vendor?.name || 'Vendor';
-                              return hasEmail ? (
-                                <button
-                                  key={po.id}
-                                  onClick={() => {
-                                    setEmailType('po');
-                                    setSelectedPOForEmail({
-                                      id: po.id,
-                                      jobId: job.id,
-                                      poNumber: po.poNumber,
-                                      vendorName: vendorDisplayName,
-                                      vendorEmail: po.vendor?.email || po.targetCompany?.email || job.vendor?.email,
-                                      vendorContacts: po.vendor?.contacts || job.vendor?.contacts || [],
-                                    });
-                                    setShowEmailDropdown(false);
-                                  }}
-                                  className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
-                                >
-                                  <FileText className="w-4 h-4 text-gray-500" />
-                                  <div className="flex-1">
-                                    <div className="font-medium text-gray-900">PO to {vendorDisplayName.slice(0, 15)}</div>
-                                    <div className="text-xs text-gray-500">PO #{po.poNumber}</div>
-                                  </div>
-                                  {po.emailedAt && (
-                                    <span className="text-xs text-green-600 flex items-center gap-1">
-                                      <Check className="w-3 h-3" />
-                                      Sent
-                                    </span>
-                                  )}
-                                </button>
-                              ) : (
-                                <div
-                                  key={po.id}
-                                  className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm bg-gray-50 border-b border-gray-100 last:border-b-0 cursor-not-allowed"
-                                  title="Vendor has no email address"
-                                >
-                                  <FileText className="w-4 h-4 text-gray-300" />
-                                  <div className="flex-1">
-                                    <div className="font-medium text-gray-400">PO to {vendorDisplayName.slice(0, 15)}</div>
-                                    <div className="text-xs text-red-400">No email address</div>
-                                  </div>
-                                </div>
-                              );
-                            })
+                      {job.purchaseOrders && job.purchaseOrders.length > 0 ? (
+                        job.purchaseOrders.map((po: any) => {
+                          const hasEmail = getPOEmailStatus(po);
+                          const vendorDisplayName = po.vendor?.name || po.targetCompany?.name || job.vendor?.name || 'Vendor';
+                          return hasEmail ? (
+                            <button
+                              key={po.id}
+                              onClick={() => {
+                                setEmailType('po');
+                                setSelectedPOForEmail({
+                                  id: po.id,
+                                  jobId: job.id,
+                                  poNumber: po.poNumber,
+                                  vendorName: vendorDisplayName,
+                                  vendorEmail: po.vendor?.email || po.targetCompany?.email || job.vendor?.email,
+                                  vendorContacts: po.vendor?.contacts || job.vendor?.contacts || [],
+                                });
+                                setShowEmailDropdown(false);
+                              }}
+                              className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm hover:bg-secondary border-b border-border last:border-b-0"
+                            >
+                              <FileText className="w-4 h-4 text-muted-foreground" />
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium text-foreground">PO · {vendorDisplayName.slice(0, 22)}</div>
+                                <div className="text-xs text-muted-foreground font-mono">#{po.poNumber}</div>
+                              </div>
+                              {po.emailedAt && (
+                                <span className="text-xs text-status-success flex items-center gap-1">
+                                  <Check className="w-3 h-3" />
+                                  Sent
+                                </span>
+                              )}
+                            </button>
                           ) : (
-                            <div className="px-4 py-3 text-sm text-gray-500">
-                              No POs to send
+                            <div
+                              key={po.id}
+                              className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm bg-muted/40 border-b border-border last:border-b-0 cursor-not-allowed"
+                              title="Vendor has no email address"
+                            >
+                              <FileText className="w-4 h-4 text-muted-foreground/40" />
+                              <div className="flex-1">
+                                <div className="font-medium text-muted-foreground">PO · {vendorDisplayName.slice(0, 22)}</div>
+                                <div className="text-xs text-status-danger">No email on file</div>
+                              </div>
                             </div>
-                          )}
-                        </div>
+                          );
+                        })
+                      ) : (
+                        <div className="px-4 py-3 text-sm text-muted-foreground">No POs to send</div>
                       )}
                     </div>
-                  </div>
-
-                  {/* Bottom row: Partner badge + payment info */}
-                  <div className="flex items-center gap-2 text-xs">
-                    {job.vendor?.isPartner && (
-                      <span className="px-2 py-0.5 bg-orange-500 text-white font-bold rounded">
-                        PARTNER
-                      </span>
-                    )}
-                    {job.invoiceEmailedAt && (
-                      <span className="flex items-center gap-1 px-2 py-1 bg-green-50 text-green-700 rounded" title={`Invoice sent to ${job.invoiceEmailedTo || 'customer'}`}>
-                        <Check className="w-3 h-3" />
-                        Inv sent {new Date(job.invoiceEmailedAt).toLocaleDateString()}
-                      </span>
-                    )}
-                  </div>
+                  )}
                 </div>
+
+                {job.invoiceEmailedAt && (
+                  <span
+                    className="ml-auto inline-flex items-center gap-1 px-2.5 py-1 bg-status-success-bg text-status-success text-xs font-medium rounded-md border border-status-success-border"
+                    title={`Invoice sent to ${job.invoiceEmailedTo || 'customer'}`}
+                  >
+                    <Check className="w-3 h-3" />
+                    Inv sent {new Date(job.invoiceEmailedAt).toLocaleDateString()}
+                  </span>
+                )}
               </div>
             )}
-
+            </div>
           </div>
 
           {/* Job Readiness Banner */}
@@ -3292,23 +3309,23 @@ export function JobDetailModal({
             </div>
           )}
 
-          {/* Tab Navigation - Editorial Underline Style */}
-          <div className="bg-card border-b border-border px-6 flex-shrink-0">
-            <div className="flex gap-6">
+          {/* Tabs */}
+          <div className="bg-secondary/40 border-b border-border px-6 flex-shrink-0">
+            <div className="flex gap-1">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`py-4 text-sm transition-colors flex items-center gap-2 border-b-2 -mb-[1px] ${
+                  className={`py-3 px-3 text-sm transition-colors flex items-center gap-2 border-b-2 -mb-[1px] ${
                     activeTab === tab.id
-                      ? 'text-foreground border-primary font-semibold'
-                      : 'text-muted-foreground border-transparent hover:text-foreground hover:border-muted-foreground/30'
+                      ? 'text-[#2B3A4A] border-[#C0512A] font-semibold'
+                      : 'text-muted-foreground border-transparent hover:text-foreground'
                   }`}
                 >
-                  {tab.id === 'financials' && <DollarSign className="h-4 w-4" />}
-                  <span className="uppercase text-[11px] tracking-[0.08em]">{tab.label}</span>
-                  {tab.badge && tab.badge > 0 && (
-                    <span className="px-2 py-0.5 bg-status-warning-bg text-status-warning text-[10px] rounded-full font-semibold">
+                  {tab.id === 'financials' && <DollarSign className="h-3.5 w-3.5" />}
+                  <span className="uppercase text-[10px] tracking-[0.1em]">{tab.label}</span>
+                  {tab.badge != null && tab.badge > 0 && (
+                    <span className="min-w-[1.25rem] h-5 px-1.5 inline-flex items-center justify-center bg-status-warning-bg text-status-warning text-[10px] rounded-full font-semibold border border-status-warning-border">
                       {tab.badge}
                     </span>
                   )}
