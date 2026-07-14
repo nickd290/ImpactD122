@@ -41,6 +41,10 @@ interface Job {
   };
   customerPaymentDate?: string;
   customerPaymentAmount?: number;
+  bradfordPaymentDate?: string;
+  bradfordPaymentPaid?: boolean;
+  jdPaymentDate?: string;
+  jdPaymentPaid?: boolean;
   purchaseOrders?: any[];
   proofUrgency?: string;
   invoiceEmailedAt?: string;
@@ -263,6 +267,29 @@ export function DashboardView({
     return 0;
   }, [whatsNext]);
 
+  /**
+   * Sheet rule (Job Overview): if client paid Impact, next is pay BGE and/or JD.
+   */
+  const vendorPayQueue = useMemo(() => {
+    return jobs.filter((j) => {
+      if (j.status === 'CANCELLED') return false;
+      const clientPaid = !!(j.customerPaymentDate || j.status === 'PAID');
+      if (!clientPaid) return false;
+      const bgePaid = !!(j.bradfordPaymentDate || j.bradfordPaymentPaid);
+      const jdPaid = !!(j.jdPaymentDate || j.jdPaymentPaid);
+      return !bgePaid || !jdPaid;
+    });
+  }, [jobs]);
+
+  const vendorPayDollars = useMemo(
+    () =>
+      vendorPayQueue.reduce(
+        (sum, j) => sum + (Number(j.sellPrice) || Number(j.profit?.sellPrice) || 0),
+        0
+      ),
+    [vendorPayQueue]
+  );
+
   const handleJobClick = (job: Job) => {
     // Prefer full job from local list (has more fields)
     const full = jobs.find((j) => j.id === job.id) || job;
@@ -416,7 +443,63 @@ export function DashboardView({
           danger={overdueJobs.length > 0}
           onClick={() => setActiveBucket('dueThisWeek')}
         />
+        <KpiTile
+          label="Pay BGE/JD"
+          value={String(vendorPayQueue.length)}
+          sub={vendorPayQueue.length ? formatCompact(vendorPayDollars) : 'client paid · vendor due'}
+          danger={vendorPayQueue.length > 0}
+          onClick={() => onViewChange?.('JOBS')}
+        />
       </div>
+
+      {/* Client paid → vendor pay queue (sheet rule) */}
+      {vendorPayQueue.length > 0 && (
+        <div className="rounded-xl border border-orange-200 bg-orange-50/50 p-4">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <div>
+              <h2 className="text-sm font-semibold text-[#2B3A4A]">
+                Client paid → pay BGE / JD
+              </h2>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                {vendorPayQueue.length} jobs · customer money in · Bradford or JD still open
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onViewChange?.('JOBS')}
+              className="text-xs font-semibold text-[#C0512A] hover:underline"
+            >
+              Open Jobs filter
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {vendorPayQueue.slice(0, 12).map((j) => {
+              const bge = !!(j.bradfordPaymentDate || j.bradfordPaymentPaid);
+              const jd = !!(j.jdPaymentDate || j.jdPaymentPaid);
+              return (
+                <button
+                  key={j.id}
+                  type="button"
+                  onClick={() => handleJobClick(j)}
+                  className="text-xs font-medium px-2.5 py-1 rounded-md bg-white border border-orange-200 text-[#2B3A4A] hover:border-[#C0512A]"
+                >
+                  {jobLabel(j)}
+                  <span className="text-zinc-400 ml-1">
+                    {!bge ? 'BGE' : ''}
+                    {!bge && !jd ? '+' : ''}
+                    {!jd ? 'JD' : ''}
+                  </span>
+                </button>
+              );
+            })}
+            {vendorPayQueue.length > 12 && (
+              <span className="text-xs text-orange-700 self-center">
+                +{vendorPayQueue.length - 12} more
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main grid */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">

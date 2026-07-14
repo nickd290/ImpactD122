@@ -42,6 +42,33 @@ interface Job {
   sellPrice?: number;
   profit?: { totalCost?: number };
   purchaseOrders?: any[];
+  customerPaymentDate?: string;
+  customerPaymentAmount?: number;
+  bradfordPaymentDate?: string;
+  bradfordPaymentPaid?: boolean;
+  jdPaymentDate?: string;
+  jdPaymentPaid?: boolean;
+  paperSource?: string;
+}
+
+/** Client paid Impact → next money out is BGE (Bradford) and/or JD */
+function isClientPaid(job: Job): boolean {
+  return !!(job.customerPaymentDate || job.status === 'PAID');
+}
+
+function isBgePaid(job: Job): boolean {
+  return !!(job.bradfordPaymentDate || job.bradfordPaymentPaid);
+}
+
+function isJdPaid(job: Job): boolean {
+  return !!(job.jdPaymentDate || job.jdPaymentPaid);
+}
+
+/** Customer paid us, but Bradford and/or JD still need to be paid */
+function needsVendorPay(job: Job): boolean {
+  if (!isClientPaid(job)) return false;
+  if (job.status === 'CANCELLED') return false;
+  return !isBgePaid(job) || !isJdPaid(job);
 }
 
 const WORKFLOW_SHORT: Record<string, string> = {
@@ -134,7 +161,9 @@ export function JobsView({
   const sortMenuRef = useRef<HTMLDivElement>(null);
 
   // Quick filters
-  const [quickFilter, setQuickFilter] = useState<'all' | 'overdue' | 'due-soon' | 'no-vendor'>('all');
+  const [quickFilter, setQuickFilter] = useState<
+    'all' | 'overdue' | 'due-soon' | 'no-vendor' | 'pay-vendors' | 'client-unpaid'
+  >('all');
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const [collapsedCustomers, setCollapsedCustomers] = useState<Set<string>>(new Set());
@@ -286,6 +315,9 @@ export function JobsView({
         return days >= 0 && days <= 7;
       }).length,
       'no-vendor': tabFilteredJobs.filter(j => !j.vendor?.name).length,
+      // Sheet rule: client paid → BGE/JD need pay
+      'pay-vendors': tabFilteredJobs.filter((j) => needsVendorPay(j)).length,
+      'client-unpaid': tabFilteredJobs.filter((j) => !isClientPaid(j) && j.status !== 'CANCELLED').length,
     };
   }, [tabFilteredJobs]);
 
@@ -315,6 +347,13 @@ export function JobsView({
       }
       if (quickFilter === 'no-vendor') {
         return !job.vendor?.name;
+      }
+      if (quickFilter === 'pay-vendors') {
+        // Client paid Impact → still need BGE and/or JD
+        return needsVendorPay(job);
+      }
+      if (quickFilter === 'client-unpaid') {
+        return !isClientPaid(job) && job.status !== 'CANCELLED';
       }
       return true;
     });
@@ -431,11 +470,16 @@ export function JobsView({
   const handleClearSelection = () => setSelectedJobIds(new Set());
 
   const handleSelectUnpaid = () => {
-    const unpaid = filteredJobs.filter(
-      (j) => j.status !== 'PAID' && !(j as any).customerPaymentDate
-    );
+    const unpaid = filteredJobs.filter((j) => !isClientPaid(j) && j.status !== 'CANCELLED');
     setSelectedJobIds(new Set(unpaid.map((j) => j.id)));
-    toast.message(`Selected ${unpaid.length} unpaid job${unpaid.length === 1 ? '' : 's'}`);
+    toast.message(`Selected ${unpaid.length} client-unpaid job${unpaid.length === 1 ? '' : 's'}`);
+  };
+
+  /** Select jobs where client paid us but BGE/JD still due */
+  const handleSelectVendorDue = () => {
+    const due = filteredJobs.filter((j) => needsVendorPay(j));
+    setSelectedJobIds(new Set(due.map((j) => j.id)));
+    toast.message(`Selected ${due.length} job${due.length === 1 ? '' : 's'} — client paid, vendor pay due`);
   };
 
   const handleSelectActiveOnly = () => {
@@ -908,6 +952,34 @@ export function JobsView({
               No Vendor ({filterCounts['no-vendor']})
             </button>
           )}
+          {filterCounts['pay-vendors'] > 0 && (
+            <button
+              onClick={() => setQuickFilter('pay-vendors')}
+              className={cn(
+                "px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors flex items-center gap-1.5",
+                quickFilter === 'pay-vendors'
+                  ? "bg-[#C0512A] text-white"
+                  : "bg-orange-100 text-[#C0512A] hover:bg-orange-200"
+              )}
+              title="Client paid Impact — BGE and/or JD still need to be paid"
+            >
+              <DollarSign className="w-3.5 h-3.5" />
+              Pay BGE/JD ({filterCounts['pay-vendors']})
+            </button>
+          )}
+          {filterCounts['client-unpaid'] > 0 && (
+            <button
+              onClick={() => setQuickFilter('client-unpaid')}
+              className={cn(
+                "px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors",
+                quickFilter === 'client-unpaid'
+                  ? "bg-amber-700 text-white"
+                  : "bg-amber-50 text-amber-800 hover:bg-amber-100"
+              )}
+            >
+              Client unpaid ({filterCounts['client-unpaid']})
+            </button>
+          )}
         </div>
 
         {/* Selection helpers — always available for cleanup */}
@@ -934,7 +1006,15 @@ export function JobsView({
             onClick={handleSelectUnpaid}
             className="text-xs font-medium px-2.5 py-1 rounded-md border border-amber-200 text-amber-800 hover:bg-amber-50"
           >
-            Unpaid
+            Client unpaid
+          </button>
+          <button
+            type="button"
+            onClick={handleSelectVendorDue}
+            className="text-xs font-medium px-2.5 py-1 rounded-md border border-orange-200 text-[#C0512A] hover:bg-orange-50"
+            title="Client paid us — still need to pay BGE and/or JD"
+          >
+            Pay BGE/JD
           </button>
           {selectedCustomerId && (
             <button
@@ -1112,6 +1192,43 @@ export function JobsView({
                         >
                           {WORKFLOW_SHORT[wf] || wf.replace(/_/g, ' ')}
                         </span>
+                        {/* Money chain: Client → BGE → JD (sheet rule) */}
+                        <div className="flex items-center gap-0.5" title="Client paid → then pay BGE / JD">
+                          <span
+                            className={cn(
+                              'text-[9px] font-bold px-1 py-0.5 rounded',
+                              isClientPaid(job) ? 'bg-emerald-100 text-emerald-800' : 'bg-zinc-100 text-zinc-400'
+                            )}
+                          >
+                            C
+                          </span>
+                          <span className="text-[9px] text-zinc-300">→</span>
+                          <span
+                            className={cn(
+                              'text-[9px] font-bold px-1 py-0.5 rounded',
+                              isBgePaid(job)
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : isClientPaid(job)
+                                  ? 'bg-orange-100 text-[#C0512A]'
+                                  : 'bg-zinc-100 text-zinc-400'
+                            )}
+                          >
+                            BGE
+                          </span>
+                          <span className="text-[9px] text-zinc-300">→</span>
+                          <span
+                            className={cn(
+                              'text-[9px] font-bold px-1 py-0.5 rounded',
+                              isJdPaid(job)
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : isClientPaid(job)
+                                  ? 'bg-orange-100 text-[#C0512A]'
+                                  : 'bg-zinc-100 text-zinc-400'
+                            )}
+                          >
+                            JD
+                          </span>
+                        </div>
                       </div>
                     </td>
                     <td className="px-3 py-2.5">
