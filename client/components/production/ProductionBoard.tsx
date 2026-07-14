@@ -4,7 +4,8 @@ import { useProductionBoard, ProductionJob } from '../../hooks/useProductionBoar
 import { ProductionFilters } from './ProductionFilters';
 import { VendorRow } from './VendorRow';
 import { SendEmailModal } from '../SendEmailModal';
-import { JobDrawer } from '../JobDrawer';
+import { JobDetailModal } from '../JobDetailModal';
+import { pdfApi } from '../../lib/api';
 import { PDFPreviewModal } from '../PDFPreviewModal';
 
 interface ProductionBoardProps {
@@ -43,13 +44,13 @@ export function ProductionBoard({ onRefresh }: ProductionBoardProps) {
     onRefresh?.();
   };
 
-  // Handle job click - opens JobDrawer slide-out
+  // Handle job click - opens full job popup
   const handleJobClick = (job: ProductionJob) => {
     setSelectedJob(job);
     setIsDrawerOpen(true);
   };
 
-  // Handle drawer close
+  // Handle modal close
   const handleDrawerClose = () => {
     setIsDrawerOpen(false);
     setSelectedJob(null);
@@ -185,12 +186,18 @@ export function ProductionBoard({ onRefresh }: ProductionBoardProps) {
         />
       )}
 
-      {/* Job Detail Drawer (slide-out panel) */}
+      {/* Job popup — full detail modal */}
       {selectedJob && (
-        <JobDrawer
-          job={selectedJob}
+        <JobDetailModal
+          job={{
+            ...selectedJob,
+            number: (selectedJob as any).jobNo || (selectedJob as any).number,
+          } as any}
           isOpen={isDrawerOpen}
           onClose={handleDrawerClose}
+          onDownloadPO={() => pdfApi.generateVendorPO(selectedJob.id)}
+          onDownloadInvoice={() => pdfApi.generateInvoice(selectedJob.id)}
+          onDownloadQuote={() => pdfApi.generateQuote(selectedJob.id)}
           onRefresh={handleRefresh}
         />
       )}

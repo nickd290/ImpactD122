@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Upload, Sparkles, AlertCircle, Clock, FileText } from 'lucide-react';
 import { Button } from './ui';
-import { JobDrawer } from './JobDrawer';
+import { JobDetailModal } from './JobDetailModal';
+import { pdfApi } from '../lib/api';
 import { jobsApi } from '../lib/api';
 
 interface Job {
@@ -421,15 +422,15 @@ export function DashboardView({
         )}
       </div>
 
-      {/* Job Drawer - Slide out from right */}
-      <JobDrawer
-        job={selectedJob ? {
-          ...selectedJob,
-          number: selectedJob.number,
-        } : null}
+      {/* Job popup — full detail modal */}
+      <JobDetailModal
+        job={selectedJob as any}
         isOpen={isDrawerOpen}
         onClose={handleDrawerClose}
         onEdit={handleEdit}
+        onDownloadPO={() => selectedJob && pdfApi.generateVendorPO(selectedJob.id)}
+        onDownloadInvoice={() => selectedJob && pdfApi.generateInvoice(selectedJob.id)}
+        onDownloadQuote={() => selectedJob && pdfApi.generateQuote(selectedJob.id)}
         onRefresh={handleRefresh}
       />
     </div>

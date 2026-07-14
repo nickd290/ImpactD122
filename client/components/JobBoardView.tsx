@@ -2,7 +2,8 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { differenceInDays, parseISO } from 'date-fns';
 import { AlertCircle, Clock, ExternalLink, ChevronRight } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { JobDrawer } from './JobDrawer';
+import { JobDetailModal } from './JobDetailModal';
+import { pdfApi } from '../lib/api';
 import { WorkflowStatusDropdown } from './WorkflowStatusDropdown';
 import { jobsApi } from '../lib/api';
 
@@ -350,15 +351,18 @@ export function JobBoardView({ jobs: propJobs, onJobClick, onEditJob, onRefresh 
         ))}
       </div>
 
-      {/* Job Drawer - Slide out from right */}
-      <JobDrawer
+      {/* Job popup — full detail modal */}
+      <JobDetailModal
         job={selectedJob ? {
           ...selectedJob,
-          number: selectedJob.jobNo,
-        } : null}
+          number: selectedJob.jobNo || (selectedJob as any).number,
+        } as any : null}
         isOpen={isDrawerOpen}
         onClose={handleDrawerClose}
         onEdit={handleEdit}
+        onDownloadPO={() => selectedJob && pdfApi.generateVendorPO(selectedJob.id)}
+        onDownloadInvoice={() => selectedJob && pdfApi.generateInvoice(selectedJob.id)}
+        onDownloadQuote={() => selectedJob && pdfApi.generateQuote(selectedJob.id)}
         onRefresh={handleRefresh}
       />
     </div>

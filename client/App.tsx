@@ -700,6 +700,7 @@ function App() {
               onJobClick={(job) => {
                 setSelectedJob(job);
                 setCurrentView('JOBS');
+                setIsDrawerOpen(true);
               }}
             />
           )}
@@ -722,6 +723,9 @@ function App() {
               onShowPOUploader={() => setShowPOUploader(true)}
               onShowEmailDraft={() => setShowEmailDraft(true)}
               onShowExcelImporter={() => setShowExcelImporter(true)}
+              isDrawerOpen={isDrawerOpen}
+              onOpenDrawer={() => setIsDrawerOpen(true)}
+              onCloseDrawer={() => setIsDrawerOpen(false)}
             />
           )}
 

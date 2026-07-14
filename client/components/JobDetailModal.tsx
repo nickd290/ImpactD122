@@ -240,7 +240,7 @@ interface JobDetailModalProps {
 type TabType = 'details' | 'financials' | 'change-orders';
 
 export function JobDetailModal({
-  job,
+  job: jobProp,
   isOpen,
   onClose,
   onEdit,
@@ -251,6 +251,45 @@ export function JobDetailModal({
   onDownloadQuote,
   onRefresh,
 }: JobDetailModalProps) {
+  // Always hydrate full job when popup opens so list/board rows show complete detail
+  const [fullJob, setFullJob] = useState<Job | null>(jobProp);
+  const [isLoadingJob, setIsLoadingJob] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen || !jobProp?.id) {
+      setFullJob(jobProp);
+      return;
+    }
+    let cancelled = false;
+    setFullJob(jobProp);
+    setIsLoadingJob(true);
+    jobsApi
+      .getById(jobProp.id)
+      .then((data) => {
+        if (cancelled) return;
+        // Normalize number field used across views
+        const hydrated = {
+          ...data,
+          number: data.number || data.jobNo || jobProp.number || jobProp.jobNo,
+          jobNo: data.jobNo || data.number || jobProp.jobNo || jobProp.number,
+        };
+        setFullJob(hydrated);
+      })
+      .catch((err) => {
+        console.error('Failed to load full job for modal:', err);
+        if (!cancelled) setFullJob(jobProp);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingJob(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, jobProp?.id]);
+
+  // Hydrated job preferred; list-row prop is fallback while fetch runs
+  const job = fullJob || jobProp;
+
   const [activeTab, setActiveTab] = useState<TabType>('details');
   const [isAddingPO, setIsAddingPO] = useState(false);
   const [selectedLineItems, setSelectedLineItems] = useState<Set<number>>(new Set());
@@ -501,7 +540,7 @@ export function JobDetailModal({
     onRefresh?.();
   };
 
-  if (!job) return null;
+  if (!isOpen || !job) return null;
 
   const jobNumber = job.number || job.jobNo || 'Unknown';
   const createdDate = job.createdAt || job.dateCreated;
@@ -2992,7 +3031,7 @@ export function JobDetailModal({
         onClick={handleBackdropClick}
       >
         <div
-          className={`bg-background rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col transform transition-transform duration-200 ${
+          className={`bg-background rounded-xl shadow-2xl w-full max-w-6xl max-h-[92vh] overflow-hidden flex flex-col transform transition-transform duration-200 ${
             isOpen ? 'scale-100' : 'scale-95'
           }`}
           onClick={(e) => e.stopPropagation()}
@@ -3000,6 +3039,9 @@ export function JobDetailModal({
         >
           {/* Header - Editorial Style */}
           <div className={`border-b px-6 py-5 flex-shrink-0 ${isEditMode ? 'bg-status-info-bg border-status-info-border' : 'bg-card border-border'}`}>
+            {isLoadingJob && (
+              <div className="mb-2 text-xs text-muted-foreground">Loading full job detail…</div>
+            )}
             {isEditMode && (
               <div className="flex items-center gap-2 text-status-info text-sm font-medium mb-3">
                 <Edit2 className="w-4 h-4" />

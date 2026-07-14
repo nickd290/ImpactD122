@@ -4,7 +4,7 @@ import { Button, Tabs } from './ui';
 import { Input } from './ui';
 import { Badge } from './ui';
 import { StatusBadge } from './ui/StatusBadge';
-import { JobDrawer } from './JobDrawer';
+import { JobDetailModal } from './JobDetailModal';
 import { InlineEditableCell } from './InlineEditableCell';
 import { StatusDropdown } from './StatusDropdown';
 import { cn } from '../lib/utils';
@@ -77,11 +77,23 @@ export function JobsView({
   onShowPOUploader,
   onShowEmailDraft,
   onShowExcelImporter,
+  isDrawerOpen: controlledOpen,
+  onOpenDrawer,
+  onCloseDrawer,
 }: JobsViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'all' | 'active' | 'archive'>('all');
-  // Unified workflow view (no toggle needed)
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  // Local open state; parent can also force open (search / action items)
+  const [localOpen, setLocalOpen] = useState(false);
+  useEffect(() => {
+    if (controlledOpen) setLocalOpen(true);
+  }, [controlledOpen, selectedJob?.id]);
+  const isDrawerOpen = localOpen;
+  const setIsDrawerOpen = (open: boolean) => {
+    setLocalOpen(open);
+    if (open) onOpenDrawer?.();
+    else onCloseDrawer?.();
+  };
 
   // Local jobs state - fetch our own data instead of relying on props
   const [localJobs, setLocalJobs] = useState<Job[]>([]);
@@ -363,8 +375,9 @@ export function JobsView({
   };
 
   const handleRowClick = (job: Job) => {
-    // Open edit modal directly when clicking a job row
-    onEditJob(job);
+    // Open full job popup (not sidebar / not edit form)
+    onSelectJob(job);
+    setIsDrawerOpen(true);
   };
 
   const handleToggleSelection = (jobId: string) => {
@@ -1117,15 +1130,20 @@ export function JobsView({
         </>
       )}
 
-      {/* Job Drawer - Slide-out panel for job details */}
-      <JobDrawer
+      {/* Job popup — full detail modal (not sidebar) */}
+      <JobDetailModal
         isOpen={isDrawerOpen}
         onClose={() => {
           setIsDrawerOpen(false);
           onSelectJob(null as any);
         }}
-        job={selectedJob}
+        job={selectedJob as any}
         onEdit={() => selectedJob && onEditJob(selectedJob)}
+        onDelete={() => selectedJob && onDeleteJob(selectedJob)}
+        onGenerateEmail={() => selectedJob && onShowEmailDraft(selectedJob)}
+        onDownloadPO={() => selectedJob && pdfApi.generateVendorPO(selectedJob.id)}
+        onDownloadInvoice={() => selectedJob && pdfApi.generateInvoice(selectedJob.id)}
+        onDownloadQuote={() => selectedJob && pdfApi.generateQuote(selectedJob.id)}
         onRefresh={handleRefresh}
       />
     </div>
