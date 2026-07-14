@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   X, Calendar, User, Package, FileText, Edit2, Mail, Printer, Receipt,
-  DollarSign, Plus, Trash2, Building2, Check, Save, Download, AlertTriangle, Send, ChevronDown, Link, ExternalLink, MessageSquare, Upload, Truck, Circle, CheckCircle2
+  DollarSign, Plus, Trash2, Building2, Check, Save, Download, AlertTriangle, Send, ChevronDown, Link, ExternalLink, MessageSquare, Upload, Truck, Circle, CheckCircle2, Eye, Database, Image as ImageIcon
 } from 'lucide-react';
 import { toDateInputValue } from '../lib/utils';
 import { EditableField } from './EditableField';
@@ -16,7 +16,7 @@ import { SendEmailModal } from './SendEmailModal';
 import { CommunicationThread } from './CommunicationThread';
 import { useQuery } from '@tanstack/react-query';
 import { WorkflowStatusBadge, getNextWorkflowStatuses, WORKFLOW_STAGES, getStageIndex } from './WorkflowStatusBadge';
-import { PDFPreviewModal } from './PDFPreviewModal';
+import { DocumentViewerModal, type DocumentSource } from './DocumentViewerModal';
 import { JobReadinessCard } from './job-form/JobReadinessCard';
 import { BlockingIssueCard } from './job-detail/BlockingIssueCard';
 
@@ -373,8 +373,12 @@ export function JobDetailModal({
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  // PDF Preview state
-  const [previewFile, setPreviewFile] = useState<{ id: string; fileName: string } | null>(null);
+  // Document / artwork / PDF popup viewer
+  const [docViewer, setDocViewer] = useState<{ source: DocumentSource; title?: string } | null>(null);
+  const artworkInputRef = React.useRef<HTMLInputElement>(null);
+  const dataInputRef = React.useRef<HTMLInputElement>(null);
+  const proofInputRef = React.useRef<HTMLInputElement>(null);
+  const otherInputRef = React.useRef<HTMLInputElement>(null);
 
   // Fetch vendors when edit mode is enabled OR when adding PO
   useEffect(() => {
@@ -507,12 +511,17 @@ export function JobDetailModal({
   });
   const pendingCommCount = (commData || []).filter((c: any) => c.status === 'PENDING_REVIEW').length;
 
-  // Fetch PO files for this job
-  const { data: jobFiles } = useQuery({
+  // Fetch all job files (also seeds upload list if empty)
+  const { data: jobFiles, refetch: refetchJobFiles } = useQuery({
     queryKey: ['jobFiles', job?.id],
     queryFn: () => job?.id ? filesApi.getJobFiles(job.id) : Promise.resolve([]),
     enabled: !!job?.id,
   });
+  useEffect(() => {
+    if (Array.isArray(jobFiles) && jobFiles.length > 0) {
+      setUploadedFiles(jobFiles);
+    }
+  }, [jobFiles]);
   const poFiles = (jobFiles || []).filter((f: any) => f.kind === 'PO_PDF');
 
   // Fetch change orders for this job
@@ -558,38 +567,116 @@ export function JobDetailModal({
     }).format(amount);
   };
 
-  // File upload handler
-  const handleFileUpload = async (files: FileList | null) => {
+  // Multi-file upload by kind (artwork / data / proof) — multi-revision package
+  const handleFileUpload = async (
+    files: FileList | null,
+    kind: 'ARTWORK' | 'DATA_FILE' | 'PROOF' | 'VENDOR_PROOF' | 'CUSTOMER_PO' | 'PO_PDF' = 'ARTWORK'
+  ) => {
     if (!files || files.length === 0 || !job?.id) return;
     setUploadError('');
     setIsUploading(true);
 
-    for (const file of Array.from(files)) {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('kind', 'ARTWORK');
+    const formData = new FormData();
+    formData.append('kind', kind);
+    Array.from(files).forEach((file, i) => {
+      formData.append('files', file);
+      if (i === 0) formData.append('file', file);
+    });
 
+    try {
+      const response = await fetch(`/api/jobs/${job.id}/files`, {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || 'Upload failed');
+      }
+      const result = await response.json();
+      const newFiles = result.files || (result.file ? [result.file] : []);
+      setUploadedFiles((prev) => [...newFiles, ...prev]);
+      refetchJobFiles?.();
+      onRefresh?.();
+    } catch (error: any) {
       try {
-        const response = await fetch(`/api/jobs/${job.id}/files`, {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.error || 'Upload failed');
+        for (const file of Array.from(files)) {
+          const fd = new FormData();
+          fd.append('file', file);
+          fd.append('kind', kind);
+          const response = await fetch(`/api/jobs/${job.id}/files`, {
+            method: 'POST',
+            body: fd,
+            credentials: 'include',
+          });
+          if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error || 'Upload failed');
+          }
+          const result = await response.json();
+          if (result.file) setUploadedFiles((prev) => [result.file, ...prev]);
         }
-
-        const result = await response.json();
-        setUploadedFiles(prev => [...prev, result.file]);
-      } catch (error: any) {
-        setUploadError(error.message || 'Failed to upload file');
+        refetchJobFiles?.();
+        onRefresh?.();
+      } catch (e2: any) {
+        setUploadError(e2.message || error.message || 'Failed to upload file');
       }
     }
+
     setIsUploading(false);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    [artworkInputRef, dataInputRef, proofInputRef, otherInputRef, fileInputRef].forEach((ref) => {
+      if (ref.current) ref.current.value = '';
+    });
+  };
+
+  const openFileViewer = (file: any) => {
+    setDocViewer({
+      source: {
+        type: 'file',
+        fileId: file.id,
+        fileName: file.fileName,
+        mimeType: file.mimeType,
+      },
+      title: file.fileName,
+    });
+  };
+
+  const openGeneratedDoc = (kind: 'invoice' | 'quote' | 'vendor-po' | 'po', id?: string) => {
+    if (!job?.id && kind !== 'po') return;
+    const map: Record<string, { url: string; title: string }> = {
+      invoice: {
+        url: `/api/pdf/invoice/${job!.id}`,
+        title: `Invoice — ${job?.number || job?.jobNo || ''}`,
+      },
+      quote: {
+        url: `/api/pdf/quote/${job!.id}`,
+        title: `Quote — ${job?.number || job?.jobNo || ''}`,
+      },
+      'vendor-po': {
+        url: `/api/pdf/vendor-po/${job!.id}`,
+        title: `Vendor PO — ${job?.number || job?.jobNo || ''}`,
+      },
+      po: {
+        url: id ? `/api/pdf/po/${id}` : '',
+        title: `PO — ${id || ''}`,
+      },
+    };
+    const entry = map[kind];
+    if (!entry?.url) return;
+    setDocViewer({
+      source: { type: 'url', url: entry.url, fileName: entry.title, mimeType: 'application/pdf' },
+      title: entry.title,
+    });
+  };
+
+  const revisionLabel = (file: any, kind: string) => {
+    const same = uploadedFiles
+      .filter((f) => f.kind === kind)
+      .slice()
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    const idx = same.findIndex((f) => f.id === file.id);
+    if (idx < 0 || same.length <= 1) return null;
+    return `Rev ${idx + 1}`;
   };
 
   // File delete handler
@@ -1454,71 +1541,166 @@ export function JobDetailModal({
         </div>
       )}
 
-      {/* Files - Compact List */}
-      <div className="border border-border rounded-lg overflow-hidden">
-        <div className="px-3 py-2 bg-muted/50 border-b border-border flex items-center justify-between">
-          <span className="section-header">Files ({uploadedFiles.length})</span>
-          <label className="text-xs text-blue-600 hover:underline cursor-pointer">
-            + Upload
+      {/* Files — multi artwork / data / proof with view + revisions */}
+      {(() => {
+        const groups: { kind: string; label: string; icon: React.ReactNode; accept: string; ref: React.RefObject<HTMLInputElement | null>; uploadKind: 'ARTWORK' | 'DATA_FILE' | 'PROOF' | 'CUSTOMER_PO' }[] = [
+          { kind: 'ARTWORK', label: 'Artwork', icon: <ImageIcon className="w-3.5 h-3.5" />, accept: 'image/*,.pdf,.ai,.psd,.tif,.tiff,.eps', ref: artworkInputRef, uploadKind: 'ARTWORK' },
+          { kind: 'DATA_FILE', label: 'Data files', icon: <Database className="w-3.5 h-3.5" />, accept: '.csv,.xlsx,.xls,.txt,.zip,.pdf', ref: dataInputRef, uploadKind: 'DATA_FILE' },
+          { kind: 'PROOF', label: 'Proofs', icon: <FileText className="w-3.5 h-3.5" />, accept: 'image/*,.pdf', ref: proofInputRef, uploadKind: 'PROOF' },
+          { kind: 'CUSTOMER_PO', label: 'Customer PO', icon: <FileText className="w-3.5 h-3.5" />, accept: '.pdf,image/*', ref: otherInputRef, uploadKind: 'CUSTOMER_PO' },
+        ];
+        const kindAliases: Record<string, string> = { VENDOR_PROOF: 'PROOF', PO_PDF: 'CUSTOMER_PO' };
+
+        return (
+          <div className="border border-border rounded-xl overflow-hidden">
+            <div className="px-3 py-2 bg-muted/50 border-b border-border flex items-center justify-between">
+              <span className="section-header">Files & revisions ({uploadedFiles.length})</span>
+              {isUploading && (
+                <span className="text-[11px] text-[#C0512A] font-medium animate-pulse">Uploading…</span>
+              )}
+            </div>
+            {uploadError && (
+              <div className="px-3 py-1.5 text-xs text-status-danger bg-status-danger-bg border-b border-status-danger-border">
+                {uploadError}
+              </div>
+            )}
+            <div className="divide-y divide-border">
+              {groups.map((g) => {
+                const files = uploadedFiles
+                  .filter((f) => f.kind === g.kind || kindAliases[f.kind] === g.kind)
+                  .slice()
+                  .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                return (
+                  <div key={g.kind} className="px-3 py-2.5">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-[#2B3A4A]">
+                        {g.icon}
+                        {g.label}
+                        <span className="text-muted-foreground font-normal tabular-nums">({files.length})</span>
+                      </div>
+                      <label className="inline-flex items-center gap-1 text-[11px] font-medium text-[#C0512A] hover:underline cursor-pointer">
+                        <Upload className="w-3 h-3" />
+                        Add {files.length ? 'revision' : 'files'}
+                        <input
+                          ref={g.ref as any}
+                          type="file"
+                          multiple
+                          accept={g.accept}
+                          className="hidden"
+                          onChange={(e) => handleFileUpload(e.target.files, g.uploadKind)}
+                        />
+                      </label>
+                    </div>
+                    {files.length === 0 ? (
+                      <p className="text-[11px] text-muted-foreground py-1">No {g.label.toLowerCase()} yet — multi-file OK</p>
+                    ) : (
+                      <div className="space-y-1 max-h-36 overflow-y-auto">
+                        {files.map((file) => {
+                          const rev = revisionLabel(file, file.kind);
+                          return (
+                            <div
+                              key={file.id}
+                              className="flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded-lg bg-secondary/40 hover:bg-secondary/70 transition-colors"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <FileText className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                                <span className="truncate font-medium text-foreground">{file.fileName}</span>
+                                {rev && (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#2B3A4A]/10 text-[#2B3A4A] flex-shrink-0">
+                                    {rev}
+                                  </span>
+                                )}
+                                {file.createdAt && (
+                                  <span className="text-[10px] text-muted-foreground flex-shrink-0 hidden sm:inline">
+                                    {new Date(file.createdAt).toLocaleDateString()}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-0.5 flex-shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => openFileViewer(file)}
+                                  className="p-1.5 text-[#2B3A4A] hover:bg-white rounded-md transition-colors"
+                                  title="View"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => filesApi.downloadFile(file.id)}
+                                  className="p-1.5 text-muted-foreground hover:bg-white rounded-md transition-colors"
+                                  title="Download"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                </button>
+                                {(file.kind === 'VENDOR_PROOF' || file.kind === 'PROOF') && job.customer?.email && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedProofFiles([file]);
+                                      setShowSendProofModal(true);
+                                    }}
+                                    className="p-1.5 text-status-info hover:bg-status-info-bg rounded-md transition-colors"
+                                    title="Send to customer"
+                                  >
+                                    <Send className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                {file.kind === 'CUSTOMER_PO' && job.vendor?.email && (
+                                  <button
+                                    type="button"
+                                    onClick={handleSendCustomerPO}
+                                    disabled={isSendingCustomerPO}
+                                    className="p-1.5 text-status-info hover:bg-status-info-bg rounded-md disabled:opacity-50"
+                                    title="Send to vendor"
+                                  >
+                                    <Send className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteFile(file.id)}
+                                  className="p-1.5 text-status-danger/70 hover:bg-status-danger-bg rounded-md"
+                                  title="Delete"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {/* Catch-all other kinds */}
+              {uploadedFiles.some(
+                (f) => !['ARTWORK', 'DATA_FILE', 'PROOF', 'VENDOR_PROOF', 'CUSTOMER_PO', 'PO_PDF'].includes(f.kind)
+              ) && (
+                <div className="px-3 py-2 text-xs text-muted-foreground">
+                  Other:{' '}
+                  {uploadedFiles
+                    .filter(
+                      (f) =>
+                        !['ARTWORK', 'DATA_FILE', 'PROOF', 'VENDOR_PROOF', 'CUSTOMER_PO', 'PO_PDF'].includes(f.kind)
+                    )
+                    .map((f) => f.fileName)
+                    .join(', ')}
+                </div>
+              )}
+            </div>
+            {/* Hidden generic input for readiness card */}
             <input
               ref={fileInputRef}
               type="file"
               multiple
-              onChange={(e) => handleFileUpload(e.target.files)}
               className="hidden"
+              onChange={(e) => handleFileUpload(e.target.files, 'ARTWORK')}
             />
-          </label>
-        </div>
-        {uploadedFiles.length > 0 ? (
-          <div className="divide-y divide-border/50 max-h-32 overflow-y-auto">
-            {uploadedFiles.map((file) => (
-              <div key={file.id} className="px-3 py-1.5 flex items-center justify-between text-xs hover:bg-accent/50 transition-colors">
-                <div className="flex items-center gap-2 min-w-0">
-                  <FileText className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                  <span className="truncate text-foreground">{file.fileName}</span>
-                  {file.kind === 'VENDOR_PROOF' && (
-                    <span className="px-1.5 py-0.5 bg-pathway-p3-bg text-pathway-p3 text-[10px] rounded font-medium">PROOF</span>
-                  )}
-                  {file.kind === 'CUSTOMER_PO' && (
-                    <span className="px-1.5 py-0.5 bg-status-info-bg text-status-info text-[10px] rounded font-medium">CUST PO</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-1">
-                  {file.kind === 'VENDOR_PROOF' && job.customer?.email && (
-                    <button
-                      onClick={() => { setSelectedProofFiles([file]); setShowSendProofModal(true); }}
-                      className="p-1 text-status-info hover:bg-status-info-bg rounded transition-colors"
-                      title="Send to customer"
-                    >
-                      <Send className="w-3 h-3" />
-                    </button>
-                  )}
-                  {file.kind === 'CUSTOMER_PO' && job.vendor?.email && (
-                    <button
-                      onClick={handleSendCustomerPO}
-                      disabled={isSendingCustomerPO}
-                      className="p-1 text-status-info hover:bg-status-info-bg rounded disabled:opacity-50 transition-colors"
-                      title="Send to vendor"
-                    >
-                      <Send className="w-3 h-3" />
-                    </button>
-                  )}
-                  <button
-                    onClick={() => handleDeleteFile(file.id)}
-                    className="p-1 text-status-danger/70 hover:bg-status-danger-bg rounded transition-colors"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-              </div>
-            ))}
           </div>
-        ) : (
-          <div className="px-3 py-4 text-center text-xs text-muted-foreground">
-            Drop files here or click Upload
-          </div>
-        )}
-      </div>
+        );
+      })()}
     </div>
   );
   };
@@ -1690,7 +1872,7 @@ export function JobDetailModal({
                   {vendor.pos!.length > 0 && vendor.pos![0].id && (
                     <>
                       <button
-                        onClick={(e) => { e.stopPropagation(); pdfApi.generatePO(vendor.pos![0].id); }}
+                        onClick={(e) => { e.stopPropagation(); openGeneratedDoc('po', vendor.pos![0].id); }}
                         className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs text-foreground bg-muted hover:bg-accent rounded-md font-medium transition-colors"
                       >
                         <Download className="w-3 h-3" /> Download PO
@@ -2431,7 +2613,7 @@ export function JobDetailModal({
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1">
                           <button
-                            onClick={(e) => { e.stopPropagation(); pdfApi.generatePO(po.id); }}
+                            onClick={(e) => { e.stopPropagation(); openGeneratedDoc('po', po.id); }}
                             className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
                             title="Download PDF"
                           >
@@ -2479,7 +2661,7 @@ export function JobDetailModal({
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1">
                           <button
-                            onClick={(e) => { e.stopPropagation(); pdfApi.generatePO(po.id); }}
+                            onClick={(e) => { e.stopPropagation(); openGeneratedDoc('po', po.id); }}
                             className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
                             title="Download PDF"
                           >
@@ -3172,33 +3354,30 @@ export function JobDetailModal({
                 </button>
 
                 <div className="inline-flex items-center rounded-lg border border-border bg-background overflow-hidden shadow-sm">
-                  {onDownloadQuote && (
-                    <button
-                      onClick={onDownloadQuote}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-foreground hover:bg-secondary border-r border-border transition-colors"
-                    >
-                      <FileText className="w-3.5 h-3.5 text-muted-foreground" />
-                      Quote
-                    </button>
-                  )}
-                  {onDownloadPO && (
-                    <button
-                      onClick={onDownloadPO}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-foreground hover:bg-secondary border-r border-border transition-colors"
-                    >
-                      <Printer className="w-3.5 h-3.5 text-muted-foreground" />
-                      PO
-                    </button>
-                  )}
-                  {onDownloadInvoice && (
-                    <button
-                      onClick={onDownloadInvoice}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-foreground hover:bg-secondary transition-colors"
-                    >
-                      <Receipt className="w-3.5 h-3.5 text-muted-foreground" />
-                      Invoice
-                    </button>
-                  )}
+                  <button
+                    onClick={() => openGeneratedDoc('quote')}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-foreground hover:bg-secondary border-r border-border transition-colors"
+                    title="Preview quote"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-muted-foreground" />
+                    Quote
+                  </button>
+                  <button
+                    onClick={() => openGeneratedDoc('vendor-po')}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-foreground hover:bg-secondary border-r border-border transition-colors"
+                    title="Preview vendor PO"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-muted-foreground" />
+                    PO
+                  </button>
+                  <button
+                    onClick={() => openGeneratedDoc('invoice')}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-foreground hover:bg-secondary transition-colors"
+                    title="Preview invoice"
+                  >
+                    <Receipt className="w-3.5 h-3.5 text-muted-foreground" />
+                    Invoice
+                  </button>
                 </div>
 
                 <div className="relative" data-email-dropdown>
@@ -3713,12 +3892,12 @@ export function JobDetailModal({
         </div>
       )}
 
-      {/* PDF Preview Modal */}
-      {previewFile && (
-        <PDFPreviewModal
-          fileId={previewFile.id}
-          fileName={previewFile.fileName}
-          onClose={() => setPreviewFile(null)}
+      {/* Document / artwork popup viewer */}
+      {docViewer && (
+        <DocumentViewerModal
+          source={docViewer.source}
+          title={docViewer.title}
+          onClose={() => setDocViewer(null)}
         />
       )}
     </>

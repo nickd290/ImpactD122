@@ -21,64 +21,80 @@ export const getJobFiles = async (req: Request, res: Response) => {
   }
 };
 
-// Upload file to a job
+const VALID_KINDS = ['ARTWORK', 'DATA_FILE', 'PROOF', 'INVOICE', 'PO_PDF', 'CUSTOMER_PO', 'VENDOR_PROOF'];
+
+function persistUploadedFile(
+  jobId: string,
+  file: Express.Multer.File,
+  kind: string
+) {
+  const fileBuffer = fs.readFileSync(file.path);
+  const checksum = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+  return prisma.file.create({
+    data: {
+      id: crypto.randomUUID(),
+      jobId,
+      kind: kind as any,
+      objectKey: file.path,
+      fileName: file.originalname,
+      mimeType: file.mimetype,
+      size: file.size,
+      checksum,
+      uploadedBy: 'system',
+    },
+  });
+}
+
+// Upload file(s) to a job — single or multi (array)
 export const uploadJobFile = async (req: Request, res: Response) => {
   try {
     const { jobId } = req.params;
     const { kind = 'ARTWORK' } = req.body;
-    const file = req.file;
+    const files: Express.Multer.File[] = [
+      ...((req.files as Express.Multer.File[]) || []),
+      ...(req.file ? [req.file] : []),
+    ];
 
-    if (!file) {
+    if (!files.length) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    // Verify job exists
     const job = await prisma.job.findUnique({ where: { id: jobId } });
     if (!job) {
-      // Clean up uploaded file
-      if (file.path && fs.existsSync(file.path)) {
-        fs.unlinkSync(file.path);
+      for (const f of files) {
+        if (f.path && fs.existsSync(f.path)) fs.unlinkSync(f.path);
       }
       return res.status(404).json({ error: 'Job not found' });
     }
 
-    // Validate kind
-    const validKinds = ['ARTWORK', 'DATA_FILE', 'PROOF', 'INVOICE', 'PO_PDF', 'CUSTOMER_PO', 'VENDOR_PROOF'];
-    if (!validKinds.includes(kind)) {
-      if (file.path && fs.existsSync(file.path)) {
-        fs.unlinkSync(file.path);
+    if (!VALID_KINDS.includes(kind)) {
+      for (const f of files) {
+        if (f.path && fs.existsSync(f.path)) fs.unlinkSync(f.path);
       }
-      return res.status(400).json({ error: `Invalid file kind. Must be one of: ${validKinds.join(', ')}` });
+      return res.status(400).json({
+        error: `Invalid file kind. Must be one of: ${VALID_KINDS.join(', ')}`,
+      });
     }
 
-    // Calculate checksum
-    const fileBuffer = fs.readFileSync(file.path);
-    const checksum = crypto.createHash('sha256').update(fileBuffer).digest('hex');
-
-    // Create file record
-    const fileRecord = await prisma.file.create({
-      data: {
-        id: crypto.randomUUID(),
-        jobId,
-        kind: kind as any,
-        objectKey: file.path, // In production, this would be S3/R2 key
-        fileName: file.originalname,
-        mimeType: file.mimetype,
-        size: file.size,
-        checksum,
-        uploadedBy: 'system', // TODO: Get from auth context
-      },
-    });
-
-    res.json({
-      success: true,
-      file: {
+    const created = [];
+    for (const file of files) {
+      const fileRecord = await persistUploadedFile(jobId, file, kind);
+      created.push({
         id: fileRecord.id,
         fileName: fileRecord.fileName,
         kind: fileRecord.kind,
+        mimeType: fileRecord.mimeType,
         size: fileRecord.size,
         createdAt: fileRecord.createdAt,
-      },
+      });
+    }
+
+    // Back-compat: single file response shape + multi
+    res.json({
+      success: true,
+      file: created[0],
+      files: created,
+      count: created.length,
     });
   } catch (error) {
     console.error('Upload job file error:', error);

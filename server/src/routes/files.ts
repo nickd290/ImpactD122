@@ -43,14 +43,27 @@ const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCa
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB limit
+    fileSize: 250 * 1024 * 1024, // 250MB — print packages can be large (Shaw-style)
+    files: 20,
   },
   fileFilter: fileFilter
 });
 
-// Job file routes
+// Job file routes — accept single `file` or multi `files[]`
 router.get('/jobs/:jobId/files', getJobFiles);
-router.post('/jobs/:jobId/files', upload.single('file'), uploadJobFile);
+router.post(
+  '/jobs/:jobId/files',
+  (req, res, next) => {
+    // Prefer multi-field; fall back to single
+    const multi = upload.array('files', 20);
+    multi(req, res, (err) => {
+      if (err) return next(err);
+      if (req.files && (req.files as Express.Multer.File[]).length > 0) return next();
+      upload.single('file')(req, res, next);
+    });
+  },
+  uploadJobFile
+);
 router.delete('/jobs/:jobId/files/:fileId', deleteJobFile);
 
 // General file download

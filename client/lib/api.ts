@@ -265,16 +265,31 @@ export const aiApi = {
     }),
 };
 
-// Files API
+// Files API — paths match server routes mounted at /api
 export const filesApi = {
-  getJobFiles: (jobId: string) => apiFetch(`/files/jobs/${jobId}/files`),
+  getJobFiles: (jobId: string) => apiFetch(`/jobs/${jobId}/files`),
   downloadFile: (fileId: string) => {
-    window.open(`${API_BASE_URL}/files/files/${fileId}/download`, '_blank');
+    window.open(`${API_BASE_URL}/files/${fileId}/download`, '_blank');
+  },
+  upload: async (jobId: string, formData: FormData) => {
+    const response = await authFetch(`${API_BASE_URL}/jobs/${jobId}/files`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Upload failed');
+    }
+    return response.json();
   },
 };
 
-// PDF API
+// PDF API — URL helpers for popup viewer (and download)
 export const pdfApi = {
+  quoteUrl: (jobId: string) => `${API_BASE_URL}/pdf/quote/${jobId}`,
+  invoiceUrl: (jobId: string) => `${API_BASE_URL}/pdf/invoice/${jobId}`,
+  vendorPoUrl: (jobId: string) => `${API_BASE_URL}/pdf/vendor-po/${jobId}`,
+  poUrl: (poId: string) => `${API_BASE_URL}/pdf/po/${poId}`,
   generateQuote: (jobId: string) => {
     window.open(`${API_BASE_URL}/pdf/quote/${jobId}`, '_blank');
   },
