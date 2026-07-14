@@ -691,6 +691,7 @@ function App() {
               onViewAllJobs={() => setCurrentView('JOBS')}
               onEditJob={handleEditJob}
               onRefresh={loadData}
+              onViewChange={setCurrentView}
             />
           )}
 

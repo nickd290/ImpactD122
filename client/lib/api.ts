@@ -364,6 +364,16 @@ export const financialsApi = {
   getByVendor: () => apiFetch('/financials/by-vendor'),
 };
 
+// Dashboard / What's Next
+export const dashboardApi = {
+  getWhatsNext: () => apiFetch('/dashboard/whats-next'),
+  setProofUrgency: (jobId: string, urgency: string | null, note?: string) =>
+    apiFetch(`/dashboard/jobs/${jobId}/proof-urgency`, {
+      method: 'PUT',
+      body: JSON.stringify({ urgency, note }),
+    }),
+};
+
 // Communications API - Email Relay System
 export const communicationsApi = {
   // Get all communications for a job
