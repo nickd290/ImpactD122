@@ -20,6 +20,8 @@ import { DocumentViewerModal, type DocumentSource } from './DocumentViewerModal'
 import { JobReadinessCard } from './job-form/JobReadinessCard';
 import { BlockingIssueCard } from './job-detail/BlockingIssueCard';
 import { VendorCostEntry } from './job-detail/VendorCostEntry';
+import { SellPriceMarginPanel } from './job-detail/SellPriceMarginPanel';
+import { toast } from 'sonner';
 
 // Pathway badge styling - uses design system colors
 const PATHWAY_STYLES = {
@@ -1119,33 +1121,36 @@ export function JobDetailModal({
     setEditedJob({});
   };
 
-  // Inline save for individual fields (no edit mode required)
+  // Inline save for individual fields (always available — no Edit mode)
   const handleInlineSave = async (field: string, value: any) => {
+    if (!job?.id) return;
     try {
-      console.log(`[handleInlineSave] Saving ${field}:`, value);
       const response = await fetch(`/api/jobs/${job.id}`, {
-        method: 'PATCH',
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ [field]: value }),
       });
-      console.log(`[handleInlineSave] Response status:`, response.status);
       if (!response.ok) {
-        const error = await response.json();
-        console.error(`[handleInlineSave] Error response:`, error);
-        throw new Error(error.message || 'Failed to save');
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.message || error.error || 'Failed to save');
       }
-      const result = await response.json();
-      console.log(`[handleInlineSave] Success:`, result);
-      if (onRefresh) {
-        console.log(`[handleInlineSave] Calling onRefresh`);
-        onRefresh();
-      } else {
-        console.warn(`[handleInlineSave] No onRefresh callback!`);
-      }
+      // Optimistic local hydrate so popup updates without full remount
+      setFullJob((prev: any) => (prev ? { ...prev, [field]: value } : prev));
+      if (onRefresh) onRefresh();
+      toast.success('Saved');
     } catch (error) {
       console.error(`Failed to save ${field}:`, error);
+      toast.error(`Failed to save ${field}`);
       throw error;
     }
+  };
+
+  /** Soft refresh after child panels save (keep modal open) */
+  const handlePanelSaved = () => {
+    if (jobProp?.id) {
+      jobsApi.getById(jobProp.id).then((j) => setFullJob(j)).catch(() => {});
+    }
+    onRefresh?.();
   };
 
   // Workflow status change handler - updates local state to keep modal open
@@ -1317,6 +1322,26 @@ export function JobDetailModal({
 
     return (
     <div className="space-y-4">
+      {/* Always-on money: sell drives margins · size table · click vendors */}
+      <SellPriceMarginPanel
+        jobId={job.id}
+        sellPrice={Number(job.sellPrice) || 0}
+        quantity={job.quantity || job.specs?.quantity || 0}
+        sizeName={job.sizeName || job.specs?.finishedSize || job.specs?.flatSize}
+        paperSource={(job as any).paperSource}
+        purchaseOrders={job.purchaseOrders as any}
+        onSaved={handlePanelSaved}
+      />
+      <VendorCostEntry
+        jobId={job.id}
+        quantity={job.quantity || job.specs?.quantity || 0}
+        sellPrice={Number(job.sellPrice) || 0}
+        sizeName={job.sizeName || job.specs?.finishedSize || job.specs?.flatSize}
+        paperSource={(job as any).paperSource}
+        purchaseOrders={job.purchaseOrders as any}
+        onSaved={handlePanelSaved}
+      />
+
       {/* Blocking Issue - Prominent at top when applicable */}
       <BlockingIssueCard
         job={job}
@@ -1334,29 +1359,23 @@ export function JobDetailModal({
         }}
       />
 
-      {/* Compact Header Row: Key Numbers - Editorial Style */}
+      {/* Compact Header Row: Key Numbers - always editable sell/qty via panel above */}
       <div className="grid grid-cols-5 gap-0 text-center bg-card border border-border rounded-lg overflow-hidden">
         <div className="p-3 border-r border-border/50">
           <div className="section-header mb-1">Status</div>
-          {isEditMode ? (
-            <select
-              value={editedJob.status ?? job.status ?? ''}
-              onChange={(e) => updateEditedField('status', e.target.value)}
-              className="w-full px-2 py-1 text-xs border border-border rounded-md bg-background"
-            >
-              {statusOptions.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          ) : (
-            <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-md ${
-              job.status === 'PAID' ? 'bg-status-success-bg text-status-success' :
-              job.status === 'CANCELLED' ? 'bg-status-danger-bg text-status-danger' :
-              'bg-status-warning-bg text-status-warning'
-            }`}>
-              {job.status}
-            </span>
-          )}
+          <select
+            value={job.status ?? ''}
+            onChange={async (e) => {
+              try {
+                await handleInlineSave('status', e.target.value);
+              } catch { /* toast */ }
+            }}
+            className="w-full px-2 py-1 text-xs border border-border rounded-md bg-background font-medium"
+          >
+            {statusOptions.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
         </div>
         <div className="p-3 border-r border-border/50">
           <div className="section-header mb-1">Sell</div>
@@ -1374,17 +1393,7 @@ export function JobDetailModal({
         </div>
         <div className="p-3">
           <div className="section-header mb-1">Qty</div>
-          {isEditMode ? (
-            <input
-              type="number"
-              value={editedJob.quantity ?? job.quantity ?? ''}
-              onChange={(e) => updateEditedField('quantity', parseInt(e.target.value) || 0)}
-              className="w-20 px-2 py-1 text-sm font-mono font-semibold border border-border rounded-md text-right bg-background"
-              min="0"
-            />
-          ) : (
-            <div className="font-mono text-sm font-semibold text-foreground tabular-nums">{(job.quantity || 0).toLocaleString()}</div>
-          )}
+          <div className="font-mono text-sm font-semibold text-foreground tabular-nums">{(job.quantity || 0).toLocaleString()}</div>
         </div>
       </div>
 
@@ -3234,7 +3243,7 @@ export function JobDetailModal({
             {isEditMode && (
               <div className="flex items-center gap-2 text-status-info text-sm font-medium mb-3">
                 <Edit2 className="w-4 h-4" />
-                Edit mode — save when done
+                Advanced fields — Save when done (sell/vendors auto-save on Details)
               </div>
             )}
             <div className="flex items-start justify-between gap-4">
@@ -3267,19 +3276,21 @@ export function JobDetailModal({
                     </span>
                   )}
                 </div>
-                {isEditMode ? (
-                  <input
-                    type="text"
-                    value={editedJob.title ?? job.title ?? ''}
-                    onChange={(e) => updateEditedField('title', e.target.value)}
-                    className="mt-2 w-full max-w-xl px-3 py-1.5 text-foreground border border-status-info-border rounded-md focus:ring-2 focus:ring-status-info focus:border-status-info"
-                    placeholder="Job title"
-                  />
-                ) : (
-                  <p className="mt-1.5 text-[15px] text-foreground/90 font-medium truncate leading-snug">
-                    {job.title || 'Untitled job'}
-                  </p>
-                )}
+                <input
+                  type="text"
+                  defaultValue={job.title ?? ''}
+                  key={`title-${job.id}-${job.title || ''}`}
+                  onBlur={async (e) => {
+                    const v = e.target.value.trim();
+                    if (v !== (job.title || '')) {
+                      try {
+                        await handleInlineSave('title', v);
+                      } catch { /* toast */ }
+                    }
+                  }}
+                  className="mt-2 w-full max-w-xl px-3 py-1.5 text-[15px] text-foreground/90 font-medium border border-transparent hover:border-border focus:border-[#C0512A]/40 rounded-md focus:ring-2 focus:ring-[#C0512A]/15 bg-transparent"
+                  placeholder="Job title — click to edit"
+                />
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                   {job.customer?.name && (
                     <span className="inline-flex items-center gap-1">
@@ -3322,7 +3333,7 @@ export function JobDetailModal({
               </div>
             </div>
 
-            {/* Edit Mode Controls */}
+            {/* Edit Mode Controls (advanced multi-field only) */}
             {isEditMode && (
               <div className="flex gap-3 mt-4">
                 <button
@@ -3344,16 +3355,18 @@ export function JobDetailModal({
               </div>
             )}
 
-            {/* Action bar */}
-            {!isEditMode && (
-              <div className="mt-4 flex flex-wrap items-center gap-2">
+            {/* Action bar — always available (no Edit gate) */}
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+                {!isEditMode && (
                 <button
                   onClick={() => setIsEditMode(true)}
-                  className="inline-flex items-center gap-2 px-3.5 py-2 bg-[#2B3A4A] text-white rounded-lg hover:bg-[#2B3A4A]/90 text-sm font-medium active:scale-[0.98] transition-all"
+                  className="inline-flex items-center gap-2 px-3 py-2 border border-border text-sm font-medium text-muted-foreground rounded-lg hover:bg-secondary hover:text-foreground transition-all"
+                  title="Advanced fields (vendor, customer, specs batch)"
                 >
                   <Edit2 className="w-3.5 h-3.5" />
-                  Edit
+                  More fields
                 </button>
+                )}
 
                 <div className="inline-flex items-center rounded-lg border border-border bg-background overflow-hidden shadow-sm">
                   <button
@@ -3479,7 +3492,6 @@ export function JobDetailModal({
                   </span>
                 )}
               </div>
-            )}
             </div>
           </div>
 
