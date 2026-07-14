@@ -20,6 +20,7 @@ interface Job {
   workflowStatusOverride?: string;
   isDuplicate?: boolean;
   customerPONumber?: string;
+  partnerPONumber?: string;
   customer?: { id: string; name: string };
   vendor?: { name: string; isPartner?: boolean };
   createdAt?: string;
@@ -317,6 +318,7 @@ export function JobsView({
     job.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     job.number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     job.customerPONumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    job.partnerPONumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     job.customer?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     job.vendor?.name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -382,10 +384,22 @@ export function JobsView({
     customer: 'Customer',
   };
 
-  // Handle inline field updates
+  // Handle inline field updates — optimistic local list + API
   const handleInlineUpdate = async (jobId: string, field: string, value: string) => {
-    if (onUpdateJob) {
-      await onUpdateJob(jobId, { [field]: value || null });
+    const next = value.trim() || null;
+    setLocalJobs((prev) =>
+      prev.map((j) => (j.id === jobId ? { ...j, [field]: next } : j))
+    );
+    try {
+      if (onUpdateJob) {
+        await onUpdateJob(jobId, { [field]: next });
+      } else {
+        await jobsApi.update(jobId, { [field]: next });
+      }
+    } catch (e) {
+      toast.error(`Failed to save ${field}`);
+      await loadLocalJobs();
+      throw e;
     }
   };
 
@@ -987,6 +1001,8 @@ export function JobsView({
                 <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Job #</th>
                 <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Title</th>
                 <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Customer</th>
+                <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Cust PO</th>
+                <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">BGE PO</th>
                 <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Status</th>
                 <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Due</th>
                 <th className="px-3 py-2.5 text-right text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Amount</th>
@@ -1051,6 +1067,24 @@ export function JobsView({
                       {job.title || '—'}
                     </td>
                     <td className="px-3 py-3 text-sm text-zinc-500">{job.customer?.name || '—'}</td>
+                    <td className="px-3 py-3 max-w-[110px]" onClick={(e) => e.stopPropagation()}>
+                      <InlineEditableCell
+                        value={job.customerPONumber}
+                        onSave={(v) => handleInlineUpdate(job.id, 'customerPONumber', v)}
+                        placeholder="Cust PO"
+                        emptyText="—"
+                        className="text-xs font-mono text-zinc-700"
+                      />
+                    </td>
+                    <td className="px-3 py-3 max-w-[110px]" onClick={(e) => e.stopPropagation()}>
+                      <InlineEditableCell
+                        value={job.partnerPONumber}
+                        onSave={(v) => handleInlineUpdate(job.id, 'partnerPONumber', v)}
+                        placeholder="BGE PO"
+                        emptyText="—"
+                        className="text-xs font-mono text-zinc-700"
+                      />
+                    </td>
                     <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex flex-col gap-0.5 items-start">
                         <StatusDropdown status={job.status} onStatusChange={(s) => handleStatusChange(job.id, s)} />
