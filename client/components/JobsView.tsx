@@ -138,7 +138,8 @@ export function JobsView({
   onCloseDrawer,
 }: JobsViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'archive'>('all');
+  /** Default = work queue: active + completed still owing BGE/JD */
+  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'archive'>('active');
   // Local open state; parent can also force open (search / action items)
   const [localOpen, setLocalOpen] = useState(false);
   useEffect(() => {
@@ -201,52 +202,42 @@ export function JobsView({
     onRefresh();
   };
 
-  // Filter jobs by active tab
-  // All = show all jobs (default, matches sidebar count)
-  // Active = currently in progress (not completed/shipped/paid)
-  // Archive = completed, shipped, paid, or cancelled
+  /**
+   * Work queue (default "Active" tab):
+   *  - status ACTIVE (still in production / open), OR
+   *  - completed/client-paid but still need to pay BGE and/or JD
+   * Archive = settled (C+BGE+JD) or cancelled — not on the pay/work list.
+   */
+  const isWorkQueueJob = (job: Job) => {
+    if (job.status === 'CANCELLED') return false;
+    // Fully settled cash chain — archive only
+    if (isClientPaid(job) && isBgePaid(job) && isJdPaid(job)) return false;
+    // Client paid, still owe BGE and/or JD (even if marked complete/paid status)
+    if (needsVendorPay(job)) return true;
+    // Still open / in production
+    return job.status === 'ACTIVE';
+  };
+
   const tabFilteredJobs = useMemo(() => {
     switch (activeTab) {
       case 'all':
-        // Show all jobs - matches sidebar badge count
         return localJobs;
       case 'active':
-        // Active jobs that are not in terminal workflow states
-        return localJobs.filter((job) => {
-          if (job.status !== 'ACTIVE') return false;
-          // Exclude jobs that are effectively done (COMPLETED, INVOICED, PAID workflow states)
-          const effectiveStatus = (job as any).workflowStatusOverride || (job as any).workflowStatus || 'NEW_JOB';
-          return !['COMPLETED', 'INVOICED', 'PAID', 'CANCELLED'].includes(effectiveStatus);
-        });
+        return localJobs.filter(isWorkQueueJob);
       case 'archive':
-        // Jobs that are done: PAID status OR terminal workflow states
-        return localJobs.filter((job) => {
-          if (job.status === 'PAID' || job.status === 'CANCELLED') return true;
-          const effectiveStatus = (job as any).workflowStatusOverride || (job as any).workflowStatus || 'NEW_JOB';
-          return ['COMPLETED', 'INVOICED', 'PAID', 'CANCELLED'].includes(effectiveStatus);
-        });
+        return localJobs.filter((job) => !isWorkQueueJob(job));
       default:
         return localJobs;
     }
   }, [localJobs, activeTab, optimisticallyPaidIds]);
 
-  // Get counts for tabs
   const tabCounts = useMemo(() => {
-    const allCount = localJobs.length;
-
-    const activeCount = localJobs.filter((job) => {
-      if (job.status !== 'ACTIVE') return false;
-      const effectiveStatus = (job as any).workflowStatusOverride || (job as any).workflowStatus || 'NEW_JOB';
-      return !['COMPLETED', 'INVOICED', 'PAID', 'CANCELLED'].includes(effectiveStatus);
-    }).length;
-
-    const archiveCount = localJobs.filter((job) => {
-      if (job.status === 'PAID' || job.status === 'CANCELLED') return true;
-      const effectiveStatus = (job as any).workflowStatusOverride || (job as any).workflowStatus || 'NEW_JOB';
-      return ['COMPLETED', 'INVOICED', 'PAID', 'CANCELLED'].includes(effectiveStatus);
-    }).length;
-
-    return { all: allCount, active: activeCount, archive: archiveCount };
+    const activeCount = localJobs.filter(isWorkQueueJob).length;
+    return {
+      all: localJobs.length,
+      active: activeCount,
+      archive: localJobs.length - activeCount,
+    };
   }, [localJobs, optimisticallyPaidIds]);
 
   // Define tabs - All (default), Active, Archive
@@ -732,11 +723,9 @@ export function JobsView({
           <p className="text-[10px] uppercase tracking-[0.14em] text-[#C0512A] font-semibold mb-1">Production</p>
           <h1 className="text-2xl font-semibold text-[#2B3A4A] tracking-tight">Jobs</h1>
           <p className="text-sm text-zinc-500 mt-1">
-            <span className="font-mono tabular-nums text-[#2B3A4A]">{tabCounts.all}</span> total
+            <span className="font-mono tabular-nums text-[#2B3A4A]">{tabCounts.active}</span> on deck
             <span className="mx-1.5 text-zinc-300">·</span>
-            <span className="font-mono tabular-nums">{tabCounts.active}</span> active
-            <span className="mx-1.5 text-zinc-300">·</span>
-            <span className="font-mono tabular-nums">{tabCounts.archive}</span> archived
+            open + still owe BGE/JD
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -873,9 +862,9 @@ export function JobsView({
         <div className="px-4 py-2.5 border-b border-zinc-100 flex items-center gap-3">
           <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-zinc-100/80">
             {([
-              { id: 'all' as const, label: 'All', count: tabCounts.all },
-              { id: 'active' as const, label: 'Active', count: tabCounts.active },
+              { id: 'active' as const, label: 'Work', count: tabCounts.active },
               { id: 'archive' as const, label: 'Archive', count: tabCounts.archive },
+              { id: 'all' as const, label: 'All', count: tabCounts.all },
             ]).map((t) => (
               <button
                 key={t.id}
