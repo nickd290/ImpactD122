@@ -869,9 +869,9 @@ export function JobsView({
           </div>
         </div>
 
-        {/* Lifecycle tabs + quick filters */}
-        <div className="px-4 py-2 border-b border-zinc-100 flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 mr-2">
+        {/* Tabs + one filter control — keep it quiet */}
+        <div className="px-4 py-2.5 border-b border-zinc-100 flex items-center gap-3">
+          <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-zinc-100/80">
             {([
               { id: 'all' as const, label: 'All', count: tabCounts.all },
               { id: 'active' as const, label: 'Active', count: tabCounts.active },
@@ -885,200 +885,87 @@ export function JobsView({
                   setSelectedJobIds(new Set());
                 }}
                 className={cn(
-                  'px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors',
+                  'px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors',
                   activeTab === t.id
-                    ? 'bg-[#2B3A4A] text-white shadow-sm'
-                    : 'text-zinc-600 hover:bg-zinc-100'
+                    ? 'bg-white text-[#2B3A4A] shadow-sm'
+                    : 'text-zinc-500 hover:text-zinc-800'
                 )}
               >
-                {t.label}{' '}
-                <span className={cn('tabular-nums', activeTab === t.id ? 'text-white/80' : 'text-zinc-400')}>
+                {t.label}
+                <span className={cn('ml-1.5 tabular-nums text-xs', activeTab === t.id ? 'text-zinc-400' : 'text-zinc-400')}>
                   {t.count}
                 </span>
               </button>
             ))}
           </div>
-          <span className="h-5 w-px bg-zinc-200 hidden sm:block" />
-          <Filter className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-          <button
-            onClick={() => setQuickFilter('all')}
-            className={cn(
-              "px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors",
-              quickFilter === 'all'
-                ? "bg-zinc-800 text-white shadow-sm"
-                : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+          <select
+            value={quickFilter}
+            onChange={(e) => setQuickFilter(e.target.value as typeof quickFilter)}
+            className="text-sm border border-zinc-200 rounded-lg px-2.5 py-1.5 bg-white text-zinc-700 focus:ring-1 focus:ring-[#2B3A4A]/20 focus:border-zinc-300"
+          >
+            <option value="all">All filters</option>
+            {filterCounts.overdue > 0 && (
+              <option value="overdue">Overdue ({filterCounts.overdue})</option>
             )}
-          >
-            Filter all
-          </button>
-          {filterCounts.overdue > 0 && (
-            <button
-              onClick={() => setQuickFilter('overdue')}
-              className={cn(
-                "px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors flex items-center gap-1.5",
-                quickFilter === 'overdue'
-                  ? "bg-red-600 text-white"
-                  : "bg-red-100 text-red-700 hover:bg-red-200"
-              )}
-            >
-              <AlertCircle className="w-3.5 h-3.5" />
-              Overdue ({filterCounts.overdue})
-            </button>
-          )}
-          {filterCounts['due-soon'] > 0 && (
-            <button
-              onClick={() => setQuickFilter('due-soon')}
-              className={cn(
-                "px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors flex items-center gap-1.5",
-                quickFilter === 'due-soon'
-                  ? "bg-amber-600 text-white"
-                  : "bg-amber-100 text-amber-700 hover:bg-amber-200"
-              )}
-            >
-              <Clock className="w-3.5 h-3.5" />
-              Due This Week ({filterCounts['due-soon']})
-            </button>
-          )}
-          {filterCounts['no-vendor'] > 0 && (
-            <button
-              onClick={() => setQuickFilter('no-vendor')}
-              className={cn(
-                "px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors",
-                quickFilter === 'no-vendor'
-                  ? "bg-zinc-900 text-white"
-                  : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
-              )}
-            >
-              No Vendor ({filterCounts['no-vendor']})
-            </button>
-          )}
-          {filterCounts['pay-vendors'] > 0 && (
-            <button
-              onClick={() => setQuickFilter('pay-vendors')}
-              className={cn(
-                "px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors flex items-center gap-1.5",
-                quickFilter === 'pay-vendors'
-                  ? "bg-[#C0512A] text-white"
-                  : "bg-orange-100 text-[#C0512A] hover:bg-orange-200"
-              )}
-              title="Client paid Impact — BGE and/or JD still need to be paid"
-            >
-              <DollarSign className="w-3.5 h-3.5" />
-              Pay BGE/JD ({filterCounts['pay-vendors']})
-            </button>
-          )}
-          {filterCounts['client-unpaid'] > 0 && (
-            <button
-              onClick={() => setQuickFilter('client-unpaid')}
-              className={cn(
-                "px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors",
-                quickFilter === 'client-unpaid'
-                  ? "bg-amber-700 text-white"
-                  : "bg-amber-50 text-amber-800 hover:bg-amber-100"
-              )}
-            >
-              Client unpaid ({filterCounts['client-unpaid']})
-            </button>
-          )}
-        </div>
-
-        {/* Selection helpers — always available for cleanup */}
-        <div className="px-4 py-2 border-b border-zinc-100 flex flex-wrap items-center gap-2 bg-white">
-          <span className="text-[11px] uppercase tracking-wide font-semibold text-zinc-400 mr-1">Select</span>
-          <button
-            type="button"
-            onClick={handleSelectAll}
-            className="text-xs font-medium px-2.5 py-1 rounded-md border border-zinc-200 text-zinc-700 hover:bg-zinc-50"
-          >
-            {selectedJobIds.size === filteredJobs.length && filteredJobs.length > 0
-              ? 'Deselect all'
-              : `All visible (${filteredJobs.length})`}
-          </button>
-          <button
-            type="button"
-            onClick={handleSelectActiveOnly}
-            className="text-xs font-medium px-2.5 py-1 rounded-md border border-zinc-200 text-zinc-700 hover:bg-zinc-50"
-          >
-            Active only
-          </button>
-          <button
-            type="button"
-            onClick={handleSelectUnpaid}
-            className="text-xs font-medium px-2.5 py-1 rounded-md border border-amber-200 text-amber-800 hover:bg-amber-50"
-          >
-            Client unpaid
-          </button>
-          <button
-            type="button"
-            onClick={handleSelectVendorDue}
-            className="text-xs font-medium px-2.5 py-1 rounded-md border border-orange-200 text-[#C0512A] hover:bg-orange-50"
-            title="Client paid us — still need to pay BGE and/or JD"
-          >
-            Pay BGE/JD
-          </button>
-          {selectedCustomerId && (
+            {filterCounts['due-soon'] > 0 && (
+              <option value="due-soon">Due this week ({filterCounts['due-soon']})</option>
+            )}
+            {filterCounts['pay-vendors'] > 0 && (
+              <option value="pay-vendors">Pay BGE/JD ({filterCounts['pay-vendors']})</option>
+            )}
+            {filterCounts['client-unpaid'] > 0 && (
+              <option value="client-unpaid">Client unpaid ({filterCounts['client-unpaid']})</option>
+            )}
+            {filterCounts['no-vendor'] > 0 && (
+              <option value="no-vendor">No vendor ({filterCounts['no-vendor']})</option>
+            )}
+          </select>
+          {quickFilter !== 'all' && (
             <button
               type="button"
-              onClick={() => handleSelectByCustomer(selectedCustomerId)}
-              className="text-xs font-medium px-2.5 py-1 rounded-md border border-zinc-200 text-zinc-700 hover:bg-zinc-50"
+              onClick={() => setQuickFilter('all')}
+              className="text-xs text-zinc-500 hover:text-[#2B3A4A] hover:underline"
             >
-              This customer
+              Clear filter
             </button>
-          )}
-          <button
-            type="button"
-            onClick={handleClearSelection}
-            disabled={selectedJobIds.size === 0}
-            className={cn(
-              'text-xs font-medium px-2.5 py-1 rounded-md border',
-              selectedJobIds.size === 0
-                ? 'border-zinc-100 text-zinc-300 cursor-not-allowed'
-                : 'border-zinc-300 text-zinc-800 hover:bg-zinc-100'
-            )}
-          >
-            Clear selection
-          </button>
-          {selectedJobIds.size > 0 && (
-            <span className="text-xs font-semibold text-[#2B3A4A] tabular-nums ml-1">
-              {selectedJobIds.size} selected
-            </span>
           )}
         </div>
 
-        {/* Batch actions when anything selected */}
+        {/* Batch bar — only when selecting */}
         {selectedJobIds.size > 0 && (
-          <div className="px-4 py-2.5 border-b border-emerald-100 flex flex-wrap items-center gap-2 bg-emerald-50/60 sticky top-0 z-10">
-            <CheckSquare className="w-4 h-4 text-emerald-700" />
-            <span className="text-sm font-semibold text-emerald-900 tabular-nums">
-              {selectedJobIds.size} job{selectedJobIds.size === 1 ? '' : 's'}
+          <div className="px-4 py-2 border-b border-zinc-200 flex flex-wrap items-center gap-2 bg-[#2B3A4A] text-white sticky top-0 z-10">
+            <span className="text-sm font-medium tabular-nums">
+              {selectedJobIds.size} selected
             </span>
-            <Button onClick={handleBatchComplete} variant="outline" size="sm" className="h-8 text-xs border-emerald-300 text-emerald-800 hover:bg-emerald-100 bg-white">
-              <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-              Mark Complete
-            </Button>
-            <Button onClick={() => handleBatchPayment('customer')} disabled={isProcessingPayment} variant="outline" size="sm" className="h-8 text-xs bg-white">
-              <DollarSign className="w-3.5 h-3.5 mr-1" />
-              Customer Paid
-            </Button>
-            <Button
-              onClick={() => handleBatchGenerate('invoice')}
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs bg-white"
+            <button
+              type="button"
+              onClick={handleBatchComplete}
+              className="text-xs font-medium px-2.5 py-1 rounded-md bg-white/15 hover:bg-white/25"
             >
-              <Receipt className="w-3.5 h-3.5 mr-1" />
-              Invoices
-            </Button>
-            <Button onClick={handleBatchDelete} disabled={isDeleting} variant="destructive" size="sm" className="h-8 text-xs">
-              <Trash2 className="w-3.5 h-3.5 mr-1" />
+              Complete
+            </button>
+            <button
+              type="button"
+              onClick={() => handleBatchPayment('customer')}
+              disabled={isProcessingPayment}
+              className="text-xs font-medium px-2.5 py-1 rounded-md bg-white/15 hover:bg-white/25 disabled:opacity-50"
+            >
+              Mark paid
+            </button>
+            <button
+              type="button"
+              onClick={handleBatchDelete}
+              disabled={isDeleting}
+              className="text-xs font-medium px-2.5 py-1 rounded-md bg-red-500/90 hover:bg-red-500 disabled:opacity-50"
+            >
               Delete
-            </Button>
+            </button>
             <button
               type="button"
               onClick={handleClearSelection}
-              className="text-xs font-semibold text-emerald-900 hover:underline ml-auto px-2"
+              className="text-xs text-white/70 hover:text-white ml-auto"
             >
-              Clear all
+              Clear
             </button>
           </div>
         )}
@@ -1114,7 +1001,7 @@ export function JobsView({
                 <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Status</th>
                 <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Due</th>
                 <th className="px-3 py-2.5 text-right text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Amount</th>
-                <th className="px-3 py-2.5 text-right text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Actions</th>
+                <th className="px-3 py-2.5 w-12"></th>
               </tr>
             </thead>
             <tbody>
@@ -1122,25 +1009,44 @@ export function JobsView({
                 const daysUntil = getDaysUntilDue(job);
                 const isOverdue = daysUntil !== null && daysUntil < 0;
                 const isDueSoon = daysUntil !== null && daysUntil >= 0 && daysUntil <= 3;
-                const wf = effectiveWorkflow(job);
                 const done = isJobDone(job);
+                // One money line: settled | pay BGE/JD | await client
+                let moneyLabel = '—';
+                let moneyClass = 'text-zinc-400';
+                if (isClientPaid(job) && isBgePaid(job) && isJdPaid(job)) {
+                  moneyLabel = 'Settled';
+                  moneyClass = 'text-emerald-700';
+                } else if (needsVendorPay(job)) {
+                  const parts: string[] = [];
+                  if (!isBgePaid(job)) parts.push('BGE');
+                  if (!isJdPaid(job)) parts.push('JD');
+                  moneyLabel = `Pay ${parts.join(' + ')}`;
+                  moneyClass = 'text-[#C0512A]';
+                } else if (!isClientPaid(job) && job.status !== 'CANCELLED') {
+                  moneyLabel = 'Await client';
+                  moneyClass = 'text-amber-700';
+                } else if (job.status === 'PAID') {
+                  moneyLabel = 'Paid';
+                  moneyClass = 'text-emerald-700';
+                }
                 return (
                   <tr
                     key={job.id}
+                    onClick={() => {
+                      onSelectJob(job);
+                      setIsDrawerOpen(true);
+                    }}
                     className={cn(
-                      "border-b border-zinc-100 hover:bg-[#C0512A]/[0.04] transition-colors",
-                      isOverdue && "bg-red-50/50 hover:bg-red-50",
+                      "border-b border-zinc-100 hover:bg-zinc-50/80 transition-colors cursor-pointer",
+                      isOverdue && "bg-red-50/30",
                       selectedJobIds.has(job.id) && "bg-zinc-50"
                     )}
                   >
-                    <td className="px-3 py-2.5">
+                    <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleToggleSelection(job.id);
-                        }}
-                        className="text-zinc-400 hover:text-zinc-900"
+                        onClick={() => handleToggleSelection(job.id)}
+                        className="text-zinc-300 hover:text-zinc-600"
                       >
                         {selectedJobIds.has(job.id) ? (
                           <CheckSquare className="w-4 h-4 text-[#2B3A4A]" />
@@ -1149,257 +1055,111 @@ export function JobsView({
                         )}
                       </button>
                     </td>
-                    <td
-                      className="px-3 py-2.5 cursor-pointer"
-                      onClick={() => {
-                        onSelectJob(job);
-                        setIsDrawerOpen(true);
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-mono font-semibold text-[#2B3A4A]">{job.number}</span>
-                        {isNewJob(job) && (
-                          <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-[#C0512A]/12 text-[#C0512A] rounded border border-[#C0512A]/25">
-                            NEW
-                          </span>
-                        )}
-                      </div>
+                    <td className="px-3 py-3">
+                      <span className="text-sm font-mono font-semibold text-[#2B3A4A]">{job.number}</span>
                     </td>
-                    <td
-                      className="px-3 py-2.5 text-sm text-zinc-700 max-w-[180px] truncate font-medium cursor-pointer"
-                      onClick={() => {
-                        onSelectJob(job);
-                        setIsDrawerOpen(true);
-                      }}
-                      title={job.title}
-                    >
-                      {job.title}
+                    <td className="px-3 py-3 text-sm text-zinc-800 max-w-[220px] truncate font-medium" title={job.title}>
+                      {job.title || '—'}
                     </td>
-                    <td className="px-3 py-2.5 text-sm text-zinc-600">{job.customer?.name || '—'}</td>
-                    <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex flex-col gap-1 items-start">
+                    <td className="px-3 py-3 text-sm text-zinc-500">{job.customer?.name || '—'}</td>
+                    <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex flex-col gap-0.5 items-start">
                         <StatusDropdown status={job.status} onStatusChange={(s) => handleStatusChange(job.id, s)} />
-                        <span
-                          className={cn(
-                            'text-[10px] font-medium px-1.5 py-0.5 rounded',
-                            wf === 'COMPLETED' || wf === 'PAID' || wf === 'INVOICED'
-                              ? 'bg-emerald-50 text-emerald-700'
-                              : wf === 'CANCELLED'
-                                ? 'bg-red-50 text-red-600'
-                                : 'bg-zinc-100 text-zinc-500'
-                          )}
-                          title={`Workflow: ${wf}`}
-                        >
-                          {WORKFLOW_SHORT[wf] || wf.replace(/_/g, ' ')}
+                        <span className={cn('text-[11px] font-medium', moneyClass)} title="Client → BGE → JD">
+                          {moneyLabel}
                         </span>
-                        {/* Money chain: Client → BGE → JD (sheet rule) */}
-                        <div className="flex items-center gap-0.5" title="Client paid → then pay BGE / JD">
-                          <span
-                            className={cn(
-                              'text-[9px] font-bold px-1 py-0.5 rounded',
-                              isClientPaid(job) ? 'bg-emerald-100 text-emerald-800' : 'bg-zinc-100 text-zinc-400'
-                            )}
-                          >
-                            C
-                          </span>
-                          <span className="text-[9px] text-zinc-300">→</span>
-                          <span
-                            className={cn(
-                              'text-[9px] font-bold px-1 py-0.5 rounded',
-                              isBgePaid(job)
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : isClientPaid(job)
-                                  ? 'bg-orange-100 text-[#C0512A]'
-                                  : 'bg-zinc-100 text-zinc-400'
-                            )}
-                          >
-                            BGE
-                          </span>
-                          <span className="text-[9px] text-zinc-300">→</span>
-                          <span
-                            className={cn(
-                              'text-[9px] font-bold px-1 py-0.5 rounded',
-                              isJdPaid(job)
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : isClientPaid(job)
-                                  ? 'bg-orange-100 text-[#C0512A]'
-                                  : 'bg-zinc-100 text-zinc-400'
-                            )}
-                          >
-                            JD
-                          </span>
-                        </div>
                       </div>
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="px-3 py-3">
                       {job.dueDate ? (
                         <span className={cn(
-                          "text-sm",
+                          "text-sm tabular-nums",
                           isOverdue && "text-red-600 font-medium",
-                          isDueSoon && !isOverdue && "text-amber-600 font-medium",
-                          !isOverdue && !isDueSoon && "text-zinc-600"
+                          isDueSoon && !isOverdue && "text-amber-600",
+                          !isOverdue && !isDueSoon && "text-zinc-500"
                         )}>
-                          {new Date(job.dueDate).toLocaleDateString()}
-                          {isOverdue && " · late"}
+                          {new Date(job.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                         </span>
                       ) : (
-                        <span className="text-sm text-zinc-400">—</span>
+                        <span className="text-sm text-zinc-300">—</span>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 text-sm text-right font-medium text-green-600 tabular-nums">
+                    <td className="px-3 py-3 text-sm text-right font-medium text-zinc-800 tabular-nums">
                       {job.sellPrice || (job as any).sellPrice
                         ? `$${parseFloat(String(job.sellPrice ?? (job as any).sellPrice)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
                         : '—'}
                     </td>
-                    {/* Always-visible quick actions */}
-                    <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-end gap-1">
-                        {!done ? (
-                          <button
-                            type="button"
-                            title="Mark complete"
-                            onClick={(e) => handleMarkComplete(job.id, e)}
-                            className="inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-semibold bg-emerald-600 text-white hover:bg-emerald-700"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            Done
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            title="Reopen job"
-                            onClick={(e) => handleReopenJob(job.id, e)}
-                            className="inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-medium border border-zinc-200 text-zinc-600 hover:bg-zinc-50"
-                          >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                            Reopen
-                          </button>
+                    {/* One menu — everything else lives in the job popup */}
+                    <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                      <div className="relative flex justify-end" data-action-menu>
+                        <button
+                          type="button"
+                          onClick={() => setOpenActionMenuId(openActionMenuId === job.id ? null : job.id)}
+                          className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+                          aria-label="Actions"
+                        >
+                          <MoreVertical className="w-4 h-4" />
+                        </button>
+                        {openActionMenuId === job.id && (
+                          <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl shadow-lg border border-zinc-200 py-1 z-50">
+                            {!done && (
+                              <button
+                                type="button"
+                                onClick={(e) => { handleMarkComplete(job.id, e); setOpenActionMenuId(null); }}
+                                className="w-full px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50"
+                              >
+                                Mark complete
+                              </button>
+                            )}
+                            {done && (
+                              <button
+                                type="button"
+                                onClick={(e) => { handleReopenJob(job.id, e); setOpenActionMenuId(null); }}
+                                className="w-full px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50"
+                              >
+                                Reopen
+                              </button>
+                            )}
+                            {job.status !== 'PAID' && (
+                              <button
+                                type="button"
+                                onClick={(e) => { handleMarkPaid(job.id, e); setOpenActionMenuId(null); }}
+                                className="w-full px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50"
+                              >
+                                Mark client paid
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => { pdfApi.generateInvoice(job.id); setOpenActionMenuId(null); }}
+                              className="w-full px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50"
+                            >
+                              Invoice PDF
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { pdfApi.generateVendorPO(job.id); setOpenActionMenuId(null); }}
+                              className="w-full px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50"
+                            >
+                              Vendor PO
+                            </button>
+                            <div className="border-t border-zinc-100 my-1" />
+                            <button
+                              type="button"
+                              onClick={() => { onEditJob(job); setOpenActionMenuId(null); }}
+                              className="w-full px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { onDeleteJob(job); setOpenActionMenuId(null); }}
+                              className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                            >
+                              Delete
+                            </button>
+                          </div>
                         )}
-                        {job.status !== 'PAID' && (
-                          <button
-                            type="button"
-                            title="Mark customer paid"
-                            onClick={(e) => handleMarkPaid(job.id, e)}
-                            className="inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-medium border border-green-200 text-green-700 hover:bg-green-50"
-                          >
-                            <DollarSign className="w-3.5 h-3.5" />
-                            Paid
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          title="Invoice PDF"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            pdfApi.generateInvoice(job.id);
-                          }}
-                          className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-zinc-200 text-zinc-500 hover:bg-zinc-50 hover:text-[#2B3A4A]"
-                        >
-                          <Receipt className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          title="Vendor PO PDF"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            pdfApi.generateVendorPO(job.id);
-                          }}
-                          className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-zinc-200 text-zinc-500 hover:bg-zinc-50 hover:text-[#2B3A4A]"
-                        >
-                          <FileDown className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          title="Open job"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onSelectJob(job);
-                            setIsDrawerOpen(true);
-                          }}
-                          className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-zinc-200 text-zinc-500 hover:bg-zinc-50 hover:text-[#2B3A4A]"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
-                        <div className="relative" data-action-menu>
-                          <button
-                            type="button"
-                            title="More"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setOpenActionMenuId(openActionMenuId === job.id ? null : job.id);
-                            }}
-                            className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-zinc-200 text-zinc-500 hover:bg-zinc-50"
-                          >
-                            <MoreVertical className="w-3.5 h-3.5" />
-                          </button>
-                          {openActionMenuId === job.id && (
-                            <div className="absolute right-0 mt-1 w-44 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  pdfApi.generateQuote(job.id);
-                                  setOpenActionMenuId(null);
-                                }}
-                                className="w-full px-3 py-2 text-left text-sm text-zinc-600 hover:bg-zinc-50 flex items-center gap-2"
-                              >
-                                <FileText className="w-4 h-4 text-zinc-400" />
-                                Quote PDF
-                              </button>
-                              {!done && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    handleMarkComplete(job.id, e);
-                                    setOpenActionMenuId(null);
-                                  }}
-                                  className="w-full px-3 py-2 text-left text-sm text-emerald-700 hover:bg-emerald-50 flex items-center gap-2"
-                                >
-                                  <CheckCircle2 className="w-4 h-4" />
-                                  Mark complete
-                                </button>
-                              )}
-                              {onCopyJob && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onCopyJob(job);
-                                    setOpenActionMenuId(null);
-                                  }}
-                                  className="w-full px-3 py-2 text-left text-sm text-zinc-600 hover:bg-zinc-50 flex items-center gap-2"
-                                >
-                                  <Copy className="w-4 h-4 text-zinc-400" />
-                                  Copy job
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onEditJob(job);
-                                  setOpenActionMenuId(null);
-                                }}
-                                className="w-full px-3 py-2 text-left text-sm text-zinc-600 hover:bg-zinc-50 flex items-center gap-2"
-                              >
-                                <Edit className="w-4 h-4 text-zinc-400" />
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onDeleteJob(job);
-                                  setOpenActionMenuId(null);
-                                }}
-                                className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                                Delete
-                              </button>
-                            </div>
-                          )}
-                        </div>
                       </div>
                     </td>
                   </tr>
