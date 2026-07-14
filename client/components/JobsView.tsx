@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Plus, Search, Sparkles, Upload, FileText, Edit, Trash2, FileSpreadsheet, CheckSquare, Square, ChevronDown, ChevronRight, MoreVertical, DollarSign, Printer, Receipt, Building2, Copy, FileDown, Mail, ArrowUpDown, Clock, AlertCircle, Filter } from 'lucide-react';
+import { Plus, Search, Sparkles, Upload, FileText, Edit, Trash2, FileSpreadsheet, CheckSquare, Square, ChevronDown, ChevronRight, MoreVertical, DollarSign, Printer, Receipt, Building2, Copy, FileDown, Mail, ArrowUpDown, Clock, AlertCircle, Filter, CheckCircle2, RotateCcw, Eye } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button, Tabs } from './ui';
 import { Input } from './ui';
 import { Badge } from './ui';
@@ -15,10 +16,12 @@ interface Job {
   title: string;
   number: string;
   status: string;
+  workflowStatus?: string;
+  workflowStatusOverride?: string;
   isDuplicate?: boolean;
   customerPONumber?: string;
   customer?: { id: string; name: string };
-  vendor?: { name: string };
+  vendor?: { name: string; isPartner?: boolean };
   createdAt?: string;
   updatedAt?: string;
   quantity?: number;
@@ -36,6 +39,32 @@ interface Job {
   // Invoice/payment tracking
   hasPaidInvoice?: boolean;
   invoices?: { id: string; amount: number | null; paidAt: string | null }[];
+  sellPrice?: number;
+  profit?: { totalCost?: number };
+  purchaseOrders?: any[];
+}
+
+const WORKFLOW_SHORT: Record<string, string> = {
+  NEW_JOB: 'New',
+  AWAITING_PROOF_FROM_VENDOR: 'Await proof',
+  PROOF_RECEIVED: 'Proof in',
+  PROOF_SENT_TO_CUSTOMER: 'Proof sent',
+  AWAITING_CUSTOMER_RESPONSE: 'Await cust',
+  APPROVED_PENDING_VENDOR: 'Approved',
+  IN_PRODUCTION: 'Production',
+  COMPLETED: 'Complete',
+  INVOICED: 'Invoiced',
+  PAID: 'Paid',
+  CANCELLED: 'Cancelled',
+};
+
+function effectiveWorkflow(job: Job): string {
+  return job.workflowStatusOverride || job.workflowStatus || 'NEW_JOB';
+}
+
+function isJobDone(job: Job): boolean {
+  if (job.status === 'PAID' || job.status === 'CANCELLED') return true;
+  return ['COMPLETED', 'INVOICED', 'PAID', 'CANCELLED'].includes(effectiveWorkflow(job));
 }
 
 interface JobsViewProps {
@@ -491,6 +520,9 @@ export function JobsView({
 
     try {
       await jobsApi.markCustomerPaid(jobId);
+      // Also set money-complete status so job lands in Archive cleanly
+      await jobsApi.updateStatus(jobId, 'PAID').catch(() => null);
+      toast.success('Marked paid');
       handleRefresh(); // Sync actual data in background
     } catch (error) {
       // Rollback on error
@@ -500,7 +532,69 @@ export function JobsView({
         return next;
       });
       console.error('Failed to mark job as paid:', error);
-      alert('Failed to mark job as paid. Please try again.');
+      toast.error('Failed to mark job as paid');
+    }
+  };
+
+  /** Production complete (workflow) — not the same as customer PAID */
+  const handleMarkComplete = async (jobId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    try {
+      await jobsApi.updateWorkflowStatus(jobId, 'COMPLETED');
+      // Optimistic local update
+      setLocalJobs((prev) =>
+        prev.map((j) =>
+          j.id === jobId
+            ? { ...j, workflowStatus: 'COMPLETED', workflowStatusOverride: 'COMPLETED' }
+            : j
+        )
+      );
+      toast.success('Marked complete');
+      onRefresh();
+    } catch (error) {
+      console.error('Failed to mark complete:', error);
+      toast.error('Failed to mark complete');
+    }
+  };
+
+  /** Re-open a completed/archived job back to active production */
+  const handleReopenJob = async (jobId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    try {
+      await jobsApi.updateWorkflowStatus(jobId, 'IN_PRODUCTION');
+      await jobsApi.updateStatus(jobId, 'ACTIVE').catch(() => null);
+      setLocalJobs((prev) =>
+        prev.map((j) =>
+          j.id === jobId
+            ? {
+                ...j,
+                status: 'ACTIVE',
+                workflowStatus: 'IN_PRODUCTION',
+                workflowStatusOverride: 'IN_PRODUCTION',
+              }
+            : j
+        )
+      );
+      toast.success('Job reopened');
+      onRefresh();
+    } catch (error) {
+      console.error('Failed to reopen job:', error);
+      toast.error('Failed to reopen job');
+    }
+  };
+
+  const handleBatchComplete = async () => {
+    if (selectedJobIds.size === 0) return;
+    const ids = Array.from(selectedJobIds);
+    if (!window.confirm(`Mark ${ids.length} job${ids.length > 1 ? 's' : ''} complete?`)) return;
+    try {
+      await Promise.all(ids.map((id) => jobsApi.updateWorkflowStatus(id, 'COMPLETED')));
+      toast.success(`Marked ${ids.length} complete`);
+      setSelectedJobIds(new Set());
+      await handleRefresh();
+    } catch (error) {
+      toast.error('Some jobs failed to complete');
+      await handleRefresh();
     }
   };
 
@@ -660,19 +754,47 @@ export function JobsView({
           </div>
         </div>
 
-        {/* Quick Filters */}
-        <div className="px-4 py-2 border-b border-zinc-100 flex items-center gap-2 overflow-x-auto">
+        {/* Lifecycle tabs + quick filters */}
+        <div className="px-4 py-2 border-b border-zinc-100 flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 mr-2">
+            {([
+              { id: 'all' as const, label: 'All', count: tabCounts.all },
+              { id: 'active' as const, label: 'Active', count: tabCounts.active },
+              { id: 'archive' as const, label: 'Archive', count: tabCounts.archive },
+            ]).map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => {
+                  setActiveTab(t.id);
+                  setSelectedJobIds(new Set());
+                }}
+                className={cn(
+                  'px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors',
+                  activeTab === t.id
+                    ? 'bg-[#2B3A4A] text-white shadow-sm'
+                    : 'text-zinc-600 hover:bg-zinc-100'
+                )}
+              >
+                {t.label}{' '}
+                <span className={cn('tabular-nums', activeTab === t.id ? 'text-white/80' : 'text-zinc-400')}>
+                  {t.count}
+                </span>
+              </button>
+            ))}
+          </div>
+          <span className="h-5 w-px bg-zinc-200 hidden sm:block" />
           <Filter className="w-4 h-4 text-zinc-400 flex-shrink-0" />
           <button
             onClick={() => setQuickFilter('all')}
             className={cn(
               "px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors",
               quickFilter === 'all'
-                ? "bg-[#2B3A4A] text-white shadow-sm"
+                ? "bg-zinc-800 text-white shadow-sm"
                 : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
             )}
           >
-            All ({filterCounts.all})
+            Filter all
           </button>
           {filterCounts.overdue > 0 && (
             <button
@@ -717,17 +839,60 @@ export function JobsView({
           )}
         </div>
 
+        {/* Batch bar */}
+        {selectedJobIds.size > 0 && (
+          <div className="px-4 py-2 border-b border-zinc-200 flex flex-wrap items-center gap-2 bg-zinc-50">
+            <span className="text-sm text-zinc-600 tabular-nums">{selectedJobIds.size} selected</span>
+            <Button onClick={handleBatchComplete} variant="outline" size="sm" className="h-8 text-xs border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+              <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+              Mark Complete
+            </Button>
+            <Button onClick={() => handleBatchPayment('customer')} disabled={isProcessingPayment} variant="outline" size="sm" className="h-8 text-xs">
+              <DollarSign className="w-3.5 h-3.5 mr-1" />
+              Customer Paid
+            </Button>
+            <Button onClick={handleBatchDelete} disabled={isDeleting} variant="destructive" size="sm" className="h-8 text-xs">
+              <Trash2 className="w-3.5 h-3.5 mr-1" />
+              Delete
+            </Button>
+            <button type="button" onClick={() => setSelectedJobIds(new Set())} className="text-xs text-zinc-500 hover:underline ml-auto">
+              Clear
+            </button>
+          </div>
+        )}
+
         {/* Table */}
         <div className="overflow-x-auto">
           <table className="min-w-full">
             <thead className="border-b border-zinc-200 bg-[#2B3A4A]">
               <tr>
-                <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Job #</th>
-                <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Title</th>
-                <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Customer</th>
-                <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Status</th>
-                <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Due Date</th>
-                <th className="px-4 py-2.5 text-right text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Amount</th>
+                <th className="px-3 py-2.5 w-10">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (selectedJobIds.size === filteredJobs.length && filteredJobs.length > 0) {
+                        setSelectedJobIds(new Set());
+                      } else {
+                        setSelectedJobIds(new Set(filteredJobs.map((j) => j.id)));
+                      }
+                    }}
+                    className="text-white/70 hover:text-white"
+                  >
+                    {selectedJobIds.size === filteredJobs.length && filteredJobs.length > 0 ? (
+                      <CheckSquare className="w-4 h-4" />
+                    ) : (
+                      <Square className="w-4 h-4" />
+                    )}
+                  </button>
+                </th>
+                <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Job #</th>
+                <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Title</th>
+                <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Customer</th>
+                <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Status</th>
+                <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Due</th>
+                <th className="px-3 py-2.5 text-right text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Amount</th>
+                <th className="px-3 py-2.5 text-right text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -735,19 +900,40 @@ export function JobsView({
                 const daysUntil = getDaysUntilDue(job);
                 const isOverdue = daysUntil !== null && daysUntil < 0;
                 const isDueSoon = daysUntil !== null && daysUntil >= 0 && daysUntil <= 3;
+                const wf = effectiveWorkflow(job);
+                const done = isJobDone(job);
                 return (
                   <tr
                     key={job.id}
-                    onClick={() => {
-                      onSelectJob(job);
-                      setIsDrawerOpen(true);
-                    }}
                     className={cn(
-                      "border-b border-zinc-100 hover:bg-[#C0512A]/[0.04] cursor-pointer transition-colors",
-                      isOverdue && "bg-red-50/50 hover:bg-red-50"
+                      "border-b border-zinc-100 hover:bg-[#C0512A]/[0.04] transition-colors",
+                      isOverdue && "bg-red-50/50 hover:bg-red-50",
+                      selectedJobIds.has(job.id) && "bg-zinc-50"
                     )}
                   >
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-2.5">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleSelection(job.id);
+                        }}
+                        className="text-zinc-400 hover:text-zinc-900"
+                      >
+                        {selectedJobIds.has(job.id) ? (
+                          <CheckSquare className="w-4 h-4 text-[#2B3A4A]" />
+                        ) : (
+                          <Square className="w-4 h-4" />
+                        )}
+                      </button>
+                    </td>
+                    <td
+                      className="px-3 py-2.5 cursor-pointer"
+                      onClick={() => {
+                        onSelectJob(job);
+                        setIsDrawerOpen(true);
+                      }}
+                    >
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-mono font-semibold text-[#2B3A4A]">{job.number}</span>
                         {isNewJob(job) && (
@@ -757,12 +943,36 @@ export function JobsView({
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-zinc-700 max-w-[200px] truncate font-medium">{job.title}</td>
-                    <td className="px-4 py-3 text-sm text-zinc-600">{job.customer?.name || '-'}</td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={job.status} />
+                    <td
+                      className="px-3 py-2.5 text-sm text-zinc-700 max-w-[180px] truncate font-medium cursor-pointer"
+                      onClick={() => {
+                        onSelectJob(job);
+                        setIsDrawerOpen(true);
+                      }}
+                      title={job.title}
+                    >
+                      {job.title}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-2.5 text-sm text-zinc-600">{job.customer?.name || '—'}</td>
+                    <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex flex-col gap-1 items-start">
+                        <StatusDropdown status={job.status} onStatusChange={(s) => handleStatusChange(job.id, s)} />
+                        <span
+                          className={cn(
+                            'text-[10px] font-medium px-1.5 py-0.5 rounded',
+                            wf === 'COMPLETED' || wf === 'PAID' || wf === 'INVOICED'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : wf === 'CANCELLED'
+                                ? 'bg-red-50 text-red-600'
+                                : 'bg-zinc-100 text-zinc-500'
+                          )}
+                          title={`Workflow: ${wf}`}
+                        >
+                          {WORKFLOW_SHORT[wf] || wf.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5">
                       {job.dueDate ? (
                         <span className={cn(
                           "text-sm",
@@ -771,16 +981,167 @@ export function JobsView({
                           !isOverdue && !isDueSoon && "text-zinc-600"
                         )}>
                           {new Date(job.dueDate).toLocaleDateString()}
-                          {isOverdue && " (Overdue)"}
+                          {isOverdue && " · late"}
                         </span>
                       ) : (
-                        <span className="text-sm text-zinc-400">-</span>
+                        <span className="text-sm text-zinc-400">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-sm text-right font-medium text-green-600 tabular-nums">
-                      {(job as any).sellPrice
-                        ? `$${parseFloat((job as any).sellPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                        : '-'}
+                    <td className="px-3 py-2.5 text-sm text-right font-medium text-green-600 tabular-nums">
+                      {job.sellPrice || (job as any).sellPrice
+                        ? `$${parseFloat(String(job.sellPrice ?? (job as any).sellPrice)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+                        : '—'}
+                    </td>
+                    {/* Always-visible quick actions */}
+                    <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-end gap-1">
+                        {!done ? (
+                          <button
+                            type="button"
+                            title="Mark complete"
+                            onClick={(e) => handleMarkComplete(job.id, e)}
+                            className="inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-semibold bg-emerald-600 text-white hover:bg-emerald-700"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Done
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            title="Reopen job"
+                            onClick={(e) => handleReopenJob(job.id, e)}
+                            className="inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-medium border border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            Reopen
+                          </button>
+                        )}
+                        {job.status !== 'PAID' && (
+                          <button
+                            type="button"
+                            title="Mark customer paid"
+                            onClick={(e) => handleMarkPaid(job.id, e)}
+                            className="inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-medium border border-green-200 text-green-700 hover:bg-green-50"
+                          >
+                            <DollarSign className="w-3.5 h-3.5" />
+                            Paid
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          title="Invoice PDF"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            pdfApi.generateInvoice(job.id);
+                          }}
+                          className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-zinc-200 text-zinc-500 hover:bg-zinc-50 hover:text-[#2B3A4A]"
+                        >
+                          <Receipt className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          title="Vendor PO PDF"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            pdfApi.generateVendorPO(job.id);
+                          }}
+                          className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-zinc-200 text-zinc-500 hover:bg-zinc-50 hover:text-[#2B3A4A]"
+                        >
+                          <FileDown className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          title="Open job"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectJob(job);
+                            setIsDrawerOpen(true);
+                          }}
+                          className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-zinc-200 text-zinc-500 hover:bg-zinc-50 hover:text-[#2B3A4A]"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                        <div className="relative" data-action-menu>
+                          <button
+                            type="button"
+                            title="More"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenActionMenuId(openActionMenuId === job.id ? null : job.id);
+                            }}
+                            className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-zinc-200 text-zinc-500 hover:bg-zinc-50"
+                          >
+                            <MoreVertical className="w-3.5 h-3.5" />
+                          </button>
+                          {openActionMenuId === job.id && (
+                            <div className="absolute right-0 mt-1 w-44 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  pdfApi.generateQuote(job.id);
+                                  setOpenActionMenuId(null);
+                                }}
+                                className="w-full px-3 py-2 text-left text-sm text-zinc-600 hover:bg-zinc-50 flex items-center gap-2"
+                              >
+                                <FileText className="w-4 h-4 text-zinc-400" />
+                                Quote PDF
+                              </button>
+                              {!done && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    handleMarkComplete(job.id, e);
+                                    setOpenActionMenuId(null);
+                                  }}
+                                  className="w-full px-3 py-2 text-left text-sm text-emerald-700 hover:bg-emerald-50 flex items-center gap-2"
+                                >
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  Mark complete
+                                </button>
+                              )}
+                              {onCopyJob && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onCopyJob(job);
+                                    setOpenActionMenuId(null);
+                                  }}
+                                  className="w-full px-3 py-2 text-left text-sm text-zinc-600 hover:bg-zinc-50 flex items-center gap-2"
+                                >
+                                  <Copy className="w-4 h-4 text-zinc-400" />
+                                  Copy job
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onEditJob(job);
+                                  setOpenActionMenuId(null);
+                                }}
+                                className="w-full px-3 py-2 text-left text-sm text-zinc-600 hover:bg-zinc-50 flex items-center gap-2"
+                              >
+                                <Edit className="w-4 h-4 text-zinc-400" />
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onDeleteJob(job);
+                                  setOpenActionMenuId(null);
+                                }}
+                                className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </td>
                   </tr>
                 );

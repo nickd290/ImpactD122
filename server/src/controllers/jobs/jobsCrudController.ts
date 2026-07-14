@@ -1644,6 +1644,24 @@ export const updateWorkflowStatus = async (req: Request, res: Response) => {
       updateData.workflowStatusOverride = status;
       updateData.workflowStatusOverrideAt = now;
       updateData.workflowStatusOverrideBy = updatedBy;
+      // Also set canonical workflowStatus for terminal / cleanup states so
+      // list filters (Active vs Archive) and reports stay consistent.
+      const terminal = ['COMPLETED', 'INVOICED', 'PAID', 'CANCELLED', 'IN_PRODUCTION', 'NEW_JOB'];
+      if (terminal.includes(status)) {
+        updateData.workflowStatus = status;
+      }
+      // Production complete is not the same as money PAID — keep JobStatus ACTIVE
+      // unless explicitly cancelled or paid.
+      if (status === 'CANCELLED') {
+        updateData.status = 'CANCELLED';
+      } else if (status === 'PAID') {
+        updateData.status = 'PAID';
+      } else if (status === 'COMPLETED' || status === 'INVOICED' || status === 'IN_PRODUCTION' || status === 'NEW_JOB') {
+        // Re-open / still-working jobs must be ACTIVE for Active tab
+        if (existingJob && (status === 'NEW_JOB' || status === 'IN_PRODUCTION')) {
+          updateData.status = 'ACTIVE';
+        }
+      }
     }
 
     const job = await prisma.job.update({
