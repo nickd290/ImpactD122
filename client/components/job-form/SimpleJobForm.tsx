@@ -339,7 +339,7 @@ export function SimpleJobForm({
                 : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
             }`}
           >
-            Bradford/JD
+            Bradford paper
           </button>
           <button
             type="button"
@@ -350,13 +350,13 @@ export function SimpleJobForm({
                 : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
             }`}
           >
-            Third-Party
+            JD paper
           </button>
         </div>
         <p className="mt-1 text-xs text-gray-500">
           {formData.routingType === 'BRADFORD_JD'
-            ? '50/50 split with Bradford'
-            : '35% Bradford / 65% Impact split'}
+            ? 'Bradford paper → Impact pays Bradford; Bradford pays JD for mfg'
+            : 'JD paper → Impact pays JD; Bradford gets margin split only'}
         </p>
       </div>
 

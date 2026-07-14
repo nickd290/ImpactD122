@@ -1,10 +1,13 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Check, ChevronDown, Circle, Loader2 } from 'lucide-react';
 import { jobsApi } from '../lib/api';
 import { toast } from 'sonner';
 
+export type PaperSourceKey = 'BRADFORD' | 'VENDOR' | 'CUSTOMER' | string | null | undefined;
+
 interface PaymentStageDropdownProps {
   jobId: string;
+  paperSource?: PaperSourceKey;
   invoiceSent: boolean;
   invoiceSentDate?: string;
   customerPaid: boolean;
@@ -17,17 +20,42 @@ interface PaymentStageDropdownProps {
   onUpdate: () => void;
 }
 
-const STAGES = [
-  { key: 'invoice', label: 'Invoice Sent', shortLabel: 'Invoiced' },
-  { key: 'customer', label: 'Customer Paid', shortLabel: 'Cust. Paid' },
-  { key: 'bradford', label: 'Impact → Bradford', shortLabel: 'Bradford' },
-  { key: 'jd', label: 'Bradford → JD', shortLabel: 'JD Paid' },
-] as const;
+type StageKey = 'invoice' | 'customer' | 'production' | 'secondary';
 
-type StageKey = typeof STAGES[number]['key'];
+interface StageDef {
+  key: StageKey;
+  label: string;
+  shortLabel: string;
+  /** Maps to API field */
+  mapsTo: 'invoice' | 'customer' | 'bradford' | 'jd';
+}
+
+function isJdPaper(paperSource: PaperSourceKey): boolean {
+  return paperSource === 'VENDOR' || paperSource === 'CUSTOMER';
+}
+
+function stagesForPaper(paperSource: PaperSourceKey): StageDef[] {
+  if (isJdPaper(paperSource)) {
+    // Impact pays JD for production; Bradford gets margin only
+    return [
+      { key: 'invoice', label: 'Invoice Sent', shortLabel: 'Invoiced', mapsTo: 'invoice' },
+      { key: 'customer', label: 'Customer Paid', shortLabel: 'Cust. Paid', mapsTo: 'customer' },
+      { key: 'production', label: 'Impact → JD', shortLabel: 'JD Paid', mapsTo: 'jd' },
+      { key: 'secondary', label: 'Impact → Bradford (margin)', shortLabel: 'Bradford', mapsTo: 'bradford' },
+    ];
+  }
+  // Bradford paper: Impact pays Bradford; Bradford pays JD mfg
+  return [
+    { key: 'invoice', label: 'Invoice Sent', shortLabel: 'Invoiced', mapsTo: 'invoice' },
+    { key: 'customer', label: 'Customer Paid', shortLabel: 'Cust. Paid', mapsTo: 'customer' },
+    { key: 'production', label: 'Impact → Bradford', shortLabel: 'Bradford', mapsTo: 'bradford' },
+    { key: 'secondary', label: 'Bradford → JD (mfg)', shortLabel: 'JD Paid', mapsTo: 'jd' },
+  ];
+}
 
 export function PaymentStageDropdown({
   jobId,
+  paperSource = 'BRADFORD',
   invoiceSent,
   invoiceSentDate,
   customerPaid,
@@ -43,7 +71,9 @@ export function PaymentStageDropdown({
   const [loading, setLoading] = useState<StageKey | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown when clicking outside
+  const stages = useMemo(() => stagesForPaper(paperSource), [paperSource]);
+  const jdPaper = isJdPaper(paperSource);
+
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -54,9 +84,8 @@ export function PaymentStageDropdown({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Get stage completion status
-  const getStageStatus = (key: StageKey): boolean => {
-    switch (key) {
+  const fieldDone = (mapsTo: StageDef['mapsTo']): boolean => {
+    switch (mapsTo) {
       case 'invoice': return invoiceSent;
       case 'customer': return customerPaid;
       case 'bradford': return bradfordPaid;
@@ -64,9 +93,8 @@ export function PaymentStageDropdown({
     }
   };
 
-  // Get stage date
-  const getStageDate = (key: StageKey): string | undefined => {
-    switch (key) {
+  const fieldDate = (mapsTo: StageDef['mapsTo']): string | undefined => {
+    switch (mapsTo) {
       case 'invoice': return invoiceSentDate;
       case 'customer': return customerPaidDate;
       case 'bradford': return bradfordPaidDate;
@@ -74,25 +102,21 @@ export function PaymentStageDropdown({
     }
   };
 
-  // Calculate completion count
-  const completedCount = [invoiceSent, customerPaid, bradfordPaid, jdPaid].filter(Boolean).length;
+  const completedCount = stages.filter((s) => fieldDone(s.mapsTo)).filter(Boolean).length;
 
-  // Get current stage (first incomplete)
   const getCurrentStage = (): StageKey | 'done' => {
-    if (!invoiceSent) return 'invoice';
-    if (!customerPaid) return 'customer';
-    if (!bradfordPaid) return 'bradford';
-    if (!jdPaid) return 'jd';
+    for (const s of stages) {
+      if (!fieldDone(s.mapsTo)) return s.key;
+    }
     return 'done';
   };
 
-  // Handle stage click - toggle status
-  const handleStageClick = async (key: StageKey) => {
-    const isCompleted = getStageStatus(key);
-    setLoading(key);
+  const handleStageClick = async (stage: StageDef) => {
+    const isCompleted = fieldDone(stage.mapsTo);
+    setLoading(stage.key);
 
     try {
-      switch (key) {
+      switch (stage.mapsTo) {
         case 'invoice':
           await jobsApi.markInvoiceSent(jobId, {
             status: isCompleted ? 'unsent' : 'sent',
@@ -107,9 +131,11 @@ export function PaymentStageDropdown({
           toast.success(isCompleted ? 'Customer payment cleared' : 'Customer payment recorded');
           break;
 
-        case 'bradford':
+        case 'bradford': {
           const result = await jobsApi.markBradfordPaid(jobId, {
             status: isCompleted ? 'unpaid' : 'paid',
+            // Only auto-send JD invoice when Bradford is production payee
+            sendInvoice: !jdPaper,
           });
           if (!isCompleted && result.jdInvoiceSent) {
             toast.success('Bradford Payment Recorded', {
@@ -117,21 +143,35 @@ export function PaymentStageDropdown({
               duration: 5000,
             });
           } else {
-            toast.success(isCompleted ? 'Bradford payment cleared' : 'Bradford payment recorded');
+            toast.success(
+              isCompleted
+                ? 'Bradford payment cleared'
+                : jdPaper
+                  ? 'Bradford margin share recorded'
+                  : 'Bradford payment recorded'
+            );
           }
           break;
+        }
 
         case 'jd':
           await jobsApi.markJDPaid(jobId, {
             status: isCompleted ? 'unpaid' : 'paid',
           });
-          toast.success(isCompleted ? 'JD payment cleared' : 'JD payment recorded');
+          toast.success(
+            isCompleted
+              ? 'JD payment cleared'
+              : jdPaper
+                ? 'Impact → JD payment recorded'
+                : 'Bradford → JD (mfg) recorded'
+          );
           break;
       }
       onUpdate();
-    } catch (error) {
-      console.error(`Failed to update ${key} status:`, error);
-      toast.error(`Failed to update payment status`);
+    } catch (error: any) {
+      console.error(`Failed to update ${stage.key} status:`, error);
+      const msg = error?.message || error?.error || 'Failed to update payment status';
+      toast.error(typeof msg === 'string' ? msg : 'Failed to update payment status');
     } finally {
       setLoading(null);
     }
@@ -140,18 +180,15 @@ export function PaymentStageDropdown({
   const currentStage = getCurrentStage();
   const isDone = currentStage === 'done';
 
-  // Get button label based on current stage
   const getButtonLabel = (): string => {
-    switch (currentStage) {
-      case 'invoice': return 'Not Invoiced';
-      case 'customer': return 'Invoiced';
-      case 'bradford': return 'Cust. Paid';
-      case 'jd': return 'Bradford';
-      case 'done': return 'Done';
-    }
+    if (isDone) return 'Done';
+    const current = stages.find((s) => s.key === currentStage);
+    // Show last completed short label
+    const completed = stages.filter((s) => fieldDone(s.mapsTo));
+    if (completed.length === 0) return 'Not Invoiced';
+    return completed[completed.length - 1].shortLabel;
   };
 
-  // Get button styling based on completion
   const getButtonStyle = () => {
     if (isDone) return 'bg-green-100 text-green-700 border-green-200';
     if (completedCount === 0) return 'bg-zinc-100 text-zinc-600 border-zinc-200';
@@ -159,7 +196,6 @@ export function PaymentStageDropdown({
     return 'bg-blue-100 text-blue-700 border-blue-200';
   };
 
-  // Format date for display
   const formatDate = (date?: string) => {
     if (!date) return null;
     return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -167,7 +203,6 @@ export function PaymentStageDropdown({
 
   return (
     <div className="relative" ref={dropdownRef}>
-      {/* Trigger Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={`inline-flex items-center gap-1.5 px-2 py-1 text-xs font-medium rounded border transition-colors hover:opacity-80 ${getButtonStyle()}`}
@@ -177,37 +212,35 @@ export function PaymentStageDropdown({
         {!isDone && <ChevronDown className="w-3 h-3" />}
       </button>
 
-      {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 top-full mt-1 z-50 w-56 bg-white border border-zinc-200 rounded-lg shadow-lg overflow-hidden">
-          {/* Header */}
+        <div className="absolute right-0 top-full mt-1 z-50 w-64 bg-white border border-zinc-200 rounded-lg shadow-lg overflow-hidden">
           <div className="px-3 py-2 bg-zinc-50 border-b border-zinc-200">
-            <p className="text-xs font-medium text-zinc-500">Payment Progress</p>
+            <p className="text-xs font-medium text-zinc-500">
+              {jdPaper ? 'JD paper · Impact pays JD' : 'Bradford paper · Impact pays Bradford'}
+            </p>
             {bradfordShare !== undefined && (
               <p className="text-sm font-medium text-zinc-900 tabular-nums">
-                ${bradfordShare.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                Bradford share ${bradfordShare.toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </p>
             )}
           </div>
 
-          {/* Stages */}
           <div className="py-1">
-            {STAGES.map((stage, index) => {
-              const isCompleted = getStageStatus(stage.key);
+            {stages.map((stage, index) => {
+              const isCompleted = fieldDone(stage.mapsTo);
               const isCurrent = currentStage === stage.key;
-              const date = getStageDate(stage.key);
+              const date = fieldDate(stage.mapsTo);
               const isLoading = loading === stage.key;
 
               return (
                 <button
                   key={stage.key}
-                  onClick={() => handleStageClick(stage.key)}
+                  onClick={() => handleStageClick(stage)}
                   disabled={isLoading}
                   className={`w-full px-3 py-2 flex items-center gap-3 text-left transition-colors ${
                     isCurrent ? 'bg-blue-50' : 'hover:bg-zinc-50'
                   }`}
                 >
-                  {/* Status Icon */}
                   <div className="flex-shrink-0">
                     {isLoading ? (
                       <Loader2 className="w-4 h-4 text-zinc-400 animate-spin" />
@@ -222,18 +255,24 @@ export function PaymentStageDropdown({
                     )}
                   </div>
 
-                  {/* Label and Date */}
                   <div className="flex-1 min-w-0">
-                    <p className={`text-sm ${isCompleted ? 'text-zinc-900' : isCurrent ? 'text-blue-700 font-medium' : 'text-zinc-500'}`}>
+                    <p
+                      className={`text-sm ${
+                        isCompleted
+                          ? 'text-zinc-900'
+                          : isCurrent
+                            ? 'text-blue-700 font-medium'
+                            : 'text-zinc-500'
+                      }`}
+                    >
                       {stage.label}
                     </p>
-                    {date && (
-                      <p className="text-xs text-zinc-400">{formatDate(date)}</p>
-                    )}
+                    {date && <p className="text-xs text-zinc-400">{formatDate(date)}</p>}
                   </div>
 
-                  {/* Step number */}
-                  <span className={`text-xs tabular-nums ${isCompleted ? 'text-green-600' : 'text-zinc-400'}`}>
+                  <span
+                    className={`text-xs tabular-nums ${isCompleted ? 'text-green-600' : 'text-zinc-400'}`}
+                  >
                     {index + 1}
                   </span>
                 </button>
@@ -241,7 +280,6 @@ export function PaymentStageDropdown({
             })}
           </div>
 
-          {/* Footer hint */}
           <div className="px-3 py-2 bg-zinc-50 border-t border-zinc-100">
             <p className="text-xs text-zinc-400">Click any stage to toggle</p>
           </div>

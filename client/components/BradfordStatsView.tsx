@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import { JobDetailModal } from './JobDetailModal';
-import { pdfApi, jobsApi } from '../lib/api';
+import { pdfApi, jobsApi, authFetch } from '../lib/api';
 import { BradfordStats, BradfordJob } from '../types/bradford';
 import { PaymentStageDropdown } from './PaymentStageDropdown';
 import { Search, FileDown, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown, Pencil, Check, X, CheckCircle, ChevronRight, ChevronDown, Filter } from 'lucide-react';
@@ -24,15 +24,40 @@ type SortDirection = 'asc' | 'desc';
 type MainTab = 'action' | 'completed' | 'paper';
 type PaymentFilter = 'all' | 'not_invoiced' | 'invoiced' | 'customer_paid' | 'bradford_paid' | 'jd_paid';
 
-// Helper functions for job status
-const isJobCompleted = (job: any, fullJob: any) =>
-  fullJob?.customerPaymentDate && fullJob?.bradfordPaymentDate && fullJob?.jdPaymentDate;
+// Paper-driven payment routes (Impact production payee is exclusive):
+// BRADFORD paper → Impact→Bradford, then Bradford→JD mfg
+// JD/VENDOR paper → Impact→JD + Impact→Bradford margin
+const isJdPaper = (fullJob: any) =>
+  fullJob?.paperSource === 'VENDOR' || fullJob?.paperSource === 'CUSTOMER';
+
+const isJobCompleted = (job: any, fullJob: any) => {
+  if (!fullJob?.customerPaymentDate) return false;
+  const bradford = !!(fullJob?.bradfordPaymentDate || fullJob?.bradfordPaymentPaid);
+  const jd = !!(fullJob?.jdPaymentDate || fullJob?.jdPaymentPaid);
+  if (isJdPaper(fullJob)) {
+    // Impact must pay JD (production) + Bradford (margin)
+    return bradford && jd;
+  }
+  // Bradford paper: partner-complete when Bradford paid AND Bradford→JD mfg marked
+  return bradford && jd;
+};
 
 const isJobIncoming = (job: any, fullJob: any) =>
-  fullJob?.customerPaymentDate && !fullJob?.bradfordPaymentDate;
+  fullJob?.customerPaymentDate &&
+  !(fullJob?.bradfordPaymentDate || fullJob?.bradfordPaymentPaid) &&
+  !(fullJob?.jdPaymentDate || fullJob?.jdPaymentPaid);
 
-const isJobOutgoing = (job: any, fullJob: any) =>
-  fullJob?.bradfordPaymentDate && !fullJob?.jdPaymentDate;
+const isJobOutgoing = (job: any, fullJob: any) => {
+  if (!fullJob?.customerPaymentDate) return false;
+  const bradford = !!(fullJob?.bradfordPaymentDate || fullJob?.bradfordPaymentPaid);
+  const jd = !!(fullJob?.jdPaymentDate || fullJob?.jdPaymentPaid);
+  if (isJdPaper(fullJob)) {
+    // Waiting on either production or margin leg
+    return (jd && !bradford) || (bradford && !jd);
+  }
+  // Bradford paper: Impact paid Bradford, waiting Bradford→JD
+  return bradford && !jd;
+};
 
 const jobNeedsAction = (job: any, fullJob: any) =>
   !job.bradfordRef || isJobIncoming(job, fullJob) || isJobOutgoing(job, fullJob);
@@ -187,14 +212,26 @@ export function BradfordStatsView({
           case 'invoiced':
             if (!invoiced || customerPaid) return false;
             break;
-          case 'customer_paid':
-            if (!customerPaid || bradfordPaid) return false;
+          case 'customer_paid': {
+            // Waiting on production payee (Bradford paper → Bradford; JD paper → JD)
+            if (!customerPaid) return false;
+            if (isJdPaper(fullJob)) {
+              if (jdPaid) return false;
+            } else if (bradfordPaid) {
+              return false;
+            }
             break;
+          }
           case 'bradford_paid':
-            if (!bradfordPaid || jdPaid) return false;
+            // Production paid, secondary not done
+            if (isJdPaper(fullJob)) {
+              if (!jdPaid || bradfordPaid) return false;
+            } else if (!bradfordPaid || jdPaid) {
+              return false;
+            }
             break;
           case 'jd_paid':
-            if (!jdPaid) return false;
+            if (!isJobCompleted(job, fullJob)) return false;
             break;
         }
       }
@@ -413,7 +450,7 @@ export function BradfordStatsView({
     e.stopPropagation();
     setSavingPO(true);
     try {
-      const response = await fetch(`/api/bradford/jobs/${jobId}/po`, {
+      const response = await authFetch(`/api/bradford/jobs/${jobId}/po`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ poNumber: editingPOValue.trim() }),
@@ -445,7 +482,7 @@ export function BradfordStatsView({
   const updatePaperType = async (jobId: string, paperType: string) => {
     setSavingPaperType(jobId);
     try {
-      const response = await fetch(`/api/bradford/jobs/${jobId}/paper-type`, {
+      const response = await authFetch(`/api/bradford/jobs/${jobId}/paper-type`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ paperType }),
@@ -813,10 +850,10 @@ export function BradfordStatsView({
                 >
                   <option value="all">All Stages</option>
                   <option value="not_invoiced">Not Invoiced</option>
-                  <option value="invoiced">Invoiced (awaiting payment)</option>
-                  <option value="customer_paid">Customer Paid</option>
-                  <option value="bradford_paid">Bradford Paid</option>
-                  <option value="jd_paid">JD Paid (complete)</option>
+                  <option value="invoiced">Invoiced (awaiting customer)</option>
+                  <option value="customer_paid">Customer paid · await production pay</option>
+                  <option value="bradford_paid">Production paid · await second leg</option>
+                  <option value="jd_paid">Fully complete</option>
                 </select>
                 <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" />
               </div>
@@ -1164,6 +1201,7 @@ export function BradfordStatsView({
                       <td className="px-4 py-3 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
                         <PaymentStageDropdown
                           jobId={job.id}
+                          paperSource={fullJob?.paperSource || 'BRADFORD'}
                           invoiceSent={!!fullJob?.invoiceEmailedAt}
                           invoiceSentDate={fullJob?.invoiceEmailedAt}
                           customerPaid={customerPaid}

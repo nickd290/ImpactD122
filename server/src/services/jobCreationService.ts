@@ -143,6 +143,10 @@ export async function createJobUnified(
 
     // 3. Determine pathway (P1/P2/P3)
     const routingType = input.routingType || RoutingType.THIRD_PARTY_VENDOR;
+    // Paper drives Impact payee: Bradford route = Bradford paper; third-party = JD paper
+    const derivedPaperSource =
+      input.paperSource ||
+      (routingType === RoutingType.BRADFORD_JD ? 'BRADFORD' : 'VENDOR');
     const pathway = determinePathway({
       routingType,
       vendorId: input.vendorId || null,
@@ -172,8 +176,7 @@ export async function createJobUnified(
         quantity: input.quantity || 0,
         sellPrice: input.sellPrice || 0,
         sizeName: input.sizeName || null,
-        // paperSource has a schema default (BRADFORD), only set if explicitly provided
-        ...(input.paperSource ? { paperSource: input.paperSource } : {}),
+        paperSource: derivedPaperSource as any,
         bradfordPaperLbs: input.bradfordPaperLbs || null,
         customerPONumber: input.customerPONumber || null,
         customerJobNumber: input.customerJobNumber || null,
@@ -202,6 +205,7 @@ export async function createJobUnified(
       await tx.jobComponent.createMany({
         data: input.components.map((c, idx) => ({
           id: crypto.randomUUID(),
+          updatedAt: new Date(),
           jobId: job.id,
           name: c.name,
           specs: c.specs || {},

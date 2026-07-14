@@ -1,18 +1,19 @@
 /**
  * Jobs Payment Controller
  *
- * Handles payment workflow tracking for jobs:
+ * Paper-driven payment routes (Impact Direct):
  *
- * 4-STEP PAYMENT WORKFLOW:
- * Step 1: Customer → Impact (Financials tab)
- * Step 2: Impact → Bradford (Bradford Stats tab) - triggers JD Invoice
- * Step 3: JD Invoice auto-sent to Bradford (triggered by Step 2)
- * Step 4: Bradford → JD Paid (Bradford Stats tab)
+ * BRADFORD paper:
+ *   1. Customer → Impact
+ *   2. Impact → Bradford (full outlay; auto JD invoice to Bradford)
+ *   3. Bradford → JD (mfg only — partner tracking)
  *
- * Also includes:
- * - updatePayments: Update all payment fields at once
- * - batchUpdatePayments: Mark multiple jobs paid
- * - updateBradfordPayment: Legacy Bradford payment update
+ * JD / vendor paper:
+ *   1. Customer → Impact
+ *   2. Impact → JD (production)
+ *   3. Impact → Bradford (margin split only)
+ *
+ * Production payee from Impact is exclusive by paperSource.
  */
 
 import { Request, Response } from 'express';
@@ -21,6 +22,7 @@ import { getSelfMailerPricing } from '../../utils/bradfordPricing';
 import { sendJDInvoiceToBradfordEmail } from '../../services/emailService';
 import { transformJob, logPaymentChange, calculateProfit, JOB_INCLUDE } from './jobsHelpers';
 import { COMPANY_IDS } from '../../constants';
+import { getPaymentAmounts, getPaymentRoute } from '../../services/paymentRouteService';
 
 // ============================================================================
 // STEP 1: CUSTOMER PAYMENT (Customer → Impact)
@@ -138,7 +140,7 @@ export const markInvoiceSent = async (req: Request, res: Response) => {
           invoiceEmailedTo: null,
           updatedAt: new Date(),
         },
-        include: JOB_INCLUDE,
+        include: JOB_INCLUDE as any,
       });
       return res.json(transformJob(job));
     }
@@ -157,7 +159,7 @@ export const markInvoiceSent = async (req: Request, res: Response) => {
         invoiceEmailedCount: { increment: 1 },
         updatedAt: new Date(),
       },
-      include: JOB_INCLUDE,
+      include: JOB_INCLUDE as any,
     });
 
     res.json(transformJob(job));
@@ -199,7 +201,7 @@ export const markVendorPaid = async (req: Request, res: Response) => {
           vendorPaymentAmount: null,
           updatedAt: new Date(),
         },
-        include: JOB_INCLUDE,
+        include: JOB_INCLUDE as any,
       });
       return res.json(transformJob(job));
     }
@@ -228,7 +230,7 @@ export const markVendorPaid = async (req: Request, res: Response) => {
         vendorPaymentAmount: paymentAmount || null,
         updatedAt: new Date(),
       },
-      include: JOB_INCLUDE,
+      include: JOB_INCLUDE as any,
     });
 
     res.json(transformJob(job));
@@ -239,19 +241,19 @@ export const markVendorPaid = async (req: Request, res: Response) => {
 };
 
 // ============================================================================
-// STEP 2: BRADFORD PAYMENT (Impact → Bradford) - Triggers JD Invoice
+// IMPACT → BRADFORD
+// Bradford paper: full production outlay (+ JD invoice to Bradford)
+// JD paper: margin share only
 // ============================================================================
 
 /**
- * Mark Impact→Bradford as paid and optionally send JD Invoice
- * Guards:
- * - Customer must have paid first (payment sequence)
- * - Prevents duplicate Bradford payments (idempotency)
+ * Mark Impact→Bradford as paid.
+ * Amount and JD-invoice side-effect depend on paperSource (see paymentRouteService).
  */
 export const markImpactToBradfordPaid = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { date, sendInvoice = true } = req.body;
+    const { date, sendInvoice, status } = req.body;
 
     const existingJob = await prisma.job.findUnique({
       where: { id },
@@ -266,7 +268,23 @@ export const markImpactToBradfordPaid = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Job not found' });
     }
 
-    // Guard 1: Payment sequence - customer must pay first
+    // Clear payment
+    if (status === 'unpaid') {
+      await logPaymentChange(id, 'bradfordPaymentDate', existingJob.bradfordPaymentDate, null, 'admin');
+      const job = await prisma.job.update({
+        where: { id },
+        data: {
+          bradfordPaymentPaid: false,
+          bradfordPaymentDate: null,
+          bradfordPaymentAmount: null,
+          updatedAt: new Date(),
+        },
+        include: JOB_INCLUDE as any,
+      });
+      return res.json(transformJob(job));
+    }
+
+    // Customer must pay first
     if (!existingJob.customerPaymentDate) {
       return res.status(400).json({
         error: 'Cannot pay Bradford before customer payment received',
@@ -275,7 +293,7 @@ export const markImpactToBradfordPaid = async (req: Request, res: Response) => {
       });
     }
 
-    // Guard 2: Idempotency - prevent duplicate Bradford payments
+    // Idempotency
     if (existingJob.bradfordPaymentDate) {
       return res.status(409).json({
         error: 'Bradford payment already recorded',
@@ -285,16 +303,14 @@ export const markImpactToBradfordPaid = async (req: Request, res: Response) => {
       });
     }
 
-    const paymentDate = date ? new Date(date) : new Date();
-
-    // Calculate Bradford payment amount from profit split
+    const route = getPaymentRoute(existingJob.paperSource);
     const profit = calculateProfit(existingJob);
-    const paymentAmount = profit.bradfordTotal || 0;
+    const amounts = getPaymentAmounts(existingJob.paperSource, profit);
+    const paymentDate = date ? new Date(date) : new Date();
+    const paymentAmount = amounts.impactToBradford;
 
-    // Log the change
     await logPaymentChange(id, 'bradfordPaymentDate', existingJob.bradfordPaymentDate, paymentDate, 'admin');
 
-    // Update the job with Bradford payment info
     let updateData: any = {
       bradfordPaymentPaid: true,
       bradfordPaymentDate: paymentDate,
@@ -302,10 +318,12 @@ export const markImpactToBradfordPaid = async (req: Request, res: Response) => {
       updatedAt: new Date(),
     };
 
-    // If sendInvoice is true, generate and send JD invoice to Bradford
-    let emailResult = null;
-    if (sendInvoice) {
-      // Compute suggestedPricing from sizeName (not stored in DB, must be computed)
+    // JD invoice only when Bradford is production payee (Bradford paper)
+    const shouldSendInvoice =
+      route.sendJdInvoiceToBradford && (sendInvoice !== false);
+
+    let emailResult: { success: boolean; emailedAt?: Date; emailedTo?: string; error?: string } | null = null;
+    if (shouldSendInvoice) {
       const basePricing = existingJob.sizeName ? getSelfMailerPricing(existingJob.sizeName) : null;
       const suggestedPricingData = basePricing
         ? {
@@ -315,7 +333,6 @@ export const markImpactToBradfordPaid = async (req: Request, res: Response) => {
           }
         : null;
 
-      // Prepare job data for JD invoice PDF
       const jobDataForInvoice = {
         id: existingJob.id,
         jobNo: existingJob.jobNo,
@@ -338,11 +355,9 @@ export const markImpactToBradfordPaid = async (req: Request, res: Response) => {
       emailResult = await sendJDInvoiceToBradfordEmail(jobDataForInvoice);
 
       if (emailResult.success) {
-        // Update JD invoice tracking fields
         updateData.jdInvoiceGeneratedAt = new Date();
         updateData.jdInvoiceEmailedAt = emailResult.emailedAt;
         updateData.jdInvoiceEmailedTo = emailResult.emailedTo;
-
         console.log(`📧 JD Invoice sent to Bradford for job ${existingJob.jobNo}`);
       } else {
         console.error(`❌ Failed to send JD invoice for job ${existingJob.jobNo}:`, emailResult.error);
@@ -366,6 +381,8 @@ export const markImpactToBradfordPaid = async (req: Request, res: Response) => {
 
     res.json({
       ...transformJob(job),
+      paymentRoute: route,
+      paymentAmount,
       jdInvoiceSent: emailResult?.success || false,
       jdInvoiceError: emailResult?.error || null,
     });
@@ -588,16 +605,18 @@ export const bulkGenerateJDInvoices = async (req: Request, res: Response) => {
 };
 
 // ============================================================================
-// STEP 4: JD PAYMENT (Bradford → JD)
+// JD PAYMENT
+// Bradford paper: Bradford → JD (mfg only) — partner tracking
+// JD paper: Impact → JD (production) — Impact's production payee
 // ============================================================================
 
 /**
- * Mark Bradford→JD payment as complete
+ * Mark JD payment complete. Semantics depend on paperSource.
  */
 export const markJDPaid = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { date } = req.body;
+    const { date, status } = req.body;
 
     const existingJob = await prisma.job.findUnique({
       where: { id },
@@ -611,28 +630,78 @@ export const markJDPaid = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Job not found' });
     }
 
+    if (status === 'unpaid') {
+      await logPaymentChange(id, 'jdPaymentDate', existingJob.jdPaymentDate, null, 'admin');
+      const job = await prisma.job.update({
+        where: { id },
+        data: {
+          jdPaymentPaid: false,
+          jdPaymentDate: null,
+          jdPaymentAmount: null,
+          updatedAt: new Date(),
+        },
+        include: JOB_INCLUDE as any,
+      });
+      return res.json(transformJob(job));
+    }
+
+    const route = getPaymentRoute(existingJob.paperSource);
+    const profit = calculateProfit(existingJob);
+    const amounts = getPaymentAmounts(existingJob.paperSource, profit);
     const paymentDate = date ? new Date(date) : new Date();
 
-    // Calculate JD payment amount (manufacturing cost)
-    // This is what Bradford pays JD for print manufacturing
-    let jdPaymentAmount = 0;
-
-    // Try to get from Bradford→JD PO
-    const bradfordJDPO = (existingJob.PurchaseOrder || []).find(
-      (po: any) =>
-        po.originCompanyId === COMPANY_IDS.BRADFORD && po.targetCompanyId === COMPANY_IDS.JD_GRAPHIC
-    );
-
-    if (bradfordJDPO) {
-      jdPaymentAmount = Number(bradfordJDPO.buyCost) || Number(bradfordJDPO.mfgCost) || 0;
+    if (route.productionPayee === 'BRADFORD') {
+      // Bradford → JD mfg tracking: Impact must have paid Bradford first
+      if (!existingJob.customerPaymentDate) {
+        return res.status(400).json({
+          error: 'Cannot mark JD paid before customer payment',
+          jobNo: existingJob.jobNo,
+        });
+      }
+      if (!existingJob.bradfordPaymentDate && !existingJob.bradfordPaymentPaid) {
+        return res.status(400).json({
+          error: 'On Bradford-paper jobs, Impact pays Bradford first; then Bradford pays JD for mfg',
+          hint: 'Mark Impact → Bradford paid first',
+          jobNo: existingJob.jobNo,
+        });
+      }
     } else {
-      // Fallback: calculate from job fields
-      if (existingJob.bradfordPrintCPM && existingJob.quantity) {
-        jdPaymentAmount = (Number(existingJob.bradfordPrintCPM) / 1000) * Number(existingJob.quantity);
+      // Impact → JD production: customer must have paid
+      if (!existingJob.customerPaymentDate) {
+        return res.status(400).json({
+          error: 'Cannot pay JD before customer payment received',
+          hint: 'Use markCustomerPaid first',
+          jobNo: existingJob.jobNo,
+        });
       }
     }
 
-    // Log the change
+    if (existingJob.jdPaymentDate) {
+      return res.status(409).json({
+        error: 'JD payment already recorded',
+        existingDate: existingJob.jdPaymentDate,
+        existingAmount: existingJob.jdPaymentAmount,
+      });
+    }
+
+    // Amount: Bradford-paper = mfg only; JD-paper = Impact production cost
+    let jdPaymentAmount =
+      route.productionPayee === 'JD' ? amounts.impactToJd : amounts.bradfordToJdMfg;
+
+    // Fallback chain if profit had no mfg/cost
+    if (!jdPaymentAmount) {
+      const bradfordJDPO = (existingJob.PurchaseOrder || []).find(
+        (po: any) =>
+          po.originCompanyId === COMPANY_IDS.BRADFORD && po.targetCompanyId === COMPANY_IDS.JD_GRAPHIC
+      );
+      if (bradfordJDPO) {
+        jdPaymentAmount = Number(bradfordJDPO.buyCost) || Number(bradfordJDPO.mfgCost) || 0;
+      } else if (existingJob.bradfordPrintCPM && existingJob.quantity) {
+        jdPaymentAmount =
+          (Number(existingJob.bradfordPrintCPM) / 1000) * Number(existingJob.quantity);
+      }
+    }
+
     await logPaymentChange(id, 'jdPaymentDate', existingJob.jdPaymentDate, paymentDate, 'admin');
 
     const job = await prisma.job.update({
@@ -655,7 +724,11 @@ export const markJDPaid = async (req: Request, res: Response) => {
       },
     });
 
-    res.json(transformJob(job));
+    res.json({
+      ...transformJob(job),
+      paymentRoute: route,
+      paymentAmount: jdPaymentAmount,
+    });
   } catch (error) {
     console.error('Mark JD paid error:', error);
     res.status(500).json({ error: 'Failed to mark JD paid' });

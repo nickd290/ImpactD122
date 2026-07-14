@@ -75,7 +75,10 @@ export interface ProfitSplitInput {
   sellPrice: number;          // What customer pays (total)
   totalCost: number;          // What Impact pays (from POs, excluding paper markup)
   paperMarkup: number;        // Bradford's 18% paper markup
-  routingType?: 'BRADFORD_JD' | 'THIRD_PARTY_VENDOR';  // Determines split: 50/50 vs 35/65
+  /** @deprecated prefer paperSource — production payee is paper-driven */
+  routingType?: 'BRADFORD_JD' | 'THIRD_PARTY_VENDOR';
+  /** BRADFORD = paper markup + 50/50; VENDOR/CUSTOMER = margin-only Bradford share */
+  paperSource?: 'BRADFORD' | 'VENDOR' | 'CUSTOMER' | string;
 }
 
 export interface ProfitSplitResult {
@@ -213,19 +216,20 @@ export function calculateTierPricing(input: TierPricingInput): TierPricingResult
 /**
  * Calculate the 50/50 profit split between Impact and Bradford
  *
- * Business Logic:
+ * Business Logic (paper-driven — matches Third Party Calculator):
  * - Gross Margin = Sell Price - Total Cost
- * - Spread = Gross Margin (split 50/50)
- * - Bradford gets: 50% of Spread + Paper Markup (18%) - they handle paper procurement
- * - Impact gets: 50% of Spread only
+ * - Spread split 50/50 Impact / Bradford
+ * - Bradford paper: Bradford also gets 18% paper markup
+ * - JD / vendor paper: no paper markup; Bradford gets margin share only
+ * - Impact always gets 50% of spread
  *
- * Note: The paper markup goes to Bradford as they handle paper procurement.
- *
- * @param input - Sell price, total cost, and paper markup
+ * @param input - Sell price, total cost, paper markup, optional paperSource/routingType
  * @returns Complete profit split breakdown
  */
 export function calculateProfitSplit(input: ProfitSplitInput): ProfitSplitResult {
-  const { sellPrice, totalCost, paperMarkup, routingType } = input;
+  const { sellPrice, totalCost, paperMarkup, routingType, paperSource } = input as ProfitSplitInput & {
+    paperSource?: string;
+  };
   const warnings: string[] = [];
 
   // Gross margin = what customer pays - what we pay
@@ -234,19 +238,16 @@ export function calculateProfitSplit(input: ProfitSplitInput): ProfitSplitResult
   // The spread (what gets split) is the gross margin
   const spreadAmount = grossMargin;
 
-  // Determine split based on routing type:
-  // - BRADFORD_JD (default): 50/50 split, Bradford gets paper markup
-  // - THIRD_PARTY_VENDOR: 35/65 split (Bradford/Impact), no paper markup
-  const isThirdParty = routingType === 'THIRD_PARTY_VENDOR';
+  // Paper source is the driver. Fallback: old THIRD_PARTY routing ≈ JD paper (no markup).
+  const isBradfordPaper =
+    paperSource === 'BRADFORD' ||
+    (!paperSource && routingType !== 'THIRD_PARTY_VENDOR');
 
-  // Third-party vendors: Bradford 35%, Impact 65%
-  // Bradford jobs: 50/50 split
-  const bradfordSpreadShare = spreadAmount * (isThirdParty ? 0.35 : 0.5);
-  const impactSpreadShare = spreadAmount * (isThirdParty ? 0.65 : 0.5);
+  // Always 50/50 on margin (calculator model). Paper markup only on Bradford paper.
+  const bradfordSpreadShare = spreadAmount * 0.5;
+  const impactSpreadShare = spreadAmount * 0.5;
 
-  // For third-party jobs, vendor supplies paper so no paper markup to Bradford
-  // For Bradford jobs, Bradford gets paper markup + 50% of spread
-  const effectivePaperMarkup = isThirdParty ? 0 : paperMarkup;
+  const effectivePaperMarkup = isBradfordPaper ? paperMarkup : 0;
   const bradfordTotal = bradfordSpreadShare + effectivePaperMarkup;
   const impactTotal = impactSpreadShare;
 

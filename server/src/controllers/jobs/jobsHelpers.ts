@@ -159,12 +159,13 @@ export function calculateProfit(job: any) {
     }, 0);
   }
 
-  // Use pricing service to calculate split
+  // Use pricing service to calculate split (paper-driven)
   const split = calculateProfitSplit({
     sellPrice,
     totalCost,
     paperMarkup: totalPaperMarkup,
     routingType: job.routingType,
+    paperSource: job.paperSource || (job.jdSuppliesPaper ? 'VENDOR' : 'BRADFORD'),
   });
 
   return {
@@ -255,7 +256,7 @@ export function transformJob(job: any) {
       id: po.Vendor.id,
       name: po.Vendor.name,
       email: po.Vendor.email || '',
-      contacts: po.Vendor.contacts || [],
+      contacts: po.Vendor.VendorContact || po.Vendor.contacts || [],
     } : null,
   }));
 
@@ -361,7 +362,7 @@ export function transformJob(job: any) {
       email: job.Vendor.email || '',
       phone: job.Vendor.phone || '',
       isPartner: isBradfordVendor(job.Vendor),
-      contacts: job.Vendor.contacts || [],
+      contacts: job.Vendor.VendorContact || job.Vendor.contacts || [],
     } : {
       id: '',
       name: 'No Vendor Assigned',
@@ -491,14 +492,14 @@ export const JOB_INCLUDE = {
   Company: true,
   Vendor: {
     include: {
-      contacts: true,
+      VendorContact: true,
     },
   },
   PurchaseOrder: {
     include: {
       Vendor: {
         include: {
-          contacts: true,
+          VendorContact: true,
         },
       },
     },
@@ -536,7 +537,7 @@ export const JOB_INCLUDE_WORKFLOW = {
   Company: true,
   Vendor: {
     include: {
-      contacts: true,
+      VendorContact: true,
     },
   },
   JobPortal: true,

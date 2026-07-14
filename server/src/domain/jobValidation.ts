@@ -225,10 +225,12 @@ const checkP1BradfordRequired: InvariantCheck = (job) => {
 
 /**
  * Invariant 7: JD_INVOICE_CHAIN
- * If jdPaymentPaid === true, jdInvoiceNumber and jdInvoiceGeneratedAt must exist
+ * Bradford-paper only: if Bradford→JD mfg is marked paid, JD invoice to Bradford should exist.
+ * JD-paper jobs: Impact pays JD directly — no Bradford JD-invoice chain.
  */
 const checkJdInvoiceChain: InvariantCheck = (job) => {
-  if (job.jdPaymentPaid) {
+  const isJdPaper = job.paperSource === 'VENDOR' || job.paperSource === 'CUSTOMER';
+  if (job.jdPaymentPaid && !isJdPaper) {
     const missing: string[] = [];
     if (!job.jdInvoiceNumber) missing.push('jdInvoiceNumber');
     if (!job.jdInvoiceGeneratedAt) missing.push('jdInvoiceGeneratedAt');

@@ -1,10 +1,35 @@
 const API_BASE_URL = '/api';
 
+// Auth headers for internal API calls
+function getAuthHeaders(): Record<string, string> {
+  const secret = import.meta.env.VITE_INTERNAL_API_SECRET;
+  if (secret) {
+    return { 'Authorization': `Bearer ${secret}` };
+  }
+  return {};
+}
+
+/**
+ * Authenticated fetch wrapper for direct fetch calls in components.
+ * Use this instead of raw `fetch()` for any /api/* endpoint that requires auth.
+ * Portal public endpoints (token-based) should NOT use this.
+ */
+export function authFetch(url: string, options?: RequestInit): Promise<Response> {
+  return fetch(url, {
+    ...options,
+    headers: {
+      ...getAuthHeaders(),
+      ...options?.headers,
+    },
+  });
+}
+
 // Generic fetch wrapper
 async function apiFetch(url: string, options?: RequestInit) {
   const response = await fetch(`${API_BASE_URL}${url}`, {
     headers: {
       'Content-Type': 'application/json',
+      ...getAuthHeaders(),
       ...options?.headers,
     },
     ...options,
@@ -73,32 +98,30 @@ export const jobsApi = {
     body: JSON.stringify({ jobs, entityMappings }),
   }),
 
-  // Multi-step Payment Workflow (4-step process)
-  // Step 0: Mark Invoice Sent (manual tracking)
+  // Paper-driven payment workflow
+  // Bradford paper: Customer → Impact → Bradford (JD invoice) → Bradford pays JD mfg
+  // JD paper: Customer → Impact → JD (production) + Impact → Bradford (margin)
   markInvoiceSent: (id: string, data: { status?: string; email?: string }) => apiFetch(`/jobs/${id}/invoice-sent`, {
     method: 'PATCH',
     body: JSON.stringify(data),
   }),
-  // Step 1: Mark Customer Paid (Customer → Impact)
   markCustomerPaid: (id: string, data?: { date?: string; status?: string }) => apiFetch(`/jobs/${id}/customer-paid`, {
     method: 'PATCH',
     body: JSON.stringify(data || {}),
   }),
-  // Step 1.5: Mark Vendor Paid (Impact → Vendor) - for non-Bradford vendors
   markVendorPaid: (id: string, data?: { date?: string; amount?: number; status?: string }) => apiFetch(`/jobs/${id}/vendor-paid`, {
     method: 'PATCH',
     body: JSON.stringify(data || {}),
   }),
-  // Step 2: Mark Bradford Paid (Impact → Bradford) - triggers JD Invoice
+  // Impact → Bradford (full outlay on Bradford paper; margin-only on JD paper)
   markBradfordPaid: (id: string, data?: { date?: string; sendInvoice?: boolean; status?: string }) => apiFetch(`/jobs/${id}/bradford-paid`, {
     method: 'PATCH',
     body: JSON.stringify(data || {}),
   }),
-  // Step 3: Send JD Invoice manually (can resend)
   sendJDInvoice: (id: string) => apiFetch(`/jobs/${id}/send-jd-invoice`, {
     method: 'POST',
   }),
-  // Step 4: Mark JD Paid (Bradford → JD)
+  // Bradford paper = Bradford→JD mfg; JD paper = Impact→JD production
   markJDPaid: (id: string, data?: { date?: string; status?: string }) => apiFetch(`/jobs/${id}/jd-paid`, {
     method: 'PATCH',
     body: JSON.stringify(data || {}),
@@ -106,7 +129,7 @@ export const jobsApi = {
   // Download JD Invoice PDF - checks if PDF exists first
   downloadJDInvoicePDF: async (id: string): Promise<boolean> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/jobs/${id}/jd-invoice-pdf`, {
+      const response = await authFetch(`${API_BASE_URL}/jobs/${id}/jd-invoice-pdf`, {
         method: 'HEAD',
       });
       if (!response.ok) {
@@ -224,7 +247,7 @@ export const aiApi = {
       formData.append('jobId', jobId);
     }
 
-    const response = await fetch(`${API_BASE_URL}/ai/parse-po`, {
+    const response = await authFetch(`${API_BASE_URL}/ai/parse-po`, {
       method: 'POST',
       body: formData,
     });
@@ -559,4 +582,53 @@ export const proofsApi = {
 
   // Get approval history for a proof
   getApprovals: (proofId: string) => apiFetch(`/proofs/${proofId}/approvals`),
+
+  // Create (and optionally email) a customer review magic link
+  createApprovalLink: (
+    jobId: string,
+    opts?: { recipientEmail?: string; message?: string; proofId?: string; expirationDays?: number }
+  ) =>
+    apiFetch(`/jobs/${jobId}/approval-link`, {
+      method: 'POST',
+      body: JSON.stringify(opts || {}),
+    }),
+};
+
+// Inter-company billing API - work-split components + JD→ThreeZ invoicing
+export const interCompanyApi = {
+  getBillingSummary: (jobId: string) => apiFetch(`/jobs/${jobId}/billing-summary`),
+
+  getComponents: (jobId: string) => apiFetch(`/jobs/${jobId}/components`),
+
+  createComponent: (jobId: string, data: Record<string, unknown>) =>
+    apiFetch(`/jobs/${jobId}/components`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateComponent: (jobId: string, componentId: string, data: Record<string, unknown>) =>
+    apiFetch(`/jobs/${jobId}/components/${componentId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  deleteComponent: (jobId: string, componentId: string) =>
+    apiFetch(`/jobs/${jobId}/components/${componentId}`, {
+      method: 'DELETE',
+    }),
+
+  // Generate the JD→ThreeZ invoice; send=true also emails it to Three Z
+  sendThreeZInvoice: (jobId: string, opts?: { send?: boolean; memo?: string }) =>
+    apiFetch(`/jobs/${jobId}/threez-invoice`, {
+      method: 'POST',
+      body: JSON.stringify(opts || {}),
+    }),
+
+  markThreeZPaid: (jobId: string, paidAt?: string) =>
+    apiFetch(`/jobs/${jobId}/threez-paid`, {
+      method: 'PATCH',
+      body: JSON.stringify({ paidAt }),
+    }),
+
+  getInterCompanyLedger: () => apiFetch('/financials/inter-company'),
 };
