@@ -146,6 +146,7 @@ export function JobsView({
   const [optimisticallyPaidIds, setOptimisticallyPaidIds] = useState<Set<string>>(new Set());
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   const actionMenuRef = useRef<HTMLDivElement>(null);
+  const [statementCustomerId, setStatementCustomerId] = useState('');
 
   // Load jobs on mount and when refresh is triggered
   const loadLocalJobs = async () => {
@@ -420,11 +421,33 @@ export function JobsView({
   };
 
   const handleSelectAll = () => {
-    if (selectedJobIds.size === filteredJobs.length) {
+    if (selectedJobIds.size === filteredJobs.length && filteredJobs.length > 0) {
       setSelectedJobIds(new Set());
     } else {
       setSelectedJobIds(new Set(filteredJobs.map(job => job.id)));
     }
+  };
+
+  const handleClearSelection = () => setSelectedJobIds(new Set());
+
+  const handleSelectUnpaid = () => {
+    const unpaid = filteredJobs.filter(
+      (j) => j.status !== 'PAID' && !(j as any).customerPaymentDate
+    );
+    setSelectedJobIds(new Set(unpaid.map((j) => j.id)));
+    toast.message(`Selected ${unpaid.length} unpaid job${unpaid.length === 1 ? '' : 's'}`);
+  };
+
+  const handleSelectActiveOnly = () => {
+    const active = filteredJobs.filter((j) => j.status === 'ACTIVE' && !isJobDone(j));
+    setSelectedJobIds(new Set(active.map((j) => j.id)));
+  };
+
+  const handleSelectByCustomer = (customerId: string) => {
+    const ids = filteredJobs
+      .filter((j) => (j.customer?.id || 'no-customer') === customerId)
+      .map((j) => j.id);
+    setSelectedJobIds(new Set(ids));
   };
 
   const handleBatchDelete = async () => {
@@ -672,7 +695,55 @@ export function JobsView({
             <span className="font-mono tabular-nums">{tabCounts.archive}</span> archived
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {/* Customer statement download */}
+          <div className="flex items-center gap-1.5 bg-white border border-zinc-200 rounded-lg px-2 py-1 shadow-sm">
+            <Building2 className="w-3.5 h-3.5 text-[#C0512A] shrink-0" />
+            <select
+              value={statementCustomerId}
+              onChange={(e) => setStatementCustomerId(e.target.value)}
+              className="text-sm text-zinc-700 bg-transparent border-0 focus:ring-0 max-w-[160px] py-1"
+              title="Customer statement"
+            >
+              <option value="">Statement…</option>
+              {customers
+                .slice()
+                .sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''))
+                .map((c: any) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+            </select>
+            {statementCustomerId && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => pdfApi.generateStatement(statementCustomerId, 'all')}
+                  className="text-[11px] font-semibold px-2 py-1 rounded-md bg-[#2B3A4A] text-white hover:bg-[#1f2a36]"
+                  title="All jobs — paid & unpaid"
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => pdfApi.generateStatement(statementCustomerId, 'unpaid')}
+                  className="text-[11px] font-semibold px-2 py-1 rounded-md bg-amber-600 text-white hover:bg-amber-700"
+                  title="Unpaid only"
+                >
+                  Unpaid
+                </button>
+                <button
+                  type="button"
+                  onClick={() => pdfApi.generateStatement(statementCustomerId, 'paid')}
+                  className="text-[11px] font-semibold px-2 py-1 rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
+                  title="Paid only"
+                >
+                  Paid
+                </button>
+              </>
+            )}
+          </div>
           <Button onClick={onCreateJob} size="sm" className="bg-[#2B3A4A] hover:bg-[#2B3A4A]/90 shadow-sm">
             <Plus className="w-4 h-4 mr-1.5" />
             New Job
@@ -839,24 +910,95 @@ export function JobsView({
           )}
         </div>
 
-        {/* Batch bar */}
+        {/* Selection helpers — always available for cleanup */}
+        <div className="px-4 py-2 border-b border-zinc-100 flex flex-wrap items-center gap-2 bg-white">
+          <span className="text-[11px] uppercase tracking-wide font-semibold text-zinc-400 mr-1">Select</span>
+          <button
+            type="button"
+            onClick={handleSelectAll}
+            className="text-xs font-medium px-2.5 py-1 rounded-md border border-zinc-200 text-zinc-700 hover:bg-zinc-50"
+          >
+            {selectedJobIds.size === filteredJobs.length && filteredJobs.length > 0
+              ? 'Deselect all'
+              : `All visible (${filteredJobs.length})`}
+          </button>
+          <button
+            type="button"
+            onClick={handleSelectActiveOnly}
+            className="text-xs font-medium px-2.5 py-1 rounded-md border border-zinc-200 text-zinc-700 hover:bg-zinc-50"
+          >
+            Active only
+          </button>
+          <button
+            type="button"
+            onClick={handleSelectUnpaid}
+            className="text-xs font-medium px-2.5 py-1 rounded-md border border-amber-200 text-amber-800 hover:bg-amber-50"
+          >
+            Unpaid
+          </button>
+          {selectedCustomerId && (
+            <button
+              type="button"
+              onClick={() => handleSelectByCustomer(selectedCustomerId)}
+              className="text-xs font-medium px-2.5 py-1 rounded-md border border-zinc-200 text-zinc-700 hover:bg-zinc-50"
+            >
+              This customer
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleClearSelection}
+            disabled={selectedJobIds.size === 0}
+            className={cn(
+              'text-xs font-medium px-2.5 py-1 rounded-md border',
+              selectedJobIds.size === 0
+                ? 'border-zinc-100 text-zinc-300 cursor-not-allowed'
+                : 'border-zinc-300 text-zinc-800 hover:bg-zinc-100'
+            )}
+          >
+            Clear selection
+          </button>
+          {selectedJobIds.size > 0 && (
+            <span className="text-xs font-semibold text-[#2B3A4A] tabular-nums ml-1">
+              {selectedJobIds.size} selected
+            </span>
+          )}
+        </div>
+
+        {/* Batch actions when anything selected */}
         {selectedJobIds.size > 0 && (
-          <div className="px-4 py-2 border-b border-zinc-200 flex flex-wrap items-center gap-2 bg-zinc-50">
-            <span className="text-sm text-zinc-600 tabular-nums">{selectedJobIds.size} selected</span>
-            <Button onClick={handleBatchComplete} variant="outline" size="sm" className="h-8 text-xs border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+          <div className="px-4 py-2.5 border-b border-emerald-100 flex flex-wrap items-center gap-2 bg-emerald-50/60 sticky top-0 z-10">
+            <CheckSquare className="w-4 h-4 text-emerald-700" />
+            <span className="text-sm font-semibold text-emerald-900 tabular-nums">
+              {selectedJobIds.size} job{selectedJobIds.size === 1 ? '' : 's'}
+            </span>
+            <Button onClick={handleBatchComplete} variant="outline" size="sm" className="h-8 text-xs border-emerald-300 text-emerald-800 hover:bg-emerald-100 bg-white">
               <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
               Mark Complete
             </Button>
-            <Button onClick={() => handleBatchPayment('customer')} disabled={isProcessingPayment} variant="outline" size="sm" className="h-8 text-xs">
+            <Button onClick={() => handleBatchPayment('customer')} disabled={isProcessingPayment} variant="outline" size="sm" className="h-8 text-xs bg-white">
               <DollarSign className="w-3.5 h-3.5 mr-1" />
               Customer Paid
+            </Button>
+            <Button
+              onClick={() => handleBatchGenerate('invoice')}
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs bg-white"
+            >
+              <Receipt className="w-3.5 h-3.5 mr-1" />
+              Invoices
             </Button>
             <Button onClick={handleBatchDelete} disabled={isDeleting} variant="destructive" size="sm" className="h-8 text-xs">
               <Trash2 className="w-3.5 h-3.5 mr-1" />
               Delete
             </Button>
-            <button type="button" onClick={() => setSelectedJobIds(new Set())} className="text-xs text-zinc-500 hover:underline ml-auto">
-              Clear
+            <button
+              type="button"
+              onClick={handleClearSelection}
+              className="text-xs font-semibold text-emerald-900 hover:underline ml-auto px-2"
+            >
+              Clear all
             </button>
           </div>
         )}

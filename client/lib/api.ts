@@ -302,7 +302,7 @@ export const pdfApi = {
   generatePO: (poId: string) => {
     window.open(`${API_BASE_URL}/pdf/po/${poId}`, '_blank');
   },
-  generateStatement: (companyId: string, filter: 'all' | 'unpaid' = 'all') => {
+  generateStatement: (companyId: string, filter: 'all' | 'unpaid' | 'paid' = 'all') => {
     window.open(`${API_BASE_URL}/pdf/statement/${companyId}?filter=${filter}`, '_blank');
   },
 };

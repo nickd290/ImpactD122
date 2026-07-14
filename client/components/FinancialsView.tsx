@@ -387,13 +387,19 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
                 onClick={() => pdfApi.generateStatement(statementCustomerId, 'all')}
                 className="px-3 py-1.5 bg-zinc-900 text-white rounded-lg text-sm font-medium hover:bg-zinc-800"
               >
-                All
+                All (paid + unpaid)
               </button>
               <button
                 onClick={() => pdfApi.generateStatement(statementCustomerId, 'unpaid')}
                 className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
               >
                 Unpaid
+              </button>
+              <button
+                onClick={() => pdfApi.generateStatement(statementCustomerId, 'paid')}
+                className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700"
+              >
+                Paid
               </button>
             </>
           )}

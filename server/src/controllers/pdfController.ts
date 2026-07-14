@@ -410,11 +410,11 @@ export const generatePurchaseOrderPDF = async (req: Request, res: Response) => {
   }
 };
 
-// Generate Customer Statement PDF
+// Generate Customer Statement PDF (jobs = source of truth: paid/unpaid)
 export const generateCustomerStatement = async (req: Request, res: Response) => {
   try {
     const { companyId } = req.params;
-    const { filter } = req.query; // 'all' | 'unpaid'
+    const filter = String(req.query.filter || 'all'); // 'all' | 'unpaid' | 'paid'
 
     const company = await prisma.company.findUnique({
       where: { id: companyId },
@@ -424,24 +424,94 @@ export const generateCustomerStatement = async (req: Request, res: Response) => 
       return res.status(404).json({ error: 'Company not found' });
     }
 
-    const invoices = await prisma.invoice.findMany({
+    // Jobs for this customer (migration-friendly — not dependent on Invoice rows)
+    const jobs = await prisma.job.findMany({
       where: {
-        toCompanyId: companyId,
-        ...(filter === 'unpaid' ? { paidAt: null } : {}),
+        customerId: companyId,
+        deletedAt: null,
+        status: { not: 'CANCELLED' },
       },
-      orderBy: { issuedAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }],
+      select: {
+        id: true,
+        jobNo: true,
+        title: true,
+        sellPrice: true,
+        status: true,
+        createdAt: true,
+        dueDate: true,
+        deliveryDate: true,
+        invoiceEmailedAt: true,
+        customerPaymentDate: true,
+        customerPaymentAmount: true,
+        invoiceNumber: true,
+      },
     });
 
-    // Import the statement PDF generator
-    const { generateStatementPDF } = await import('../services/pdfService');
-    const pdfBuffer = generateStatementPDF(company, invoices);
+    type Line = {
+      ref: string;
+      description?: string;
+      date?: Date | string | null;
+      dueDate?: Date | string | null;
+      amount: number;
+      paid: boolean;
+      paidAt?: Date | string | null;
+    };
 
-    // Sanitize company name for filename
+    let lines: Line[] = jobs.map((j) => {
+      const paid = !!(j.customerPaymentDate || j.status === 'PAID');
+      const amount =
+        paid && j.customerPaymentAmount != null
+          ? Number(j.customerPaymentAmount)
+          : Number(j.sellPrice) || 0;
+      return {
+        ref: j.invoiceNumber || j.jobNo,
+        description: j.title || '',
+        date: j.invoiceEmailedAt || j.createdAt,
+        dueDate: j.deliveryDate || j.dueDate,
+        amount,
+        paid,
+        paidAt: j.customerPaymentDate,
+      };
+    });
+
+    // Also merge Invoice rows not already covered (legacy)
+    const invoices = await prisma.invoice.findMany({
+      where: { toCompanyId: companyId },
+      orderBy: { issuedAt: 'desc' },
+    });
+    const jobRefs = new Set(lines.map((l) => l.ref));
+    for (const inv of invoices) {
+      const ref = inv.invoiceNo || inv.id.slice(0, 8);
+      if (jobRefs.has(ref)) continue;
+      lines.push({
+        ref,
+        description: 'Invoice',
+        date: inv.issuedAt,
+        dueDate: inv.dueAt,
+        amount: Number(inv.amount) || 0,
+        paid: !!inv.paidAt,
+        paidAt: inv.paidAt,
+      });
+    }
+
+    if (filter === 'unpaid') lines = lines.filter((l) => !l.paid);
+    if (filter === 'paid') lines = lines.filter((l) => l.paid);
+
+    const { generateStatementPDF } = await import('../services/pdfService');
+    const filterLabel =
+      filter === 'unpaid' ? 'Unpaid only' : filter === 'paid' ? 'Paid only' : 'All jobs · paid & unpaid';
+    const pdfBuffer = generateStatementPDF(company, lines, { filterLabel });
+
     const sanitizedName = company.name.replace(/[^a-z0-9]/gi, '_');
     const dateStr = new Date().toISOString().split('T')[0];
+    const filterSuffix = filter === 'all' ? '' : `_${filter}`;
 
     res.contentType('application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="Statement_${sanitizedName}_${dateStr}.pdf"`);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="Statement_${sanitizedName}${filterSuffix}_${dateStr}.pdf"`
+    );
     res.send(pdfBuffer);
   } catch (error) {
     console.error('Generate customer statement error:', error);
