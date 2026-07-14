@@ -1,39 +1,41 @@
 /**
- * Third Party Calculator formulas (Drive sheet + Bradford size table).
+ * Third Party Calculator — formulas from Drive xlsx:
+ * https://docs.google.com/spreadsheets/d/1CQN3i3D3t64wFb6Hc3NvG8UET_q4WCv9
  *
- * Flow (sell-first):
- *   1. Sell price (customer) is the driver
- *   2. Size table → print CPM + paper CPM (raw)
- *   3. Total cost = JD mfg + paper base + 18% paper markup
- *   4. Margin = sell − total cost → 50/50 Impact / Bradford
- *   5. Bradford also keeps paper markup
+ * Sell (or Sell CPM × qty) drives everything.
+ * Costs from size Lookup: JD MFG + Paper Base + 18% markup.
+ * Margin split: Bradford 30% / Impact 70% (sheet B20/B21 — labels still say 50/50).
  */
 
 import {
-  BRADFORD_SIZE_PRICING,
+  BRADFORD_MARGIN_SHARE,
+  IMPACT_MARGIN_SHARE,
+  PAPER_MARKUP_RATE,
+  THIRD_PARTY_CALCULATOR_URL,
   getBradfordPricing,
+  getBradfordSizes,
   PAPER_COST_PER_LB,
+  BRADFORD_SIZE_PRICING,
+  normalizeSizeKey,
 } from './bradfordPricing';
 
-export const PAPER_MARKUP_RATE = 0.18;
+export { PAPER_MARKUP_RATE, THIRD_PARTY_CALCULATOR_URL, PAPER_COST_PER_LB, BRADFORD_SIZE_PRICING };
+export { BRADFORD_MARGIN_SHARE, IMPACT_MARGIN_SHARE };
 
 export function round2(n: number): number {
   return Math.round((n || 0) * 100) / 100;
 }
 
 export function getSizeOptions(): string[] {
-  return Object.keys(BRADFORD_SIZE_PRICING);
+  return getBradfordSizes();
 }
 
 export interface ThirdPartyCalcInput {
   sellPrice: number;
   quantity: number;
   sizeName?: string | null;
-  /** Override table print CPM */
   printCPM?: number | null;
-  /** Override table paper CPM (raw, before 18%) */
   paperCPM?: number | null;
-  /** When paper is not Bradford, skip markup */
   paperSource?: 'BRADFORD' | 'VENDOR' | 'CUSTOMER' | string | null;
 }
 
@@ -47,32 +49,41 @@ export interface ThirdPartyCalcResult {
   totalCost: number;
   margin: number;
   marginPct: number;
+  /** Impact share of margin (70%) */
   impactShare: number;
+  /** Bradford share of margin (30%) — not including paper markup */
   bradfordMarginShare: number;
-  /** Bradford gets = 50% margin + paper markup (calculator “Bradford Gets”) */
+  /** Bradford Gets = paper markup + 30% margin */
   bradfordGets: number;
+  /** Impact Gets = 70% margin */
   impactGets: number;
-  /** Impact → Bradford PO total (Bradford paper route) */
   impactToBradfordBuy: number;
-  /** Bradford → JD PO (mfg only) */
   bradfordToJdBuy: number;
   sellCPM: number;
   sizeMatched: boolean;
   sizeName: string | null;
   paperLbsPerM: number | null;
+  product: string | null;
+  /** Full Bradford check (paper pass-through + Bradford gets + JD mfg) */
+  bradfordPayout: number;
 }
 
 export function calculateFromSellPrice(input: ThirdPartyCalcInput): ThirdPartyCalcResult {
   const sell = Number(input.sellPrice) || 0;
   const qty = Number(input.quantity) || 0;
   const qtyM = qty > 0 ? qty / 1000 : 0;
-  const table = input.sizeName ? getBradfordPricing(input.sizeName) : undefined;
-  const printCPM = input.printCPM != null && input.printCPM > 0
-    ? Number(input.printCPM)
-    : table?.printCPM ?? 0;
-  const paperCPM = input.paperCPM != null && input.paperCPM > 0
-    ? Number(input.paperCPM)
-    : table?.costCPMPaper ?? 0;
+  const key = input.sizeName ? normalizeSizeKey(input.sizeName) || input.sizeName : null;
+  const table = key ? getBradfordPricing(key) : undefined;
+
+  // JD MFG CPM + Paper Base CPM from Lookup (or overrides)
+  const printCPM =
+    input.printCPM != null && input.printCPM > 0
+      ? Number(input.printCPM)
+      : table?.printCPM ?? 0;
+  const paperCPM =
+    input.paperCPM != null && input.paperCPM > 0
+      ? Number(input.paperCPM)
+      : table?.costCPMPaper ?? 0;
 
   const jdMfg = round2(printCPM * qtyM);
   const paperBase = round2(paperCPM * qtyM);
@@ -80,7 +91,10 @@ export function calculateFromSellPrice(input: ThirdPartyCalcInput): ThirdPartyCa
   const paperMarkup = applyMarkup ? round2(paperBase * PAPER_MARKUP_RATE) : 0;
   const totalCost = round2(jdMfg + paperBase + paperMarkup);
   const margin = round2(sell - totalCost);
-  const half = round2(margin / 2);
+  const bradfordMarginShare = round2(margin * BRADFORD_MARGIN_SHARE);
+  const impactShare = round2(margin * IMPACT_MARGIN_SHARE);
+  const bradfordGets = round2(paperMarkup + bradfordMarginShare);
+  const impactGets = impactShare;
 
   return {
     qtyM,
@@ -92,17 +106,21 @@ export function calculateFromSellPrice(input: ThirdPartyCalcInput): ThirdPartyCa
     totalCost,
     margin,
     marginPct: sell > 0 ? round2((margin / sell) * 100) : 0,
-    impactShare: half,
-    bradfordMarginShare: half,
-    bradfordGets: round2(half + paperMarkup),
-    impactGets: half,
+    impactShare,
+    bradfordMarginShare,
+    bradfordGets,
+    impactGets,
+    // Impact pays Bradford: paper + markup + mfg (Bradford paper route)
     impactToBradfordBuy: totalCost,
     bradfordToJdBuy: jdMfg,
     sellCPM: qtyM > 0 ? round2(sell / qtyM) : 0,
     sizeMatched: !!table,
-    sizeName: input.sizeName || null,
+    sizeName: key,
     paperLbsPerM: table?.paperLbsPerM ?? null,
+    product: table?.product ?? null,
+    // Sheet C32: paper pass-through + Bradford gets + JD mfg
+    bradfordPayout: round2(paperBase + bradfordGets + jdMfg),
   };
 }
 
-export { getBradfordPricing, PAPER_COST_PER_LB, BRADFORD_SIZE_PRICING };
+export { getBradfordPricing };

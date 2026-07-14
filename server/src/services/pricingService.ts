@@ -7,12 +7,12 @@
  * Tier 2: Bradford charges Impact (Print pass-through + Paper with 18% markup)
  * Tier 3: Impact charges Customer (negotiated price)
  *
- * Profit Split Rules (ALWAYS APPLY):
- * ==================================
+ * Profit Split Rules (Third Party Calculator sheet):
+ * ==================================================
  * - Spread = Customer Price - Total Cost (includes paper markup)
- * - Split: 50% of spread to Impact, 50% of spread to Bradford
+ * - Split: 70% margin to Impact, 30% margin to Bradford
  * - Bradford ALSO keeps 18% paper markup when they supply paper
- * - So: Bradford = 50% spread + paper markup; Impact = 50% spread only
+ * - So: Bradford Gets = 30% margin + paper markup; Impact = 70% margin
  *
  * Job Types:
  * ==========
@@ -243,9 +243,13 @@ export function calculateProfitSplit(input: ProfitSplitInput): ProfitSplitResult
     paperSource === 'BRADFORD' ||
     (!paperSource && routingType !== 'THIRD_PARTY_VENDOR');
 
-  // Always 50/50 on margin (calculator model). Paper markup only on Bradford paper.
-  const bradfordSpreadShare = spreadAmount * 0.5;
-  const impactSpreadShare = spreadAmount * 0.5;
+  // Third Party Calculator sheet (1CQN3…): margin split is 30% Bradford / 70% Impact
+  // (labels in sheet still say "50/50" but formulas are *0.3 / *0.7).
+  // Paper markup only on Bradford paper; Bradford Gets = markup + Bradford margin share.
+  const BRADFORD_MARGIN_SHARE = 0.3;
+  const IMPACT_MARGIN_SHARE = 0.7;
+  const bradfordSpreadShare = spreadAmount * BRADFORD_MARGIN_SHARE;
+  const impactSpreadShare = spreadAmount * IMPACT_MARGIN_SHARE;
 
   const effectivePaperMarkup = isBradfordPaper ? paperMarkup : 0;
   const bradfordTotal = bradfordSpreadShare + effectivePaperMarkup;

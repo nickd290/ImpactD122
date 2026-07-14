@@ -7,10 +7,12 @@ import {
   calculateFromSellPrice,
   getSizeOptions,
   PAPER_MARKUP_RATE,
+  THIRD_PARTY_CALCULATOR_URL,
+  BRADFORD_MARGIN_SHARE,
+  IMPACT_MARGIN_SHARE,
 } from '../../utils/thirdPartyCalc';
 
-export const THIRD_PARTY_CALCULATOR_URL =
-  'https://docs.google.com/spreadsheets/d/1EMB89Zh7RE51DIT75w620ACnFUmBocnT4uGXC2iRb-M/edit';
+export { THIRD_PARTY_CALCULATOR_URL };
 
 function money(n: number) {
   return new Intl.NumberFormat('en-US', {
@@ -203,7 +205,8 @@ export function SellPriceMarginPanel({
             Sell → margins
           </h3>
           <p className="text-[11px] text-zinc-400 mt-0.5">
-            Sell price drives split · size table fills print/paper CPM ({Math.round(PAPER_MARKUP_RATE * 100)}% paper markup · 50/50)
+            Sell drives it · size → JD MFG + paper · {Math.round(PAPER_MARKUP_RATE * 100)}% markup · margin{' '}
+            {Math.round(IMPACT_MARGIN_SHARE * 100)}% Impact / {Math.round(BRADFORD_MARGIN_SHARE * 100)}% Bradford
           </p>
         </div>
         <a
@@ -285,19 +288,20 @@ export function SellPriceMarginPanel({
       {/* Live margin breakdown */}
       <div className="px-4 pb-4">
         <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <Metric label="Total cost" value={money2(calc.totalCost)} sub={calc.sizeMatched ? 'from size table' : 'set size or CPMs'} />
+          <Metric label="Total cost" value={money2(calc.totalCost)} sub={calc.sizeMatched ? (calc.product || 'size table') : 'set size or CPMs'} />
           <Metric
             label="Margin"
             value={money2(calc.margin)}
             sub={`${calc.marginPct}%`}
             tone={calc.margin >= 0 ? 'good' : 'bad'}
           />
-          <Metric label="Impact 50%" value={money2(calc.impactGets)} tone="accent" />
-          <Metric label="Bradford 50%+paper" value={money2(calc.bradfordGets)} tone="rust" />
+          <Metric label={`Impact ${Math.round(IMPACT_MARGIN_SHARE * 100)}%`} value={money2(calc.impactGets)} tone="accent" />
+          <Metric label={`Bradford ${Math.round(BRADFORD_MARGIN_SHARE * 100)}%+paper`} value={money2(calc.bradfordGets)} tone="rust" />
         </div>
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-500">
           <span>JD mfg {money2(calc.jdMfg)} ({calc.printCPM}/M)</span>
           <span>Paper {money2(calc.paperBase)} + markup {money2(calc.paperMarkup)}</span>
+          <span>BGE payout {money2(calc.bradfordPayout)}</span>
           {calc.sellCPM > 0 && <span>Sell {calc.sellCPM}/M</span>}
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">

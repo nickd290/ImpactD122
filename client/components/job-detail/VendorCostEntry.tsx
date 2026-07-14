@@ -5,13 +5,19 @@ import {
 import { toast } from 'sonner';
 import { authFetch } from '../../lib/api';
 import { cn } from '../../lib/utils';
-import { getBradfordPricing, PAPER_COST_PER_LB } from '../../utils/bradfordPricing';
+import {
+  getBradfordPricing,
+  PAPER_COST_PER_LB,
+  PAPER_MARKUP_RATE,
+  BRADFORD_MARGIN_SHARE,
+  IMPACT_MARGIN_SHARE,
+  THIRD_PARTY_CALCULATOR_URL,
+} from '../../utils/bradfordPricing';
+import { calculateFromSellPrice } from '../../utils/thirdPartyCalc';
 
-/** Canonical Third Party Calculator (Google Sheet — clean). */
-export const THIRD_PARTY_CALCULATOR_URL =
-  'https://docs.google.com/spreadsheets/d/1EMB89Zh7RE51DIT75w620ACnFUmBocnT4uGXC2iRb-M/edit';
+export { THIRD_PARTY_CALCULATOR_URL };
 
-const PAPER_MARKUP = 0.18;
+const PAPER_MARKUP = PAPER_MARKUP_RATE;
 
 interface PurchaseOrder {
   id: string;
@@ -93,44 +99,58 @@ export function VendorCostEntry({
   const calc = useMemo(() => {
     const printCpmN = parseFloat(printCPM) || 0;
     const paperCpmN = parseFloat(paperCPM) || 0;
-
-    let jdMfg = jdTotalOverride ? parseFloat(jdTotalOverride) || 0 : round2(printCpmN * qtyM);
-    let paperBase = paperTotalOverride
-      ? parseFloat(paperTotalOverride) || 0
-      : round2(paperCpmN * qtyM);
-    const paperMarkup = round2(paperBase * PAPER_MARKUP);
-    const totalCost = round2(jdMfg + paperBase + paperMarkup);
-    const margin = round2((sellPrice || 0) - totalCost);
-    const half = round2(margin / 2);
-    const impactShare = half;
-    const bradfordMarginShare = half;
-    const bradfordPayout = round2(bradfordMarginShare + paperMarkup + paperBase + jdMfg); // full Impact→Bradford when Bradford paper
-    // Calculator "Bradford Gets" = margin 50% + paper markup (not full production)
-    const bradfordGets = round2(bradfordMarginShare + paperMarkup);
-    const impactGets = impactShare;
-    const marginPct = sellPrice > 0 ? (margin / sellPrice) * 100 : 0;
-
-    // Impact→Bradford PO buy = paper + markup + mfg (what Impact pays Bradford on Bradford-paper route)
-    const impactToBradfordBuy = totalCost;
-    // Bradford→JD PO buy = mfg only
-    const bradfordToJdBuy = jdMfg;
-
+    // Prefer override totals if user typed them; else sheet formulas via calculateFromSellPrice
+    if (jdTotalOverride || paperTotalOverride) {
+      const jdMfg = jdTotalOverride ? parseFloat(jdTotalOverride) || 0 : round2(printCpmN * qtyM);
+      const paperBase = paperTotalOverride
+        ? parseFloat(paperTotalOverride) || 0
+        : round2(paperCpmN * qtyM);
+      const paperMarkup = round2(paperBase * PAPER_MARKUP);
+      const totalCost = round2(jdMfg + paperBase + paperMarkup);
+      const margin = round2((sellPrice || 0) - totalCost);
+      const bradfordMarginShare = round2(margin * BRADFORD_MARGIN_SHARE);
+      const impactGets = round2(margin * IMPACT_MARGIN_SHARE);
+      const bradfordGets = round2(paperMarkup + bradfordMarginShare);
+      return {
+        printCpmN,
+        paperCpmN,
+        jdMfg,
+        paperBase,
+        paperMarkup,
+        totalCost,
+        margin,
+        marginPct: sellPrice > 0 ? (margin / sellPrice) * 100 : 0,
+        impactGets,
+        bradfordGets,
+        impactToBradfordBuy: totalCost,
+        bradfordToJdBuy: jdMfg,
+        sellCpm: qtyM > 0 ? round2((sellPrice || 0) / qtyM) : 0,
+      };
+    }
+    const r = calculateFromSellPrice({
+      sellPrice: sellPrice || 0,
+      quantity: quantity || 0,
+      sizeName,
+      printCPM: printCpmN || null,
+      paperCPM: paperCpmN || null,
+      paperSource,
+    });
     return {
-      printCpmN,
-      paperCpmN,
-      jdMfg,
-      paperBase,
-      paperMarkup,
-      totalCost,
-      margin,
-      marginPct,
-      impactGets,
-      bradfordGets,
-      impactToBradfordBuy,
-      bradfordToJdBuy,
-      sellCpm: qtyM > 0 ? round2((sellPrice || 0) / qtyM) : 0,
+      printCpmN: r.printCPM,
+      paperCpmN: r.paperCPM,
+      jdMfg: r.jdMfg,
+      paperBase: r.paperBase,
+      paperMarkup: r.paperMarkup,
+      totalCost: r.totalCost,
+      margin: r.margin,
+      marginPct: r.marginPct,
+      impactGets: r.impactGets,
+      bradfordGets: r.bradfordGets,
+      impactToBradfordBuy: r.impactToBradfordBuy,
+      bradfordToJdBuy: r.bradfordToJdBuy,
+      sellCpm: r.sellCPM,
     };
-  }, [printCPM, paperCPM, jdTotalOverride, paperTotalOverride, qtyM, sellPrice]);
+  }, [printCPM, paperCPM, jdTotalOverride, paperTotalOverride, qtyM, sellPrice, quantity, sizeName, paperSource]);
 
   const openVendor = (v: 'bradford' | 'jd') => {
     setOpen((prev) => (prev === v ? null : v));
@@ -508,8 +528,8 @@ export function VendorCostEntry({
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
               <Metric label="Total cost" value={money(calc.totalCost)} />
               <Metric label="Margin" value={money(calc.margin)} sub={`${calc.marginPct.toFixed(1)}%`} good={calc.margin >= 0} />
-              <Metric label="Impact 50%" value={money(calc.impactGets)} />
-              <Metric label="Bradford 50%+markup" value={money(calc.bradfordGets)} accent />
+              <Metric label={`Impact ${Math.round(IMPACT_MARGIN_SHARE * 100)}%`} value={money(calc.impactGets)} />
+              <Metric label={`Bradford ${Math.round(BRADFORD_MARGIN_SHARE * 100)}%+markup`} value={money(calc.bradfordGets)} accent />
             </div>
             <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-zinc-500">
               <p>Impact → Bradford PO: <span className="font-mono text-zinc-800">{money(calc.impactToBradfordBuy)}</span></p>
