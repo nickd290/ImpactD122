@@ -77,26 +77,51 @@ const drawSectionHeader = (doc: any, text: string, x: number, y: number, width: 
   doc.text(text, x + 3, y + 5.5);
 };
 
-// Logo helper — compact ID badge + wordmark (print letterhead)
+// Logo helper — polished ID monogram + wordmark (Impact brand letterhead)
 const drawLogo = (doc: any, x: number, y: number, size: number = 20) => {
-  const badge = size * 0.95;
-  // Rust ID badge
-  doc.setFillColor(BRAND_RUST);
-  doc.roundedRect(x, y, badge, badge, 1.5, 1.5, 'F');
-  doc.setFontSize(size * 0.55);
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.text('ID', x + badge / 2, y + badge * 0.68, { align: 'center' });
+  const badge = Math.max(size * 1.15, 14);
+  const r = 2.4;
 
-  // Navy wordmark
-  doc.setFontSize(size * 0.42);
-  doc.setTextColor(BRAND_NAVY);
+  // Shadow plate (subtle depth)
+  doc.setFillColor(230, 228, 224);
+  doc.roundedRect(x + 0.6, y + 0.6, badge, badge, r, r, 'F');
+
+  // Navy badge
+  doc.setFillColor(BRAND_NAVY);
+  doc.roundedRect(x, y, badge, badge, r, r, 'F');
+
+  // Rust bottom accent bar
+  doc.setFillColor(BRAND_RUST);
+  doc.rect(x, y + badge - badge * 0.16, badge, badge * 0.16, 'F');
+  // Cover bottom corners of accent so bar sits flush
+  doc.setFillColor(BRAND_RUST);
+  doc.roundedRect(x, y + badge - badge * 0.22, badge, badge * 0.22, r, r, 'F');
+  doc.setFillColor(BRAND_NAVY);
+  doc.rect(x, y + badge - badge * 0.22, badge, badge * 0.08, 'F');
+
+  // Monogram
   doc.setFont('helvetica', 'bold');
-  doc.text('IMPACT DIRECT', x + badge + 3.5, y + badge * 0.45);
-  doc.setFontSize(size * 0.22);
-  doc.setTextColor(BRAND_GRAY);
+  doc.setFontSize(badge * 0.46);
+  doc.setTextColor(255, 255, 255);
+  doc.text('ID', x + badge / 2, y + badge * 0.55, { align: 'center' });
+
+  // Wordmark
+  const textX = x + badge + 4.5;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(Math.max(size * 0.5, 10));
+  doc.setTextColor(BRAND_NAVY);
+  doc.text('IMPACT DIRECT', textX, y + badge * 0.4);
+
+  // Rust underline under wordmark
+  const markW = Math.max(size * 3.1, 38);
+  doc.setDrawColor(BRAND_RUST);
+  doc.setLineWidth(1.1);
+  doc.line(textX, y + badge * 0.52, textX + markW, y + badge * 0.52);
+
   doc.setFont('helvetica', 'normal');
-  doc.text('PRINT  ·  MAIL  ·  PRODUCTION', x + badge + 3.5, y + badge * 0.78);
+  doc.setFontSize(Math.max(size * 0.22, 6));
+  doc.setTextColor(BRAND_GRAY);
+  doc.text('PRINT  ·  MAIL  ·  PRODUCTION', textX, y + badge * 0.78);
 };
 
 // Build full description text from parsed specs (for Vendor PO to match customer PO format)
@@ -718,18 +743,7 @@ export const generateInvoicePDF = (jobData: any): Buffer => {
   if (ccid) idParts.push(`CCID ${ccid}`);
   if (jdJob) idParts.push(`JD #${jdJob}`);
   doc.text(idParts.join('   ·   '), left + 6, y + 9);
-
-  // Legend under bar
   y += 18;
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  doc.setTextColor(BRAND_GRAY);
-  doc.text(
-    'CCID = Costing Center ID (Bradford PO #)   ·   JD # = trailing digits of JD production job number',
-    left,
-    y
-  );
-  y += 6;
 
   // Bill to + project (two columns)
   const colGap = 8;
