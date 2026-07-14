@@ -69,18 +69,22 @@ function isJdPaid(job: Job): boolean {
  * Who Impact pays for production (exclusive — never both):
  *  BRADFORD paper → Impact pays BGE; Bradford pays JD downstream
  *  JD / customer paper → Impact pays JD
+ * If only one side is marked paid, that reveals the route.
  */
 function impactProductionPayee(job: Job): 'BGE' | 'JD' {
+  if (isJdPaid(job) && !isBgePaid(job)) return 'JD';
+  if (isBgePaid(job) && !isJdPaid(job)) return 'BGE';
   const src = (job.paperSource || 'BRADFORD').toUpperCase();
   if (src === 'VENDOR' || src === 'CUSTOMER') return 'JD';
   return 'BGE';
 }
 
+/** Impact has cut its production check (BGE or JD — never need both) */
 function isImpactProductionPaid(job: Job): boolean {
-  return impactProductionPayee(job) === 'BGE' ? isBgePaid(job) : isJdPaid(job);
+  return isBgePaid(job) || isJdPaid(job);
 }
 
-/** Client paid us, Impact still owes its one production payee (BGE or JD — not both) */
+/** Client paid us, Impact still owes its one production payee */
 function needsVendorPay(job: Job): boolean {
   if (!isClientPaid(job)) return false;
   if (job.status === 'CANCELLED') return false;
@@ -92,15 +96,20 @@ function moneyStatus(job: Job): { label: string; className: string } {
   if (!isClientPaid(job)) {
     return { label: 'Await client', className: 'text-amber-700' };
   }
-  const payee = impactProductionPayee(job);
-  if (!isImpactProductionPaid(job)) {
-    return {
-      label: payee === 'BGE' ? 'Pay BGE' : 'Pay JD',
-      className: 'text-[#C0512A]',
-    };
+  if (isImpactProductionPaid(job)) {
+    return { label: 'Settled', className: 'text-emerald-700' };
   }
-  // Impact production paid; JD under Bradford is their payout, not ours
-  return { label: 'Settled', className: 'text-emerald-700' };
+  const payee = impactProductionPayee(job);
+  return {
+    label: payee === 'BGE' ? 'Pay BGE' : 'Pay JD',
+    className: 'text-[#C0512A]',
+  };
+}
+
+/** Main Work list focus: JJSA, Ballantine, Incremental only */
+function isFocusCustomer(job: Job): boolean {
+  const n = (job.customer?.name || '').toLowerCase();
+  return n.includes('ballantine') || n.includes('incremental') || n.includes('jjs');
 }
 
 const WORKFLOW_SHORT: Record<string, string> = {
@@ -236,12 +245,14 @@ export function JobsView({
 
   /**
    * Work queue (default):
-   *  - ACTIVE open jobs (client not settled yet), OR
-   *  - Client paid but Impact still owes its ONE payee (BGE or JD by paper route)
-   * Off list when Impact production paid (Bradford→JD is not Impact’s check).
+   *  Focus customers only (JJSA / Ballantine / Incremental)
+   *  + ACTIVE open (await client / production), OR
+   *  + client paid but Impact still owes BGE or JD (one payee)
+   * Off when Impact paid BGE (Bradford then pays JD) or paid JD direct.
    */
   const isWorkQueueJob = (job: Job) => {
     if (job.status === 'CANCELLED') return false;
+    if (!isFocusCustomer(job)) return false;
     if (needsVendorPay(job)) return true;
     if (isClientPaid(job) && isImpactProductionPaid(job)) return false;
     return job.status === 'ACTIVE';
