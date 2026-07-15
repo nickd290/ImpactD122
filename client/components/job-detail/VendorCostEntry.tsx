@@ -115,12 +115,15 @@ export function VendorCostEntry({
       const paperBase = paperTotalOverride
         ? parseFloat(paperTotalOverride) || 0
         : round2(paperCpmN * qtyM);
-      const paperMarkup = jdPaper ? 0 : round2(paperBase * PAPER_MARKUP);
+      // Markup always in cost; who keeps it is payee (JD vs Bradford)
+      const paperMarkup = round2(paperBase * PAPER_MARKUP);
       const totalCost = round2(jdMfg + paperBase + paperMarkup);
       const margin = round2((sellPrice || 0) - totalCost);
       const bradfordMarginShare = round2(margin * BRADFORD_MARGIN_SHARE);
       const impactGets = round2(margin * IMPACT_MARGIN_SHARE);
-      const bradfordGets = round2(paperMarkup + bradfordMarginShare);
+      const bradfordGets = jdPaper
+        ? bradfordMarginShare
+        : round2(paperMarkup + bradfordMarginShare);
       return {
         printCpmN,
         paperCpmN,
@@ -228,17 +231,18 @@ export function VendorCostEntry({
     setSaving(true);
     try {
       if (jdPaper) {
+        // Same total as Bradford route: mfg + paper + 18% — JD keeps the paper markup
         await upsertPO(impactJdPO, {
           poType: 'impact-jd',
-          description: 'Impact → JD Graphic (production)',
+          description: 'Impact → JD Graphic (mfg + paper + markup)',
           buyCost: calc.impactToJdBuy,
           mfgCost: calc.jdMfg,
           paperCost: calc.paperBase,
-          paperMarkup: 0,
+          paperMarkup: calc.paperMarkup,
           printCPM: calc.printCpmN || null,
           paperCPM: calc.paperCpmN || null,
         });
-        toast.success('JD production cost saved (Impact → JD)');
+        toast.success('JD production cost saved (mfg+paper+markup → JD)');
       } else {
         await upsertPO(bradfordJdPO, {
           poType: 'bradford-jd',
@@ -280,20 +284,18 @@ export function VendorCostEntry({
     setSaving(true);
     try {
       if (jdPaper) {
-        // On JD paper both cards feed the same Impact → JD production PO
+        // On JD paper: one Impact → JD PO with full cost (JD keeps paper markup)
         await upsertPO(impactJdPO, {
           poType: 'impact-jd',
-          description: 'Impact → JD Graphic (production)',
+          description: 'Impact → JD Graphic (mfg + paper + markup)',
           buyCost: calc.impactToJdBuy,
           mfgCost: calc.jdMfg,
           paperCost: calc.paperBase,
-          paperMarkup: 0,
+          paperMarkup: calc.paperMarkup,
           printCPM: calc.printCpmN || null,
           paperCPM: calc.paperCpmN || null,
         });
-        toast.success(
-          vendor === 'jd' ? 'JD production cost saved' : 'Paper + JD production cost saved'
-        );
+        toast.success('JD production cost saved (mfg+paper+markup)');
       } else if (vendor === 'jd') {
         await upsertPO(bradfordJdPO, {
           poType: 'bradford-jd',
@@ -374,8 +376,8 @@ export function VendorCostEntry({
           </h3>
           <p className="text-[11px] text-zinc-400 mt-0.5">
             {jdPaper
-              ? 'JD paper · click JD to enter production cost (Impact pays JD)'
-              : 'Bradford paper · click Bradford or JD · math matches Third Party Calculator'}
+              ? 'JD paper · same cost stack (mfg+paper+18%) · JD keeps paper markup'
+              : 'Bradford paper · same cost stack · BGE keeps paper markup'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -403,9 +405,9 @@ export function VendorCostEntry({
 
       {jdPaper && (
         <div className="mx-3 mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-700">
-          <span className="font-semibold">JD paper route:</span> production cost lives on{' '}
-          <span className="font-mono">Impact → JD</span> (what used to look like “Bradford cost”
-          when paper was BGE). Bradford only gets margin share — not the production check.
+          <span className="font-semibold">JD paper:</span> total cost same as Bradford route
+          (mfg + paper + 18%). Markup goes to <span className="font-semibold">JD</span> via{' '}
+          <span className="font-mono">Impact → JD</span>. Bradford still gets margin split only.
         </div>
       )}
 
@@ -429,7 +431,7 @@ export function VendorCostEntry({
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-[#2B3A4A]">JD Graphic — production</p>
-                  <p className="text-[11px] text-zinc-500">Impact pays JD · mfg + paper (no BGE markup)</p>
+                  <p className="text-[11px] text-zinc-500">Impact pays JD · mfg + paper + 18% (JD keeps mk)</p>
                 </div>
               </div>
               {open === 'jd' ? (
@@ -443,7 +445,7 @@ export function VendorCostEntry({
             </p>
             <p className="text-[11px] text-zinc-400 mt-1">
               {impactJdPO
-                ? `PO · mfg ${money(Number(impactJdPO.mfgCost) || 0)} + paper ${money(Number(impactJdPO.paperCost) || 0)}`
+                ? `PO · mfg ${money(Number(impactJdPO.mfgCost) || 0)} + paper ${money(Number(impactJdPO.paperCost) || 0)} + mk ${money(Number(impactJdPO.paperMarkup) || 0)}`
                 : 'Click to enter JD production cost'}
             </p>
           </button>
@@ -611,14 +613,14 @@ export function VendorCostEntry({
                   <span className="text-zinc-500">Paper base</span>
                   <span className="font-mono tabular-nums">{money(calc.paperBase)}</span>
                 </div>
-                {!jdPaper && (
-                  <div className="flex justify-between text-xs">
-                    <span className="text-zinc-500">+ 18% markup</span>
-                    <span className="font-mono tabular-nums text-[#C0512A]">{money(calc.paperMarkup)}</span>
-                  </div>
-                )}
+                <div className="flex justify-between text-xs">
+                  <span className="text-zinc-500">
+                    + 18% markup → {jdPaper ? 'JD' : 'Bradford'}
+                  </span>
+                  <span className="font-mono tabular-nums text-[#C0512A]">{money(calc.paperMarkup)}</span>
+                </div>
                 <div className="flex justify-between text-sm font-semibold pt-1 border-t border-zinc-100">
-                  <span>{jdPaper ? 'Paper (no markup)' : 'Paper w/ markup'}</span>
+                  <span>Paper w/ markup</span>
                   <span className="font-mono tabular-nums">
                     {money(calc.paperBase + calc.paperMarkup)}
                   </span>

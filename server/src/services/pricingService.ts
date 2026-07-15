@@ -218,10 +218,10 @@ export function calculateTierPricing(input: TierPricingInput): TierPricingResult
  *
  * Business Logic (paper-driven — matches Third Party Calculator):
  * - Gross Margin = Sell Price - Total Cost
- * - Spread split 50/50 Impact / Bradford
- * - Bradford paper: Bradford also gets 18% paper markup
- * - JD / vendor paper: no paper markup; Bradford gets margin share only
- * - Impact always gets 50% of spread
+ * - Total cost always includes paper + 18% markup + mfg (same either payee)
+ * - Margin split 30% Bradford / 70% Impact on the spread
+ * - Who keeps paper markup: Bradford paper → BGE; JD paper → JD (in production pay)
+ * - Bradford's profit share: markup+margin (Bradford paper) or margin-only (JD paper)
  *
  * @param input - Sell price, total cost, paper markup, optional paperSource/routingType
  * @returns Complete profit split breakdown
@@ -238,19 +238,20 @@ export function calculateProfitSplit(input: ProfitSplitInput): ProfitSplitResult
   // The spread (what gets split) is the gross margin
   const spreadAmount = grossMargin;
 
-  // Paper source is the driver. Fallback: old THIRD_PARTY routing ≈ JD paper (no markup).
+  // Paper source drives who keeps paper markup (not whether markup exists in totalCost).
+  // Fallback: old THIRD_PARTY routing ≈ JD paper (JD keeps markup; Bradford margin only).
   const isBradfordPaper =
     paperSource === 'BRADFORD' ||
     (!paperSource && routingType !== 'THIRD_PARTY_VENDOR');
 
   // Third Party Calculator sheet (1CQN3…): margin split is 30% Bradford / 70% Impact
-  // (labels in sheet still say "50/50" but formulas are *0.3 / *0.7).
-  // Paper markup only on Bradford paper; Bradford Gets = markup + Bradford margin share.
   const BRADFORD_MARGIN_SHARE = 0.3;
   const IMPACT_MARGIN_SHARE = 0.7;
   const bradfordSpreadShare = spreadAmount * BRADFORD_MARGIN_SHARE;
   const impactSpreadShare = spreadAmount * IMPACT_MARGIN_SHARE;
 
+  // Bradford only *receives* paper markup when Bradford is the paper vendor.
+  // On JD paper, markup is inside Impact→JD cost (JD keeps it) — not Bradford's share.
   const effectivePaperMarkup = isBradfordPaper ? paperMarkup : 0;
   const bradfordTotal = bradfordSpreadShare + effectivePaperMarkup;
   const impactTotal = impactSpreadShare;

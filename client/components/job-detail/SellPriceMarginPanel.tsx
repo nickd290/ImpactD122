@@ -184,15 +184,15 @@ export function SellPriceMarginPanel({
         const impactJdPO = findPO('impact-direct', 'jd-graphic');
         await upsertPO(impactJdPO, {
           poType: 'impact-jd',
-          description: 'Impact → JD Graphic (production)',
+          description: 'Impact → JD Graphic (mfg + paper + markup)',
           buyCost: calc.impactToJdBuy,
           mfgCost: calc.jdMfg,
           paperCost: calc.paperBase,
-          paperMarkup: 0,
+          paperMarkup: calc.paperMarkup,
           printCPM: calc.printCPM,
           paperCPM: calc.paperCPM,
         });
-        toast.success('Costs applied → Impact pays JD (JD paper)');
+        toast.success('Costs applied → Impact pays JD (same stack, JD keeps paper mk)');
       } else {
         // Bradford paper: Impact → Bradford full + Bradford → JD mfg tracking
         const impactBradfordPO = findPO('impact-direct', 'bradford');
@@ -305,9 +305,10 @@ export function SellPriceMarginPanel({
           ))}
         </div>
         <p className="text-[10px] text-zinc-400 mt-1.5">
+          Same cost math either way (mfg + paper + {Math.round(PAPER_MARKUP_RATE * 100)}% markup).{' '}
           {jdPaper
-            ? 'JD paper route: no 18% Bradford paper markup · production cost on Impact → JD PO'
-            : `Bradford paper: +${Math.round(PAPER_MARKUP_RATE * 100)}% paper markup · full outlay on Impact → Bradford PO`}
+            ? 'JD keeps paper markup · Impact → JD PO'
+            : 'Bradford keeps paper markup · Impact → Bradford PO'}
         </p>
       </div>
 
@@ -385,7 +386,7 @@ export function SellPriceMarginPanel({
           />
           <Metric label={`Impact ${Math.round(IMPACT_MARGIN_SHARE * 100)}%`} value={money2(calc.impactGets)} tone="accent" />
           <Metric
-            label={jdPaper ? `Bradford ${Math.round(BRADFORD_MARGIN_SHARE * 100)}% margin` : `Bradford ${Math.round(BRADFORD_MARGIN_SHARE * 100)}%+paper`}
+            label={jdPaper ? `Bradford ${Math.round(BRADFORD_MARGIN_SHARE * 100)}% margin only` : `Bradford ${Math.round(BRADFORD_MARGIN_SHARE * 100)}%+paper mk`}
             value={money2(calc.bradfordGets)}
             tone="rust"
           />
@@ -393,12 +394,12 @@ export function SellPriceMarginPanel({
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-500">
           <span>JD mfg {money2(calc.jdMfg)} ({calc.printCPM}/M)</span>
           <span>
-            Paper {money2(calc.paperBase)}
-            {!jdPaper && <> + markup {money2(calc.paperMarkup)}</>}
+            Paper {money2(calc.paperBase)} + markup {money2(calc.paperMarkup)}
+            {jdPaper ? ' → JD' : ' → BGE'}
           </span>
           {jdPaper ? (
             <span className="font-medium text-[#2B3A4A]">
-              Impact → JD {money2(calc.impactToJdBuy)}
+              Impact → JD {money2(calc.impactToJdBuy)} (mfg+paper+mk)
             </span>
           ) : (
             <>

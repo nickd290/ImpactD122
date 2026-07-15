@@ -8,8 +8,8 @@
  *   Bradford → JD (mfg only) — tracked, not an Impact check
  *
  * JD / vendor paper (paperSource=VENDOR):
- *   Impact → JD (production: mfg + paper)
- *   Impact → Bradford (margin split only — no paper markup)
+ *   Impact → JD (production: mfg + paper + 18% markup — JD keeps paper markup)
+ *   Bradford gets margin split only (no paper markup to BGE)
  *
  * CUSTOMER paper:
  *   Same as JD paper for pay routing (Impact pays producer JD; Bradford margin only)

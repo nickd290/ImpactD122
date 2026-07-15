@@ -107,16 +107,17 @@ export function calculateFromSellPrice(input: ThirdPartyCalcInput): ThirdPartyCa
 
   const jdMfg = round2(printCPM * qtyM);
   const paperBase = round2(paperCPM * qtyM);
-  // 18% paper markup only when Bradford supplies paper
-  const paperMarkup = isJdPaper ? 0 : round2(paperBase * PAPER_MARKUP_RATE);
-  // Production cost Impact pays:
-  //   Bradford paper: mfg + paper + markup (Impact → Bradford)
-  //   JD paper: mfg + paper (Impact → JD; no Bradford markup)
+  // 18% paper markup always in total cost — same math either payee.
+  // Who *keeps* the markup: Bradford paper → BGE; JD paper → JD.
+  const paperMarkup = round2(paperBase * PAPER_MARKUP_RATE);
   const totalCost = round2(jdMfg + paperBase + paperMarkup);
   const margin = round2(sell - totalCost);
   const bradfordMarginShare = round2(margin * BRADFORD_MARGIN_SHARE);
   const impactShare = round2(margin * IMPACT_MARGIN_SHARE);
-  const bradfordGets = round2(paperMarkup + bradfordMarginShare);
+  // Bradford margin share always; paper markup only if Bradford is paper vendor
+  const bradfordGets = isJdPaper
+    ? bradfordMarginShare
+    : round2(paperMarkup + bradfordMarginShare);
   const impactGets = impactShare;
 
   return {
@@ -135,11 +136,10 @@ export function calculateFromSellPrice(input: ThirdPartyCalcInput): ThirdPartyCa
     impactGets,
     productionPayee,
     isJdPaper,
-    // Bradford paper: Impact pays Bradford full cost. JD paper: Bradford gets margin share only (not a cost PO).
+    // Same production outlay either way — only the payee changes
     impactToBradfordBuy: isJdPaper ? 0 : totalCost,
-    // JD paper: Impact pays JD production (mfg + paper, no markup). Bradford paper: 0 (JD paid via Bradford).
     impactToJdBuy: isJdPaper ? totalCost : 0,
-    // Bradford→JD tracking only on Bradford paper route
+    // Bradford→JD mfg tracking only when Bradford is production payee
     bradfordToJdBuy: isJdPaper ? 0 : jdMfg,
     sellCPM: qtyM > 0 ? round2(sell / qtyM) : 0,
     sizeMatched: !!table,
