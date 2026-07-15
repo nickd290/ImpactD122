@@ -210,6 +210,36 @@ export const createJobPO = async (req: Request, res: Response) => {
           Vendor: true,
         },
       });
+    } else if (poType === 'impact-jd') {
+      // ===================================================================
+      // Impact → JD (JD/vendor paper route — production cost Impact pays JD)
+      // ===================================================================
+      const timestamp = Date.now();
+      const random = Math.random().toString(36).substring(2, 6);
+      const poNumber = `PO-IJ-${timestamp}-${random}`;
+
+      po = await prisma.purchaseOrder.create({
+        data: {
+          id: crypto.randomUUID(),
+          poNumber,
+          jobId,
+          originCompanyId: COMPANY_IDS.IMPACT_DIRECT,
+          targetCompanyId: COMPANY_IDS.JD_GRAPHIC,
+          description: description || 'Impact → JD Graphic',
+          buyCost: buyCost || 0,
+          paperCost: paperCost || null,
+          paperMarkup: paperMarkup || null,
+          mfgCost: mfgCost || null,
+          printCPM: printCPM || null,
+          paperCPM: paperCPM || null,
+          vendorRef: vendorRef || null,
+          status: status || 'PENDING',
+          updatedAt: new Date(),
+        },
+        include: {
+          Vendor: true,
+        },
+      });
     } else {
       // ===================================================================
       // P2/P3: Impact → Vendor (counts as our cost)
@@ -573,6 +603,7 @@ async function recalculateProfitSplit(jobId: string, allPOs: any[]): Promise<voi
   await prisma.profitSplit.upsert({
     where: { jobId },
     create: {
+      id: crypto.randomUUID(),
       jobId,
       sellPrice,
       totalCost,

@@ -887,6 +887,7 @@ export const createJob = async (req: Request, res: Response) => {
 
       await prisma.profitSplit.create({
         data: {
+          id: crypto.randomUUID(),
           jobId,
           sellPrice,
           totalCost,
@@ -1324,7 +1325,7 @@ export const updateJob = async (req: Request, res: Response) => {
     const sellPriceChanged = inputSellPrice !== undefined;
     const sizeChanged = inputSizeName !== undefined;
     const paperSourceChanged = inputPaperSource !== undefined;
-    const quantityChanged = lineItems !== undefined;
+    const quantityChanged = lineItems !== undefined || inputQuantity !== undefined;
 
     if (sellPriceChanged || sizeChanged || paperSourceChanged || quantityChanged) {
       // Recalculate profit split
@@ -1375,6 +1376,7 @@ export const updateJob = async (req: Request, res: Response) => {
       await prisma.profitSplit.upsert({
         where: { jobId: id },
         create: {
+          id: crypto.randomUUID(),
           jobId: id,
           sellPrice: finalSellPrice,
           totalCost,
@@ -2056,16 +2058,29 @@ export const createJobPO = async (req: Request, res: Response) => {
     let targetCompanyId: string | null = null;
     let targetVendorId: string | null = null;
     let poNumber: string;
+    let defaultDescription = 'Vendor Services';
+
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 6);
 
     if (poType === 'bradford-jd') {
       // Bradford → JD Graphic (internal tracking, NOT Impact's cost)
       originCompanyId = 'bradford';
       targetCompanyId = 'jd-graphic';
-
-      // Keep existing format for Bradford→JD POs
-      const timestamp = Date.now();
-      const random = Math.random().toString(36).substring(2, 6);
       poNumber = `PO-BJ-${timestamp}-${random}`;
+      defaultDescription = 'Bradford → JD Production';
+    } else if (poType === 'impact-bradford') {
+      // Impact → Bradford (counts as Impact cost on Bradford-paper route)
+      originCompanyId = 'impact-direct';
+      targetCompanyId = 'bradford';
+      poNumber = `PO-IB-${timestamp}-${random}`;
+      defaultDescription = 'Impact → Bradford';
+    } else if (poType === 'impact-jd') {
+      // Impact → JD (counts as Impact cost on JD/vendor paper route)
+      originCompanyId = 'impact-direct';
+      targetCompanyId = 'jd-graphic';
+      poNumber = `PO-IJ-${timestamp}-${random}`;
+      defaultDescription = 'Impact → JD Graphic';
     } else {
       // Impact → Vendor (counts as our cost) - default
       originCompanyId = 'impact-direct';
@@ -2101,8 +2116,6 @@ export const createJobPO = async (req: Request, res: Response) => {
         poNumber = `${jobDigits}-${random4}.${sequenceNum}`;
       } else {
         // No vendor specified, use fallback format
-        const timestamp = Date.now();
-        const random = Math.random().toString(36).substring(2, 6);
         poNumber = `PO-IV-${timestamp}-${random}`;
       }
     }
@@ -2115,7 +2128,7 @@ export const createJobPO = async (req: Request, res: Response) => {
         originCompanyId,
         targetCompanyId,
         targetVendorId,
-        description: description || 'Vendor Services',
+        description: description || defaultDescription,
         buyCost: buyCost || 0,
         paperCost: paperCost || null,
         paperMarkup: paperMarkup || null,
@@ -2155,6 +2168,7 @@ export const createJobPO = async (req: Request, res: Response) => {
     await prisma.profitSplit.upsert({
       where: { jobId },
       create: {
+        id: crypto.randomUUID(),
         jobId,
         sellPrice,
         totalCost,
@@ -2265,6 +2279,7 @@ export const updatePO = async (req: Request, res: Response) => {
         await prisma.profitSplit.upsert({
           where: { jobId: po.jobId },
           create: {
+            id: crypto.randomUUID(),
             jobId: po.jobId,
             sellPrice,
             totalCost,
@@ -2380,6 +2395,7 @@ export const deletePO = async (req: Request, res: Response) => {
         await prisma.profitSplit.upsert({
           where: { jobId },
           create: {
+            id: crypto.randomUUID(),
             jobId,
             sellPrice,
             totalCost,

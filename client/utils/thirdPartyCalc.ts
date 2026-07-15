@@ -39,6 +39,17 @@ export interface ThirdPartyCalcInput {
   paperSource?: 'BRADFORD' | 'VENDOR' | 'CUSTOMER' | string | null;
 }
 
+export type ProductionPayee = 'BRADFORD' | 'JD';
+
+/** BRADFORD paper → Impact pays Bradford; VENDOR/CUSTOMER (JD paper) → Impact pays JD. */
+export function isJdPaperSource(paperSource?: string | null): boolean {
+  return paperSource === 'VENDOR' || paperSource === 'CUSTOMER';
+}
+
+export function productionPayeeFromPaper(paperSource?: string | null): ProductionPayee {
+  return isJdPaperSource(paperSource) ? 'JD' : 'BRADFORD';
+}
+
 export interface ThirdPartyCalcResult {
   qtyM: number;
   printCPM: number;
@@ -53,18 +64,25 @@ export interface ThirdPartyCalcResult {
   impactShare: number;
   /** Bradford share of margin (30%) — not including paper markup */
   bradfordMarginShare: number;
-  /** Bradford Gets = paper markup + 30% margin */
+  /** Bradford Gets = paper markup + 30% margin (Bradford paper) or margin-only (JD paper) */
   bradfordGets: number;
   /** Impact Gets = 70% margin */
   impactGets: number;
+  /** Impact → Bradford PO (full outlay on Bradford paper; margin-only on JD paper) */
   impactToBradfordBuy: number;
+  /** Impact → JD PO (production on JD paper only; 0 on Bradford paper) */
+  impactToJdBuy: number;
+  /** Bradford → JD mfg tracking (Bradford paper only) */
   bradfordToJdBuy: number;
+  /** Who Impact pays for production */
+  productionPayee: ProductionPayee;
+  isJdPaper: boolean;
   sellCPM: number;
   sizeMatched: boolean;
   sizeName: string | null;
   paperLbsPerM: number | null;
   product: string | null;
-  /** Full Bradford check (paper pass-through + Bradford gets + JD mfg) */
+  /** Full Bradford check (paper pass-through + Bradford gets + JD mfg) — Bradford paper only */
   bradfordPayout: number;
 }
 
@@ -74,6 +92,8 @@ export function calculateFromSellPrice(input: ThirdPartyCalcInput): ThirdPartyCa
   const qtyM = qty > 0 ? qty / 1000 : 0;
   const key = input.sizeName ? normalizeSizeKey(input.sizeName) || input.sizeName : null;
   const table = key ? getBradfordPricing(key) : undefined;
+  const isJdPaper = isJdPaperSource(input.paperSource);
+  const productionPayee = productionPayeeFromPaper(input.paperSource);
 
   // JD MFG CPM + Paper Base CPM from Lookup (or overrides)
   const printCPM =
@@ -87,8 +107,11 @@ export function calculateFromSellPrice(input: ThirdPartyCalcInput): ThirdPartyCa
 
   const jdMfg = round2(printCPM * qtyM);
   const paperBase = round2(paperCPM * qtyM);
-  const applyMarkup = !input.paperSource || input.paperSource === 'BRADFORD';
-  const paperMarkup = applyMarkup ? round2(paperBase * PAPER_MARKUP_RATE) : 0;
+  // 18% paper markup only when Bradford supplies paper
+  const paperMarkup = isJdPaper ? 0 : round2(paperBase * PAPER_MARKUP_RATE);
+  // Production cost Impact pays:
+  //   Bradford paper: mfg + paper + markup (Impact → Bradford)
+  //   JD paper: mfg + paper (Impact → JD; no Bradford markup)
   const totalCost = round2(jdMfg + paperBase + paperMarkup);
   const margin = round2(sell - totalCost);
   const bradfordMarginShare = round2(margin * BRADFORD_MARGIN_SHARE);
@@ -110,16 +133,21 @@ export function calculateFromSellPrice(input: ThirdPartyCalcInput): ThirdPartyCa
     bradfordMarginShare,
     bradfordGets,
     impactGets,
-    // Impact pays Bradford: paper + markup + mfg (Bradford paper route)
-    impactToBradfordBuy: totalCost,
-    bradfordToJdBuy: jdMfg,
+    productionPayee,
+    isJdPaper,
+    // Bradford paper: Impact pays Bradford full cost. JD paper: Bradford gets margin share only (not a cost PO).
+    impactToBradfordBuy: isJdPaper ? 0 : totalCost,
+    // JD paper: Impact pays JD production (mfg + paper, no markup). Bradford paper: 0 (JD paid via Bradford).
+    impactToJdBuy: isJdPaper ? totalCost : 0,
+    // Bradford→JD tracking only on Bradford paper route
+    bradfordToJdBuy: isJdPaper ? 0 : jdMfg,
     sellCPM: qtyM > 0 ? round2(sell / qtyM) : 0,
     sizeMatched: !!table,
     sizeName: key,
     paperLbsPerM: table?.paperLbsPerM ?? null,
     product: table?.product ?? null,
-    // Sheet C32: paper pass-through + Bradford gets + JD mfg
-    bradfordPayout: round2(paperBase + bradfordGets + jdMfg),
+    // Sheet C32: paper pass-through + Bradford gets + JD mfg (Bradford paper)
+    bradfordPayout: isJdPaper ? 0 : round2(paperBase + bradfordGets + jdMfg),
   };
 }
 

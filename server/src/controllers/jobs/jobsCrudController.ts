@@ -618,6 +618,7 @@ export const createJob = async (req: Request, res: Response) => {
 
       await prisma.profitSplit.create({
         data: {
+          id: crypto.randomUUID(),
           jobId,
           sellPrice,
           totalCost,
@@ -1469,6 +1470,7 @@ async function recalculateProfitSplit(id: string, job: any) {
   await prisma.profitSplit.upsert({
     where: { jobId: id },
     create: {
+      id: crypto.randomUUID(),
       jobId: id,
       sellPrice: finalSellPrice,
       totalCost,
