@@ -690,13 +690,24 @@ export const markJDPaid = async (req: Request, res: Response) => {
 
     // Fallback chain if profit had no mfg/cost
     if (!jdPaymentAmount) {
+      if (route.productionPayee === 'JD') {
+        // Impact → JD production PO (JD paper)
+        const impactJdPO = (existingJob.PurchaseOrder || []).find(
+          (po: any) =>
+            po.originCompanyId === COMPANY_IDS.IMPACT_DIRECT &&
+            po.targetCompanyId === COMPANY_IDS.JD_GRAPHIC
+        );
+        if (impactJdPO) {
+          jdPaymentAmount = Number(impactJdPO.buyCost) || 0;
+        }
+      }
       const bradfordJDPO = (existingJob.PurchaseOrder || []).find(
         (po: any) =>
           po.originCompanyId === COMPANY_IDS.BRADFORD && po.targetCompanyId === COMPANY_IDS.JD_GRAPHIC
       );
-      if (bradfordJDPO) {
+      if (!jdPaymentAmount && bradfordJDPO) {
         jdPaymentAmount = Number(bradfordJDPO.buyCost) || Number(bradfordJDPO.mfgCost) || 0;
-      } else if (existingJob.bradfordPrintCPM && existingJob.quantity) {
+      } else if (!jdPaymentAmount && existingJob.bradfordPrintCPM && existingJob.quantity) {
         jdPaymentAmount =
           (Number(existingJob.bradfordPrintCPM) / 1000) * Number(existingJob.quantity);
       }

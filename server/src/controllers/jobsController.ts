@@ -118,11 +118,8 @@ function calculateProfit(job: any) {
   let totalPaperMarkup = 0;
   let totalPaperCost = 0;
 
-  // Sum costs from POs - only Impact→Bradford POs (not Bradford→JD reference POs)
-  // Bradford→JD is internal tracking, not Impact's direct cost
-  const impactPOs = purchaseOrders.filter((po: any) =>
-    po.originCompanyId === 'impact-direct' && po.targetCompanyId === 'bradford'
-  );
+  // Impact-origin POs only (Impact's cash cost). Bradford→JD is partner tracking, not Impact cost.
+  const impactOriginPOs = purchaseOrders.filter((po: any) => po.originCompanyId === 'impact-direct');
 
   // Get Bradford→JD POs (what Bradford owes JD for manufacturing)
   const bradfordJdPOs = purchaseOrders.filter((po: any) =>
@@ -142,8 +139,7 @@ function calculateProfit(job: any) {
     }
   }
 
-  // Get Impact→JD POs (direct jobs where Impact orders from JD)
-  // Check both targetCompanyId and vendor name for JD Graphic (handle both Vendor and vendor casing)
+  // Get Impact→JD POs (JD paper / direct production)
   const impactJdPOs = purchaseOrders.filter((po: any) => {
     const vendorName = (po.Vendor?.name || po.vendor?.name || '').toLowerCase();
     return po.originCompanyId === 'impact-direct' &&
@@ -155,27 +151,28 @@ function calculateProfit(job: any) {
     return sum + (Number(po.buyCost) || 0);
   }, 0);
 
-  if (impactPOs.length > 0) {
-    totalCost = impactPOs.reduce((sum: number, po: any) => {
+  if (impactOriginPOs.length > 0) {
+    totalCost = impactOriginPOs.reduce((sum: number, po: any) => {
       return sum + (Number(po.buyCost) || 0);
     }, 0);
 
-    totalPaperCost = impactPOs.reduce((sum: number, po: any) => {
+    totalPaperCost = impactOriginPOs.reduce((sum: number, po: any) => {
       return sum + (Number(po.paperCost) || 0);
     }, 0);
 
-    totalPaperMarkup = impactPOs.reduce((sum: number, po: any) => {
+    totalPaperMarkup = impactOriginPOs.reduce((sum: number, po: any) => {
       return sum + (Number(po.paperMarkup) || 0);
     }, 0);
   }
 
-  // Use pricing service to calculate split
+  // Use pricing service to calculate split (paperSource drives who keeps paper markup)
   const split = calculateProfitSplit({
     sellPrice,
     totalCost,
     paperMarkup: totalPaperMarkup,
-    routingType: job.routingType,  // Pass routing type for correct split calculation
-  });
+    routingType: job.routingType,
+    paperSource: job.paperSource,
+  } as any);
 
   return {
     sellPrice: split.sellPrice,

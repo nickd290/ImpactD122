@@ -17,25 +17,11 @@ import {
   importBatchJobs,
   batchDeleteJobs,
   bulkUpdatePaperSource,
-  // NEW: Payment tracking
-  updatePayments,
-  batchUpdatePayments,
   // PO management
   getJobPOs,
   createJobPO,
   updatePO,
   deletePO,
-  // Multi-step payment workflow (4-step process)
-  markInvoiceSent,
-  markCustomerPaid,
-  markVendorPaid,
-  markImpactToBradfordPaid,
-  sendJDInvoice,
-  downloadJDInvoicePDF,
-  markJDPaid,
-  bulkGenerateJDInvoices,
-  // Invoice status
-  updateInvoiceStatus,
   // QC overrides
   updateQCOverrides,
   // Workflow status override
@@ -61,6 +47,20 @@ import {
   // Activity / Change history
   getJobActivity,
 } from '../controllers/jobsController';
+// Paper-source-aware payees (Bradford margin vs JD production)
+import {
+  markInvoiceSent,
+  markCustomerPaid,
+  markVendorPaid,
+  markImpactToBradfordPaid,
+  sendJDInvoice,
+  downloadJDInvoicePDF,
+  markJDPaid,
+  bulkGenerateJDInvoices,
+  updatePayments,
+  batchUpdatePayments,
+  updateInvoiceStatus,
+} from '../controllers/jobs/jobsPaymentController';
 import {
   // Change Orders
   listChangeOrders,

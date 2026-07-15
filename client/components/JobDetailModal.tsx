@@ -21,6 +21,7 @@ import { JobReadinessCard } from './job-form/JobReadinessCard';
 import { BlockingIssueCard } from './job-detail/BlockingIssueCard';
 import { VendorCostEntry } from './job-detail/VendorCostEntry';
 import { SellPriceMarginPanel } from './job-detail/SellPriceMarginPanel';
+import { PayeesPaymentPanel } from './job-detail/PayeesPaymentPanel';
 import { toast } from 'sonner';
 
 // Pathway badge styling - uses design system colors
@@ -1338,6 +1339,24 @@ export function JobDetailModal({
         sellPrice={Number(job.sellPrice) || 0}
         sizeName={job.sizeName || job.specs?.finishedSize || job.specs?.flatSize}
         paperSource={(job as any).paperSource}
+        purchaseOrders={job.purchaseOrders as any}
+        onSaved={handlePanelSaved}
+      />
+      <PayeesPaymentPanel
+        jobId={job.id}
+        paperSource={(job as any).paperSource}
+        sellPrice={Number(job.sellPrice) || 0}
+        quantity={job.quantity || job.specs?.quantity || 0}
+        sizeName={job.sizeName || job.specs?.finishedSize || job.specs?.flatSize}
+        customerPaid={!!(job.customerPaymentDate || job.status === 'PAID')}
+        customerPaidDate={job.customerPaymentDate}
+        bradfordPaid={!!(job.bradfordPaymentPaid || job.bradfordPaymentDate)}
+        bradfordPaidDate={job.bradfordPaymentDate}
+        bradfordPaidAmount={job.bradfordPaymentAmount}
+        jdPaid={!!(job.jdPaymentPaid || job.jdPaymentDate)}
+        jdPaidDate={job.jdPaymentDate}
+        jdPaidAmount={job.jdPaymentAmount}
+        bradfordShare={job.profit?.bradfordTotal}
         purchaseOrders={job.purchaseOrders as any}
         onSaved={handlePanelSaved}
       />
@@ -2959,9 +2978,10 @@ export function JobDetailModal({
   const FinancialsTab = ({ job, onRefresh }: { job: Job; onRefresh?: () => void }) => {
     const [isUpdating, setIsUpdating] = useState<string | null>(null);
 
-    // Smart vendor path detection
+    // Paper source drives payees (not vendor name alone)
+    const paperSource = (job as any).paperSource || (job.jdSuppliesPaper ? 'VENDOR' : 'BRADFORD');
+    const jdPaper = paperSource === 'VENDOR' || paperSource === 'CUSTOMER';
     const vendorName = job.vendor?.name || 'Vendor';
-    const isBradfordVendor = job.vendor?.isPartner || vendorName.toLowerCase().includes('bradford');
 
     // Format currency
     const formatCurrency = (amount?: number | null) => {
@@ -2980,7 +3000,7 @@ export function JobDetailModal({
       return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     };
 
-    // Get payment stages based on vendor path
+    // Payment stages: always Customer + Bradford + JD (route labels by paper)
     const getPaymentStages = () => {
       const baseStages = [
         {
@@ -3003,53 +3023,53 @@ export function JobDetailModal({
         },
       ];
 
-      if (isBradfordVendor) {
-        // Bradford vendor path: Impact→Bradford→JD
+      if (jdPaper) {
+        // JD paper: Impact → JD production + Impact → Bradford commission
         return [
           ...baseStages,
-          {
-            key: 'bradfordPaid',
-            label: 'Impact → Bradford',
-            isComplete: job.bradfordPaymentPaid || false,
-            date: job.bradfordPaymentDate,
-            amount: job.bradfordPaymentAmount || job.profit?.bradfordTotal,
-            action: job.bradfordPaymentPaid ? 'Mark Unpaid' : 'Mark Paid',
-            actionStatus: job.bradfordPaymentPaid ? 'unpaid' : 'paid',
-          },
           {
             key: 'jdPaid',
-            label: 'Bradford → JD',
-            isComplete: job.jdPaymentPaid || false,
+            label: 'Impact → JD (production)',
+            isComplete: job.jdPaymentPaid || !!job.jdPaymentDate,
             date: job.jdPaymentDate,
-            amount: job.jdPaymentAmount || job.profit?.bradfordOwesJD,
-            action: job.jdPaymentPaid ? 'Mark Unpaid' : 'Mark Paid',
-            actionStatus: job.jdPaymentPaid ? 'unpaid' : 'paid',
-          },
-        ];
-      } else {
-        // Non-Bradford path: Impact→Vendor + Bradford profit split
-        return [
-          ...baseStages,
-          {
-            key: 'vendorPaid',
-            label: `Impact → ${vendorName}`,
-            isComplete: !!job.vendorPaymentDate,
-            date: job.vendorPaymentDate,
-            amount: job.vendorPaymentAmount,
-            action: job.vendorPaymentDate ? 'Mark Unpaid' : 'Mark Paid',
-            actionStatus: job.vendorPaymentDate ? 'unpaid' : 'paid',
+            amount: job.jdPaymentAmount || job.profit?.totalCost,
+            action: job.jdPaymentPaid || job.jdPaymentDate ? 'Mark Unpaid' : 'Mark Paid',
+            actionStatus: job.jdPaymentPaid || job.jdPaymentDate ? 'unpaid' : 'paid',
           },
           {
-            key: 'bradfordSplitPaid',
-            label: 'Impact → Bradford (Split)',
-            isComplete: job.bradfordPaymentPaid || false,
+            key: 'bradfordPaid',
+            label: 'Impact → Bradford (commission)',
+            isComplete: job.bradfordPaymentPaid || !!job.bradfordPaymentDate,
             date: job.bradfordPaymentDate,
-            amount: job.profit?.bradfordTotal,
-            action: job.bradfordPaymentPaid ? 'Mark Unpaid' : 'Mark Paid',
-            actionStatus: job.bradfordPaymentPaid ? 'unpaid' : 'paid',
+            amount: job.bradfordPaymentAmount || job.profit?.bradfordTotal,
+            action: job.bradfordPaymentPaid || job.bradfordPaymentDate ? 'Mark Unpaid' : 'Mark Paid',
+            actionStatus: job.bradfordPaymentPaid || job.bradfordPaymentDate ? 'unpaid' : 'paid',
           },
         ];
       }
+
+      // Bradford paper: Impact → Bradford full + Bradford → JD mfg
+      return [
+        ...baseStages,
+        {
+          key: 'bradfordPaid',
+          label: 'Impact → Bradford',
+          isComplete: job.bradfordPaymentPaid || !!job.bradfordPaymentDate,
+          date: job.bradfordPaymentDate,
+          amount: job.bradfordPaymentAmount || job.profit?.bradfordTotal,
+          action: job.bradfordPaymentPaid || job.bradfordPaymentDate ? 'Mark Unpaid' : 'Mark Paid',
+          actionStatus: job.bradfordPaymentPaid || job.bradfordPaymentDate ? 'unpaid' : 'paid',
+        },
+        {
+          key: 'jdPaid',
+          label: 'Bradford → JD (mfg)',
+          isComplete: job.jdPaymentPaid || !!job.jdPaymentDate,
+          date: job.jdPaymentDate,
+          amount: job.jdPaymentAmount || job.profit?.bradfordOwesJD,
+          action: job.jdPaymentPaid || job.jdPaymentDate ? 'Mark Unpaid' : 'Mark Paid',
+          actionStatus: job.jdPaymentPaid || job.jdPaymentDate ? 'unpaid' : 'paid',
+        },
+      ];
     };
 
     const stages = getPaymentStages();
@@ -3091,7 +3111,7 @@ export function JobDetailModal({
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Payment Progress</h3>
             <span className="text-xs text-gray-400">
-              {isBradfordVendor ? 'Bradford Partner Path' : `${vendorName} Path`}
+              {jdPaper ? 'JD paper · pay JD + Bradford commission' : 'Bradford paper · pay BGE + track JD mfg'}
             </span>
           </div>
           <div className="p-4">
