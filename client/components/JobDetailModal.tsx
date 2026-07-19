@@ -241,8 +241,6 @@ interface JobDetailModalProps {
   onRefresh?: () => void;
 }
 
-type TabType = 'details' | 'financials' | 'change-orders';
-
 export function JobDetailModal({
   job: jobProp,
   isOpen,
@@ -294,7 +292,7 @@ export function JobDetailModal({
   // Hydrated job preferred; list-row prop is fallback while fetch runs
   const job = fullJob || jobProp;
 
-  const [activeTab, setActiveTab] = useState<TabType>('details');
+
   const [isAddingPO, setIsAddingPO] = useState(false);
   const [selectedLineItems, setSelectedLineItems] = useState<Set<number>>(new Set());
   const [poType, setPOType] = useState<'impact-vendor' | 'bradford-jd'>('impact-vendor');
@@ -3227,12 +3225,6 @@ export function JobDetailModal({
     );
   };
 
-  const tabs: { id: TabType; label: string; badge?: number }[] = [
-    { id: 'details', label: 'Job Details' },
-    { id: 'financials', label: 'Financials & Comms', badge: pendingCommCount },
-    { id: 'change-orders', label: 'Change Orders', badge: changeOrders?.length || 0 },
-  ];
-
   return (
     <>
       {/* Backdrop */}
@@ -3559,179 +3551,156 @@ export function JobDetailModal({
             </div>
           )}
 
-          {/* Tabs */}
-          <div className="bg-secondary/40 border-b border-border px-6 flex-shrink-0">
-            <div className="flex gap-1">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`py-3 px-3 text-sm transition-colors flex items-center gap-2 border-b-2 -mb-[1px] ${
-                    activeTab === tab.id
-                      ? 'text-[#2B3A4A] border-[#C0512A] font-semibold'
-                      : 'text-muted-foreground border-transparent hover:text-foreground'
-                  }`}
-                >
-                  {tab.id === 'financials' && <DollarSign className="h-3.5 w-3.5" />}
-                  <span className="uppercase text-[10px] tracking-[0.1em]">{tab.label}</span>
-                  {tab.badge != null && tab.badge > 0 && (
-                    <span className="min-w-[1.25rem] h-5 px-1.5 inline-flex items-center justify-center bg-status-warning-bg text-status-warning text-[10px] rounded-full font-semibold border border-status-warning-border">
-                      {tab.badge}
-                    </span>
-                  )}
-                </button>
-              ))}
+          {/* Single scroll — no tabs. Everything on one job page. */}
+          <div className="p-6 overflow-y-auto flex-1 bg-background space-y-0">
+            {/* Money + floor + specs + files */}
+            {OverviewTab()}
+
+            {/* Notes */}
+            <div className="mt-6 pt-6 border-t border-border">
+              <h3 className="section-header mb-3">Notes</h3>
+              {job?.notes ? (
+                <div className="bg-card p-4 rounded-lg border border-border">
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">{job.notes}</p>
+                </div>
+              ) : (
+                <p className="text-muted-foreground/60 italic text-sm">No notes for this job</p>
+              )}
             </div>
-          </div>
 
-          {/* Tab Content */}
-          <div className="p-6 overflow-y-auto flex-1 bg-background">
-            {activeTab === 'details' && (
-              <>
-                {OverviewTab()}
-                {/* Notes Section */}
-                <div className="mt-6 pt-6 border-t border-border">
-                  <h3 className="section-header mb-3">Notes</h3>
-                  {job?.notes ? (
-                    <div className="bg-card p-4 rounded-lg border border-border">
-                      <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">{job.notes}</p>
-                    </div>
-                  ) : (
-                    <p className="text-muted-foreground/60 italic text-sm">No notes for this job</p>
-                  )}
-                </div>
-
-                {/* Change History Section */}
-                <div className="mt-6 pt-6 border-t border-border">
-                  <h3 className="section-header mb-3">Change History</h3>
-                  {activities && activities.length > 0 ? (
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {activities.map((activity: any) => (
-                        <div key={activity.id} className="flex items-start gap-3 py-2 border-b border-border/50 last:border-0">
-                          <div className="w-2 h-2 rounded-full bg-status-info mt-1.5 flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-sm font-medium text-foreground capitalize">
-                                {activity.field?.replace(/_/g, ' ').toLowerCase() || activity.action?.replace(/_/g, ' ').toLowerCase()}
-                              </span>
-                              {activity.oldValue !== null && activity.newValue !== null && (
-                                <span className="text-xs text-muted-foreground">
-                                  <span className="line-through opacity-60">{activity.oldValue}</span>
-                                  {' → '}
-                                  <span className="text-foreground font-medium">{activity.newValue}</span>
-                                </span>
-                              )}
-                              {activity.oldValue === null && activity.newValue !== null && (
-                                <span className="text-xs text-status-success">set to {activity.newValue}</span>
-                              )}
-                              {activity.oldValue !== null && activity.newValue === null && (
-                                <span className="text-xs text-status-danger">cleared (was {activity.oldValue})</span>
-                              )}
-                            </div>
-                            <p className="text-[10px] text-muted-foreground/70 font-mono mt-0.5">
-                              {new Date(activity.createdAt).toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: 'numeric',
-                                minute: '2-digit'
-                              })}
-                              {activity.changedBy && activity.changedBy !== 'system' && (
-                                <span> by {activity.changedBy}</span>
-                              )}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-muted-foreground/60 italic text-sm">No changes recorded</p>
-                  )}
-                </div>
-
-                {/* Proof Approval Section */}
-                {job && (
-                  <div className="mt-6 pt-6 border-t border-border">
-                    <ProofApprovalSection
-                      jobId={job.id}
-                      onProofStatusChange={onRefresh}
-                    />
-                  </div>
-                )}
-
-              </>
-            )}
-            {activeTab === 'financials' && job && (
-              <div className="space-y-6">
-                {/* Click Bradford / JD → enter costs + Third Party Calculator */}
-                <VendorCostEntry
+            {/* Proof */}
+            {job && (
+              <div className="mt-6 pt-6 border-t border-border">
+                <ProofApprovalSection
                   jobId={job.id}
-                  quantity={job.quantity || job.specs?.quantity || 0}
-                  sellPrice={Number(job.sellPrice) || 0}
-                  sizeName={job.sizeName || job.specs?.finishedSize || job.specs?.flatSize}
-                  paperSource={(job as any).paperSource}
-                  purchaseOrders={job.purchaseOrders as any}
-                  onSaved={onRefresh}
+                  onProofStatusChange={onRefresh}
                 />
-
-                {/* Financial Summary (primary source of truth) */}
-                <FinancialsTab job={job} onRefresh={onRefresh} />
-
-                {/* Vendor Cards & Costs */}
-                <details className="group border-t border-border pt-4">
-                  <summary className="flex items-center justify-between cursor-pointer py-2 section-header hover:text-foreground transition-colors">
-                    <span>Vendor Costs & POs</span>
-                    <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
-                  </summary>
-                  <div className="pt-4 space-y-4">
-                    {VendorCardsSection()}
-                    <div className="pt-4">
-                      {PurchaseOrdersTab()}
-                    </div>
-                  </div>
-                </details>
-
-                {/* Communications */}
-                <details className="group border-t border-border pt-4">
-                  <summary className="flex items-center justify-between cursor-pointer py-2 section-header hover:text-foreground transition-colors">
-                    <span className="flex items-center gap-2">
-                      <MessageSquare className="w-4 h-4" />
-                      Communications
-                      {pendingCommCount > 0 && (
-                        <span className="px-2 py-0.5 bg-status-warning-bg text-status-warning text-[10px] rounded-full font-semibold">
-                          {pendingCommCount}
-                        </span>
-                      )}
-                    </span>
-                    <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
-                  </summary>
-                  <div className="pt-4">
-                    <CommunicationThread
-                      jobId={job.id}
-                      jobNo={job.jobNo || job.number || ''}
-                      customerName={job.customer?.name}
-                      customerEmail={job.customer?.email}
-                      vendorName={job.vendor?.name}
-                      vendorEmail={job.vendor?.email}
-                    />
-                  </div>
-                </details>
               </div>
             )}
-            {activeTab === 'change-orders' && job && (
-              <ChangeOrderList
-                changeOrders={changeOrders || []}
-                isLoading={isLoadingCOs}
-                effectiveCOVersion={(job as any).effectiveCOVersion}
-                onSelectCO={(co) => {
-                  setSelectedCO(co);
-                  setShowCOModal(true);
-                }}
-                onCreateCO={() => {
-                  setSelectedCO(undefined);
-                  setShowCOModal(true);
-                }}
-              />
+
+            {/* Communications — open when pending */}
+            {job && (
+              <details
+                className="group mt-6 pt-6 border-t border-border"
+                open={pendingCommCount > 0}
+              >
+                <summary className="flex items-center justify-between cursor-pointer py-1 section-header hover:text-foreground transition-colors list-none [&::-webkit-details-marker]:hidden">
+                  <span className="flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4" />
+                    Communications
+                    {pendingCommCount > 0 && (
+                      <span className="px-2 py-0.5 bg-status-warning-bg text-status-warning text-[10px] rounded-full font-semibold">
+                        {pendingCommCount}
+                      </span>
+                    )}
+                  </span>
+                  <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
+                </summary>
+                <div className="pt-4">
+                  <CommunicationThread
+                    jobId={job.id}
+                    jobNo={job.jobNo || job.number || ''}
+                    customerName={job.customer?.name}
+                    customerEmail={job.customer?.email}
+                    vendorName={job.vendor?.name}
+                    vendorEmail={job.vendor?.email}
+                  />
+                </div>
+              </details>
             )}
+
+            {/* Vendor POs — collapsed by default (costs already in money panel above) */}
+            <details className="group mt-6 pt-6 border-t border-border">
+              <summary className="flex items-center justify-between cursor-pointer py-1 section-header hover:text-foreground transition-colors list-none [&::-webkit-details-marker]:hidden">
+                <span>Vendor costs &amp; POs</span>
+                <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="pt-4 space-y-4">
+                {VendorCardsSection()}
+                <div className="pt-2">{PurchaseOrdersTab()}</div>
+              </div>
+            </details>
+
+            {/* Change orders */}
+            {job && (
+              <div className="mt-6 pt-6 border-t border-border">
+                <ChangeOrderList
+                  changeOrders={changeOrders || []}
+                  isLoading={isLoadingCOs}
+                  effectiveCOVersion={(job as any).effectiveCOVersion}
+                  onSelectCO={(co) => {
+                    setSelectedCO(co);
+                    setShowCOModal(true);
+                  }}
+                  onCreateCO={() => {
+                    setSelectedCO(undefined);
+                    setShowCOModal(true);
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Change history — collapsed */}
+            <details className="group mt-6 pt-6 border-t border-border">
+              <summary className="flex items-center justify-between cursor-pointer py-1 section-header hover:text-foreground transition-colors list-none [&::-webkit-details-marker]:hidden">
+                <span>
+                  Change history
+                  {activities && activities.length > 0 && (
+                    <span className="ml-2 text-xs font-normal text-muted-foreground tabular-nums">
+                      {activities.length}
+                    </span>
+                  )}
+                </span>
+                <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="pt-3">
+                {activities && activities.length > 0 ? (
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {activities.map((activity: any) => (
+                      <div key={activity.id} className="flex items-start gap-3 py-2 border-b border-border/50 last:border-0">
+                        <div className="w-2 h-2 rounded-full bg-status-info mt-1.5 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-medium text-foreground capitalize">
+                              {activity.field?.replace(/_/g, ' ').toLowerCase() ||
+                                activity.action?.replace(/_/g, ' ').toLowerCase()}
+                            </span>
+                            {activity.oldValue !== null && activity.newValue !== null && (
+                              <span className="text-xs text-muted-foreground">
+                                <span className="line-through opacity-60">{activity.oldValue}</span>
+                                {' → '}
+                                <span className="text-foreground font-medium">{activity.newValue}</span>
+                              </span>
+                            )}
+                            {activity.oldValue === null && activity.newValue !== null && (
+                              <span className="text-xs text-status-success">set to {activity.newValue}</span>
+                            )}
+                            {activity.oldValue !== null && activity.newValue === null && (
+                              <span className="text-xs text-status-danger">
+                                cleared (was {activity.oldValue})
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-muted-foreground/70 font-mono mt-0.5">
+                            {new Date(activity.createdAt).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: 'numeric',
+                              minute: '2-digit',
+                            })}
+                            {activity.changedBy && activity.changedBy !== 'system' && (
+                              <span> by {activity.changedBy}</span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground/60 italic text-sm">No changes recorded</p>
+                )}
+              </div>
+            </details>
           </div>
         </div>
       </div>
