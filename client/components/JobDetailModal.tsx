@@ -19,9 +19,7 @@ import { WorkflowStatusBadge, getNextWorkflowStatuses, WORKFLOW_STAGES, getStage
 import { DocumentViewerModal, type DocumentSource } from './DocumentViewerModal';
 import { JobReadinessCard } from './job-form/JobReadinessCard';
 import { BlockingIssueCard } from './job-detail/BlockingIssueCard';
-import { VendorCostEntry } from './job-detail/VendorCostEntry';
-import { SellPriceMarginPanel } from './job-detail/SellPriceMarginPanel';
-import { PayeesPaymentPanel } from './job-detail/PayeesPaymentPanel';
+import { JobMoneyBoard } from './job-detail/JobMoneyBoard';
 import { toast } from 'sonner';
 
 // Pathway badge styling - uses design system colors
@@ -1329,45 +1327,61 @@ export function JobDetailModal({
 
     return (
     <div className="space-y-4">
-      {/* Always-on money: sell drives margins · size table · click vendors */}
-      <SellPriceMarginPanel
+      {/* One money board: sell · type vendor $ · mark paid/unpaid */}
+      <JobMoneyBoard
         jobId={job.id}
         sellPrice={Number(job.sellPrice) || 0}
         quantity={job.quantity || job.specs?.quantity || 0}
         sizeName={job.sizeName || job.specs?.finishedSize || job.specs?.flatSize}
         paperSource={(job as any).paperSource}
         purchaseOrders={job.purchaseOrders as any}
-        onSaved={handlePanelSaved}
-      />
-      <VendorCostEntry
-        jobId={job.id}
-        quantity={job.quantity || job.specs?.quantity || 0}
-        sellPrice={Number(job.sellPrice) || 0}
-        sizeName={job.sizeName || job.specs?.finishedSize || job.specs?.flatSize}
-        paperSource={(job as any).paperSource}
-        purchaseOrders={job.purchaseOrders as any}
-        onSaved={handlePanelSaved}
-      />
-      <PayeesPaymentPanel
-        jobId={job.id}
-        paperSource={(job as any).paperSource}
-        sellPrice={Number(job.sellPrice) || 0}
-        quantity={job.quantity || job.specs?.quantity || 0}
-        sizeName={job.sizeName || job.specs?.finishedSize || job.specs?.flatSize}
         customerPaid={!!(job.customerPaymentDate || job.status === 'PAID')}
         customerPaidDate={job.customerPaymentDate}
         bradfordPaid={!!(job.bradfordPaymentPaid || job.bradfordPaymentDate)}
         bradfordPaidDate={job.bradfordPaymentDate}
-        bradfordPaidAmount={job.bradfordPaymentAmount}
         jdPaid={!!(job.jdPaymentPaid || job.jdPaymentDate)}
         jdPaidDate={job.jdPaymentDate}
-        jdPaidAmount={job.jdPaymentAmount}
-        bradfordShare={job.profit?.bradfordTotal}
-        purchaseOrders={job.purchaseOrders as any}
         onSaved={handlePanelSaved}
       />
 
-      {/* Blocking Issue - Prominent at top when applicable */}
+      {/* Floor stage — simple New → Proof → Production → Complete */}
+      <div className="bg-card border border-border rounded-lg p-3">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1">
+            {WORKFLOW_STAGES.map((stage, index) => (
+              <div
+                key={index}
+                title={stage.label}
+                className={`w-2.5 h-2.5 rounded-full transition-colors ${
+                  index < currentIndex ? 'bg-status-success' :
+                  index === currentIndex ? 'bg-status-info' :
+                  'bg-muted'
+                }`}
+              />
+            ))}
+          </div>
+          <div className="flex-1">
+            <span className="text-sm font-medium text-foreground">{currentStage?.label || 'New'}</span>
+          </div>
+          {nextActions.length > 0 && (
+            <button
+              onClick={() => handleWorkflowStatusChange(nextActions[0].status)}
+              disabled={isUpdatingStatus}
+              className="px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
+            >
+              {isUpdatingStatus ? '...' : nextActions[0].action}
+            </button>
+          )}
+        </div>
+        {blockers.length > 0 && (
+          <div className="mt-2 text-xs text-status-warning flex items-center gap-1.5">
+            <AlertTriangle className="w-3 h-3" />
+            {blockers.join(' • ')}
+          </div>
+        )}
+      </div>
+
+      {/* Blocking Issue when applicable */}
       <BlockingIssueCard
         job={job}
         hasArtwork={hasArtwork}
@@ -1383,89 +1397,6 @@ export function JobDetailModal({
           }
         }}
       />
-
-      {/* Compact Header Row: Key Numbers - always editable sell/qty via panel above */}
-      <div className="grid grid-cols-5 gap-0 text-center bg-card border border-border rounded-lg overflow-hidden">
-        <div className="p-3 border-r border-border/50">
-          <div className="section-header mb-1">Status</div>
-          <select
-            value={job.status ?? ''}
-            onChange={async (e) => {
-              try {
-                await handleInlineSave('status', e.target.value);
-              } catch { /* toast */ }
-            }}
-            className="w-full px-2 py-1 text-xs border border-border rounded-md bg-background font-medium"
-          >
-            {statusOptions.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-        </div>
-        <div className="p-3 border-r border-border/50">
-          <div className="section-header mb-1">Sell</div>
-          <div className="font-mono text-sm font-semibold text-foreground tabular-nums">{formatCurrency(job.sellPrice || 0)}</div>
-        </div>
-        <div className="p-3 border-r border-border/50">
-          <div className="section-header mb-1">Cost</div>
-          <div className="font-mono text-sm font-semibold text-muted-foreground tabular-nums">{formatCurrency(job.profit?.totalCost || 0)}</div>
-        </div>
-        <div className="p-3 border-r border-border/50">
-          <div className="section-header mb-1">Spread</div>
-          <div className={`font-mono text-sm font-semibold tabular-nums ${(job.profit?.spread || 0) >= 0 ? 'text-status-success' : 'text-status-danger'}`}>
-            {formatCurrency(job.profit?.spread || 0)}
-          </div>
-        </div>
-        <div className="p-3">
-          <div className="section-header mb-1">Qty</div>
-          <div className="font-mono text-sm font-semibold text-foreground tabular-nums">{(job.quantity || 0).toLocaleString()}</div>
-        </div>
-      </div>
-
-      {/* Workflow Status Bar - Simple Progress + Action */}
-      <div className="bg-card border border-border rounded-lg p-3">
-        <div className="flex items-center gap-4">
-          {/* Progress dots */}
-          <div className="flex items-center gap-1">
-            {WORKFLOW_STAGES.map((stage, index) => (
-              <div
-                key={index}
-                title={stage.label}
-                className={`w-2.5 h-2.5 rounded-full transition-colors ${
-                  index < currentIndex ? 'bg-status-success' :
-                  index === currentIndex ? 'bg-status-info' :
-                  'bg-muted'
-                }`}
-              />
-            ))}
-          </div>
-          <div className="flex-1">
-            <span className="text-sm font-medium text-foreground">{currentStage?.label || 'Unknown'}</span>
-            {job.workflowUpdatedAt && (
-              <span className="text-xs text-muted-foreground ml-2 font-mono">
-                {new Date(job.workflowUpdatedAt).toLocaleDateString()}
-              </span>
-            )}
-          </div>
-          {/* Next Action */}
-          {nextActions.length > 0 && (
-            <button
-              onClick={() => handleWorkflowStatusChange(nextActions[0].status)}
-              disabled={isUpdatingStatus}
-              className="px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 active:scale-[0.98] transition-all"
-            >
-              {isUpdatingStatus ? '...' : nextActions[0].action}
-            </button>
-          )}
-        </div>
-        {/* Blockers - inline alert */}
-        {blockers.length > 0 && (
-          <div className="mt-2 text-xs text-status-warning flex items-center gap-1.5">
-            <AlertTriangle className="w-3 h-3" />
-            {blockers.join(' • ')}
-          </div>
-        )}
-      </div>
 
       {/* Data Grid: Key Info Table - Editorial Style */}
       <table className="w-full text-sm border border-border rounded-lg overflow-hidden">
@@ -3609,10 +3540,10 @@ export function JobDetailModal({
               </details>
             )}
 
-            {/* Vendor POs — collapsed by default (costs already in money panel above) */}
+            {/* Raw PO list — costs entered above in Money board */}
             <details className="group mt-6 pt-6 border-t border-border">
               <summary className="flex items-center justify-between cursor-pointer py-1 section-header hover:text-foreground transition-colors list-none [&::-webkit-details-marker]:hidden">
-                <span>Vendor costs &amp; POs</span>
+                <span>PO list (advanced)</span>
                 <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
               </summary>
               <div className="pt-4 space-y-4">
