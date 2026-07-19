@@ -118,39 +118,6 @@ export function JobMoneyBoard({
   const sellN = parseFloat(sell) || 0;
   const qtyN = parseInt(qty, 10) || 0;
 
-  // Seed cost fields from POs when not dirty
-  useEffect(() => {
-    if (costDirty) return;
-    if (jdPaper) {
-      setProdCost(
-        impactJdPO?.buyCost != null && Number(impactJdPO.buyCost) > 0
-          ? String(Number(impactJdPO.buyCost))
-          : ''
-      );
-      setJdMfg('');
-    } else {
-      setProdCost(
-        impactBradfordPO?.buyCost != null && Number(impactBradfordPO.buyCost) > 0
-          ? String(Number(impactBradfordPO.buyCost))
-          : ''
-      );
-      const mfg =
-        Number(bradfordJdPO?.buyCost) ||
-        Number(bradfordJdPO?.mfgCost) ||
-        Number(impactBradfordPO?.mfgCost) ||
-        0;
-      setJdMfg(mfg > 0 ? String(mfg) : '');
-    }
-  }, [
-    costDirty,
-    jdPaper,
-    impactBradfordPO?.buyCost,
-    impactBradfordPO?.mfgCost,
-    impactJdPO?.buyCost,
-    bradfordJdPO?.buyCost,
-    bradfordJdPO?.mfgCost,
-  ]);
-
   useEffect(() => {
     if (!dirtyHeader) {
       setSell(String(sellProp || ''));
@@ -170,6 +137,49 @@ export function JobMoneyBoard({
       }),
     [sellN, qtyN, size, paper]
   );
+
+  // Seed cost fields: PO wins; else table calc (esp. JD paper → Impact pays JD)
+  useEffect(() => {
+    if (costDirty) return;
+    if (jdPaper) {
+      const fromPo =
+        impactJdPO?.buyCost != null && Number(impactJdPO.buyCost) > 0
+          ? Number(impactJdPO.buyCost)
+          : 0;
+      // Same stack as Bradford route — Impact pays JD full production outlay
+      const suggested = calc.impactToJdBuy || calc.totalCost || 0;
+      setProdCost(fromPo > 0 ? String(fromPo) : suggested > 0 ? String(suggested) : '');
+      setJdMfg('');
+    } else {
+      const fromPo =
+        impactBradfordPO?.buyCost != null && Number(impactBradfordPO.buyCost) > 0
+          ? Number(impactBradfordPO.buyCost)
+          : 0;
+      const suggested = calc.impactToBradfordBuy || calc.totalCost || 0;
+      setProdCost(fromPo > 0 ? String(fromPo) : suggested > 0 ? String(suggested) : '');
+      const mfg =
+        Number(bradfordJdPO?.buyCost) ||
+        Number(bradfordJdPO?.mfgCost) ||
+        Number(impactBradfordPO?.mfgCost) ||
+        calc.bradfordToJdBuy ||
+        calc.jdMfg ||
+        0;
+      setJdMfg(mfg > 0 ? String(mfg) : '');
+    }
+  }, [
+    costDirty,
+    jdPaper,
+    impactBradfordPO?.buyCost,
+    impactBradfordPO?.mfgCost,
+    impactJdPO?.buyCost,
+    bradfordJdPO?.buyCost,
+    bradfordJdPO?.mfgCost,
+    calc.impactToJdBuy,
+    calc.impactToBradfordBuy,
+    calc.totalCost,
+    calc.bradfordToJdBuy,
+    calc.jdMfg,
+  ]);
 
   const prodCostN = parseFloat(prodCost) || 0;
   const jdMfgN = parseFloat(jdMfg) || 0;
@@ -444,42 +454,39 @@ export function JobMoneyBoard({
 
                 setPaper(nextPaper);
                 setDirtyHeader(true);
+                // Allow seed effect to re-run for new paper after save (don't leave costDirty stuck)
+                setCostDirty(false);
 
+                let filled = 0;
                 if (nextJd) {
-                  // Impact pays JD — fill production $ (mfg+paper+markup stack)
-                  const impactPaysJd =
-                    nextCalc.impactToJdBuy || nextCalc.totalCost || 0;
-                  if (impactPaysJd > 0) {
-                    setProdCost(String(impactPaysJd));
-                    setCostDirty(true);
-                  } else {
-                    setProdCost('');
-                    setCostDirty(false);
-                  }
+                  // Impact pays JD — always fill production $ (mfg+paper+markup)
+                  filled = nextCalc.impactToJdBuy || nextCalc.totalCost || 0;
+                  setProdCost(filled > 0 ? String(filled) : '');
                   setJdMfg('');
-                  toast.message(
-                    impactPaysJd > 0
-                      ? `Impact → JD filled ${money2(impactPaysJd)} — Save costs to lock in`
-                      : 'Set sell + qty + size, then pick JD paper again to auto-fill'
-                  );
                 } else {
-                  // Bradford paper — fill BGE total + JD mfg track
-                  const bge =
-                    nextCalc.impactToBradfordBuy || nextCalc.totalCost || 0;
+                  filled = nextCalc.impactToBradfordBuy || nextCalc.totalCost || 0;
                   const mfg = nextCalc.bradfordToJdBuy || nextCalc.jdMfg || 0;
-                  if (bge > 0) {
-                    setProdCost(String(bge));
-                    setJdMfg(mfg > 0 ? String(mfg) : '');
-                    setCostDirty(true);
-                    toast.message(
-                      `Impact → BGE filled ${money2(bge)} — Save costs to lock in`
-                    );
-                  } else {
-                    setCostDirty(false);
-                  }
+                  setProdCost(filled > 0 ? String(filled) : '');
+                  setJdMfg(mfg > 0 ? String(mfg) : '');
                 }
 
                 await saveHeader({ paperSource: nextPaper });
+
+                // After save/refresh, re-apply fill (seed can race with empty PO)
+                if (filled > 0) {
+                  setProdCost(String(filled));
+                  if (!nextJd) {
+                    const mfg = nextCalc.bradfordToJdBuy || nextCalc.jdMfg || 0;
+                    if (mfg > 0) setJdMfg(String(mfg));
+                  }
+                  toast.message(
+                    nextJd
+                      ? `Impact → JD = ${money2(filled)} — click Save costs`
+                      : `Impact → BGE = ${money2(filled)} — click Save costs`
+                  );
+                } else {
+                  toast.message('Set sell, qty, and size so costs can calculate');
+                }
               }}
               className={cn(
                 'px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors',
