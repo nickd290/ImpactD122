@@ -432,10 +432,54 @@ export function JobMoneyBoard({
               key={opt.value}
               type="button"
               onClick={async () => {
-                setPaper(opt.value);
+                const nextPaper = opt.value;
+                const nextJd = nextPaper === 'VENDOR' || nextPaper === 'CUSTOMER';
+                // Recalc for the NEW paper source so Impact→JD / Impact→BGE fills correctly
+                const nextCalc = calculateFromSellPrice({
+                  sellPrice: sellN,
+                  quantity: qtyN,
+                  sizeName: size || null,
+                  paperSource: nextPaper,
+                });
+
+                setPaper(nextPaper);
                 setDirtyHeader(true);
-                setCostDirty(false);
-                await saveHeader({ paperSource: opt.value });
+
+                if (nextJd) {
+                  // Impact pays JD — fill production $ (mfg+paper+markup stack)
+                  const impactPaysJd =
+                    nextCalc.impactToJdBuy || nextCalc.totalCost || 0;
+                  if (impactPaysJd > 0) {
+                    setProdCost(String(impactPaysJd));
+                    setCostDirty(true);
+                  } else {
+                    setProdCost('');
+                    setCostDirty(false);
+                  }
+                  setJdMfg('');
+                  toast.message(
+                    impactPaysJd > 0
+                      ? `Impact → JD filled ${money2(impactPaysJd)} — Save costs to lock in`
+                      : 'Set sell + qty + size, then pick JD paper again to auto-fill'
+                  );
+                } else {
+                  // Bradford paper — fill BGE total + JD mfg track
+                  const bge =
+                    nextCalc.impactToBradfordBuy || nextCalc.totalCost || 0;
+                  const mfg = nextCalc.bradfordToJdBuy || nextCalc.jdMfg || 0;
+                  if (bge > 0) {
+                    setProdCost(String(bge));
+                    setJdMfg(mfg > 0 ? String(mfg) : '');
+                    setCostDirty(true);
+                    toast.message(
+                      `Impact → BGE filled ${money2(bge)} — Save costs to lock in`
+                    );
+                  } else {
+                    setCostDirty(false);
+                  }
+                }
+
+                await saveHeader({ paperSource: nextPaper });
               }}
               className={cn(
                 'px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors',
