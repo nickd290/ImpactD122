@@ -7,93 +7,44 @@ interface WorkflowStatusBadgeProps {
   showLabel?: boolean;
 }
 
-// Ordered workflow stages for checklist display
+// Simplified floor stages (money is separate filters, not workflow steps)
 export const WORKFLOW_STAGES = [
-  { status: 'NEW_JOB', label: 'New Job' },
-  { status: 'AWAITING_PROOF_FROM_VENDOR', label: 'PO Sent / Awaiting Proof' },
-  { status: 'PROOF_RECEIVED', label: 'Proof Received' },
-  { status: 'PROOF_SENT_TO_CUSTOMER', label: 'Sent to Customer' },
-  { status: 'AWAITING_CUSTOMER_RESPONSE', label: 'Awaiting Response' },
-  { status: 'APPROVED_PENDING_VENDOR', label: 'Approved - Notify Vendor' },
-  { status: 'IN_PRODUCTION', label: 'In Production' },
-  { status: 'COMPLETED', label: 'Shipped' },
-  { status: 'INVOICED', label: 'Invoiced' },
-  { status: 'PAID', label: 'Paid' },
+  { status: 'NEW_JOB', label: 'New' },
+  { status: 'AWAITING_CUSTOMER_RESPONSE', label: 'Proofing' },
+  { status: 'IN_PRODUCTION', label: 'Production' },
+  { status: 'COMPLETED', label: 'Complete' },
 ] as const;
 
-// Helper to get stage index (for determining completion state)
+// Helper to get stage index (maps legacy fine-grained statuses into 4 floor stages)
 export function getStageIndex(status: string): number {
-  return WORKFLOW_STAGES.findIndex(s => s.status === status);
+  const proofing = [
+    'AWAITING_PROOF_FROM_VENDOR',
+    'PROOF_RECEIVED',
+    'PROOF_SENT_TO_CUSTOMER',
+    'AWAITING_CUSTOMER_RESPONSE',
+  ];
+  const production = ['APPROVED_PENDING_VENDOR', 'IN_PRODUCTION'];
+  const complete = ['COMPLETED', 'INVOICED', 'PAID'];
+  if (status === 'NEW_JOB') return 0;
+  if (proofing.includes(status)) return 1;
+  if (production.includes(status)) return 2;
+  if (complete.includes(status)) return 3;
+  return WORKFLOW_STAGES.findIndex((s) => s.status === status);
 }
 
-// Status configuration with colors and labels
+// Status configuration — legacy DB values collapse to simple labels
 export const STATUS_CONFIG: Record<string, { label: string; bgColor: string; textColor: string; emoji?: string }> = {
-  NEW_JOB: {
-    label: 'New Job',
-    bgColor: 'bg-yellow-100',
-    textColor: 'text-yellow-800',
-    emoji: '🟡',
-  },
-  AWAITING_PROOF_FROM_VENDOR: {
-    label: 'Awaiting Proof',
-    bgColor: 'bg-orange-100',
-    textColor: 'text-orange-800',
-    emoji: '🟠',
-  },
-  PROOF_RECEIVED: {
-    label: 'Proof Received',
-    bgColor: 'bg-blue-100',
-    textColor: 'text-blue-800',
-    emoji: '🔵',
-  },
-  PROOF_SENT_TO_CUSTOMER: {
-    label: 'Sent to Customer',
-    bgColor: 'bg-purple-100',
-    textColor: 'text-purple-800',
-    emoji: '🟣',
-  },
-  AWAITING_CUSTOMER_RESPONSE: {
-    label: 'Awaiting Response',
-    bgColor: 'bg-purple-100',
-    textColor: 'text-purple-800',
-    emoji: '⏳',
-  },
-  APPROVED_PENDING_VENDOR: {
-    label: 'Approved - Pending Vendor',
-    bgColor: 'bg-green-100',
-    textColor: 'text-green-800',
-    emoji: '✅',
-  },
-  IN_PRODUCTION: {
-    label: 'In Production',
-    bgColor: 'bg-gray-100',
-    textColor: 'text-gray-800',
-    emoji: '⚙️',
-  },
-  COMPLETED: {
-    label: 'Completed',
-    bgColor: 'bg-green-100',
-    textColor: 'text-green-700',
-    emoji: '✅',
-  },
-  INVOICED: {
-    label: 'Invoiced',
-    bgColor: 'bg-blue-100',
-    textColor: 'text-blue-700',
-    emoji: '📄',
-  },
-  PAID: {
-    label: 'Paid',
-    bgColor: 'bg-green-200',
-    textColor: 'text-green-800',
-    emoji: '💵',
-  },
-  CANCELLED: {
-    label: 'Cancelled',
-    bgColor: 'bg-red-100',
-    textColor: 'text-red-700',
-    emoji: '❌',
-  },
+  NEW_JOB: { label: 'New', bgColor: 'bg-slate-100', textColor: 'text-slate-800' },
+  AWAITING_PROOF_FROM_VENDOR: { label: 'Proofing', bgColor: 'bg-blue-100', textColor: 'text-blue-800' },
+  PROOF_RECEIVED: { label: 'Proofing', bgColor: 'bg-blue-100', textColor: 'text-blue-800' },
+  PROOF_SENT_TO_CUSTOMER: { label: 'Proofing', bgColor: 'bg-blue-100', textColor: 'text-blue-800' },
+  AWAITING_CUSTOMER_RESPONSE: { label: 'Proofing', bgColor: 'bg-blue-100', textColor: 'text-blue-800' },
+  APPROVED_PENDING_VENDOR: { label: 'Production', bgColor: 'bg-amber-100', textColor: 'text-amber-800' },
+  IN_PRODUCTION: { label: 'Production', bgColor: 'bg-amber-100', textColor: 'text-amber-800' },
+  COMPLETED: { label: 'Complete', bgColor: 'bg-emerald-100', textColor: 'text-emerald-800' },
+  INVOICED: { label: 'Complete', bgColor: 'bg-emerald-100', textColor: 'text-emerald-800' },
+  PAID: { label: 'Complete', bgColor: 'bg-emerald-100', textColor: 'text-emerald-800' },
+  CANCELLED: { label: 'Cancelled', bgColor: 'bg-red-100', textColor: 'text-red-700' },
 };
 
 const SIZE_CLASSES = {
@@ -120,43 +71,30 @@ export function WorkflowStatusBadge({ status, size = 'md', showLabel = true }: W
   );
 }
 
-// Helper to get the next logical status for action buttons
+// Next step in simplified floor: New → Proofing → Production → Complete
 export function getNextWorkflowStatuses(currentStatus: string): Array<{ status: string; label: string; action: string }> {
-  const transitions: Record<string, Array<{ status: string; label: string; action: string }>> = {
-    NEW_JOB: [
-      { status: 'AWAITING_PROOF_FROM_VENDOR', label: 'PO Sent', action: 'Mark PO Sent' },
-    ],
-    AWAITING_PROOF_FROM_VENDOR: [
-      { status: 'PROOF_RECEIVED', label: 'Proof Received', action: 'Mark Proof Received' },
-    ],
-    PROOF_RECEIVED: [
-      { status: 'PROOF_SENT_TO_CUSTOMER', label: 'Proof Sent', action: 'Send Proof to Customer' },
-    ],
-    PROOF_SENT_TO_CUSTOMER: [
-      { status: 'AWAITING_CUSTOMER_RESPONSE', label: 'Awaiting Response', action: 'Mark Awaiting Response' },
-      { status: 'APPROVED_PENDING_VENDOR', label: 'Approved', action: 'Mark Approved' },
-    ],
-    AWAITING_CUSTOMER_RESPONSE: [
-      { status: 'APPROVED_PENDING_VENDOR', label: 'Approved', action: 'Mark Approved' },
-      { status: 'PROOF_RECEIVED', label: 'Revisions Needed', action: 'Request Revisions' },
-    ],
-    APPROVED_PENDING_VENDOR: [
-      { status: 'IN_PRODUCTION', label: 'In Production', action: 'Notify Vendor to Proceed' },
-    ],
-    IN_PRODUCTION: [
-      { status: 'COMPLETED', label: 'Completed', action: 'Mark Completed' },
-    ],
-    COMPLETED: [
-      { status: 'INVOICED', label: 'Invoiced', action: 'Mark Invoiced' },
-    ],
-    INVOICED: [
-      { status: 'PAID', label: 'Paid', action: 'Mark Paid' },
-    ],
-    PAID: [],
-    CANCELLED: [],
-  };
+  const proofing = new Set([
+    'AWAITING_PROOF_FROM_VENDOR',
+    'PROOF_RECEIVED',
+    'PROOF_SENT_TO_CUSTOMER',
+    'AWAITING_CUSTOMER_RESPONSE',
+  ]);
+  const production = new Set(['APPROVED_PENDING_VENDOR', 'IN_PRODUCTION']);
+  const complete = new Set(['COMPLETED', 'INVOICED', 'PAID']);
 
-  return transitions[currentStatus] || [];
+  if (currentStatus === 'NEW_JOB') {
+    return [{ status: 'AWAITING_CUSTOMER_RESPONSE', label: 'Proofing', action: 'Start proofing' }];
+  }
+  if (proofing.has(currentStatus)) {
+    return [{ status: 'IN_PRODUCTION', label: 'Production', action: 'Approved → production' }];
+  }
+  if (production.has(currentStatus)) {
+    return [{ status: 'COMPLETED', label: 'Complete', action: 'Mark complete' }];
+  }
+  if (complete.has(currentStatus)) {
+    return []; // money via payment marks, not workflow
+  }
+  return [{ status: 'AWAITING_CUSTOMER_RESPONSE', label: 'Proofing', action: 'Start proofing' }];
 }
 
 export default WorkflowStatusBadge;

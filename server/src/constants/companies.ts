@@ -40,11 +40,17 @@ export const VENDOR_CODES = {
 } as const;
 
 /**
- * Check if a vendor is Bradford partner
- * Centralizes the scattered `vendorCode === 'BRADFORD' || name.includes('bradford')` checks
+ * Check if a vendor is Bradford partner.
+ * Canonical vendor id matches Company id: COMPANY_IDS.BRADFORD ('bradford').
+ * Also accepts legacy name/code matches.
  */
-export function isBradfordVendor(vendor: { vendorCode?: string | null; name?: string | null }): boolean {
+export function isBradfordVendor(vendor: {
+  id?: string | null;
+  vendorCode?: string | null;
+  name?: string | null;
+}): boolean {
   if (!vendor) return false;
+  if (vendor.id === COMPANY_IDS.BRADFORD || vendor.id === 'bradford-vendor') return true;
   return vendor.vendorCode === VENDOR_CODES.BRADFORD ||
          vendor.name?.toLowerCase().includes('bradford') === true;
 }
@@ -123,7 +129,7 @@ export type PaperSource = typeof PAPER_SOURCES[keyof typeof PAPER_SOURCES];
  */
 export const COMPANY_NAMES = {
   [COMPANY_IDS.IMPACT_DIRECT]: 'Impact Direct',
-  [COMPANY_IDS.BRADFORD]: 'Bradford Direct',
+  [COMPANY_IDS.BRADFORD]: 'Bradford', // same id + name as Vendor (unified)
   [COMPANY_IDS.JD_GRAPHIC]: 'JD Graphic',
 } as const;
 

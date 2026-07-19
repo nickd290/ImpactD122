@@ -23,9 +23,9 @@ async function seed() {
     },
     {
       id: 'bradford',
-      name: 'Bradford Direct',
+      name: 'Bradford',
       email: 'steve.gustafson@bgeltd.com',
-      type: 'INTERNAL',
+      type: 'PARTNER',
     },
     {
       id: 'jd-graphic',
@@ -53,6 +53,30 @@ async function seed() {
     });
     console.log(`   ✅ ${result.name} (${result.id})`);
   }
+
+  // Bradford vendor uses the SAME id as Company ('bradford') — one identity
+  console.log('\n📦 Step 1b: Seeding Bradford vendor (id=bradford, isPartner)...');
+  const bradfordVendor = await prisma.vendor.upsert({
+    where: { id: 'bradford' },
+    update: {
+      name: 'Bradford',
+      email: 'steve.gustafson@bgeltd.com',
+      isPartner: true,
+      vendorCode: 'BRADFORD',
+      isActive: true,
+      updatedAt: new Date(),
+    },
+    create: {
+      id: 'bradford',
+      name: 'Bradford',
+      email: 'steve.gustafson@bgeltd.com',
+      isPartner: true,
+      vendorCode: 'BRADFORD',
+      isActive: true,
+      updatedAt: new Date(),
+    },
+  });
+  console.log(`   ✅ Vendor ${bradfordVendor.name} (${bradfordVendor.id}) partner=${bradfordVendor.isPartner}`);
 
   // ============================================================================
   // STEP 2: Migrate jdSuppliesPaper → paperSource

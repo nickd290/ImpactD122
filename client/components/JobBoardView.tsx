@@ -31,7 +31,7 @@ interface JobBoardViewProps {
   onRefresh?: () => void;
 }
 
-// Kanban column definitions
+// Simplified floor: New → Proofing → Production → Complete
 const KANBAN_COLUMNS = [
   {
     id: 'new',
@@ -43,34 +43,25 @@ const KANBAN_COLUMNS = [
   {
     id: 'proofing',
     label: 'Proofing',
-    statuses: ['AWAITING_PROOF_FROM_VENDOR', 'PROOF_RECEIVED'],
+    statuses: [
+      'AWAITING_PROOF_FROM_VENDOR',
+      'PROOF_RECEIVED',
+      'PROOF_SENT_TO_CUSTOMER',
+      'AWAITING_CUSTOMER_RESPONSE',
+    ],
     color: 'bg-blue-50 border-blue-200',
     headerColor: 'text-blue-700',
   },
   {
-    id: 'customer-review',
-    label: 'Customer Review',
-    statuses: ['PROOF_SENT_TO_CUSTOMER', 'AWAITING_CUSTOMER_RESPONSE'],
-    color: 'bg-purple-50 border-purple-200',
-    headerColor: 'text-purple-700',
-  },
-  {
-    id: 'approved',
-    label: 'Approved',
-    statuses: ['APPROVED_PENDING_VENDOR'],
-    color: 'bg-emerald-50 border-emerald-200',
-    headerColor: 'text-emerald-700',
-  },
-  {
     id: 'production',
-    label: 'In Production',
-    statuses: ['IN_PRODUCTION'],
+    label: 'Production',
+    statuses: ['APPROVED_PENDING_VENDOR', 'IN_PRODUCTION'],
     color: 'bg-amber-50 border-amber-200',
     headerColor: 'text-amber-700',
   },
   {
-    id: 'done',
-    label: 'Done',
+    id: 'complete',
+    label: 'Complete',
     statuses: ['COMPLETED', 'INVOICED', 'PAID'],
     color: 'bg-green-50 border-green-200',
     headerColor: 'text-green-700',
@@ -81,20 +72,34 @@ function getEffectiveStatus(job: Job): string {
   return job.workflowStatusOverride || job.workflowStatus || 'NEW_JOB';
 }
 
-// Stage progression order
+// Simple advance: New → Proofing → Production → Complete
 const STAGE_ORDER = [
   'NEW_JOB',
-  'AWAITING_PROOF_FROM_VENDOR',
-  'PROOF_RECEIVED',
-  'PROOF_SENT_TO_CUSTOMER',
   'AWAITING_CUSTOMER_RESPONSE',
-  'APPROVED_PENDING_VENDOR',
   'IN_PRODUCTION',
   'COMPLETED',
 ];
 
 function getNextStatus(current: string): string | null {
-  const idx = STAGE_ORDER.indexOf(current);
+  // Map any raw status into simple column then advance
+  let simple = current;
+  if (
+    [
+      'AWAITING_PROOF_FROM_VENDOR',
+      'PROOF_RECEIVED',
+      'PROOF_SENT_TO_CUSTOMER',
+      'AWAITING_CUSTOMER_RESPONSE',
+    ].includes(current)
+  ) {
+    simple = 'AWAITING_CUSTOMER_RESPONSE';
+  } else if (['APPROVED_PENDING_VENDOR', 'IN_PRODUCTION'].includes(current)) {
+    simple = 'IN_PRODUCTION';
+  } else if (['COMPLETED', 'INVOICED', 'PAID'].includes(current)) {
+    simple = 'COMPLETED';
+  } else if (current === 'NEW_JOB') {
+    simple = 'NEW_JOB';
+  }
+  const idx = STAGE_ORDER.indexOf(simple);
   return idx >= 0 && idx < STAGE_ORDER.length - 1 ? STAGE_ORDER[idx + 1] : null;
 }
 

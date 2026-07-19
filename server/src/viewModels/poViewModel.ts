@@ -291,7 +291,7 @@ function buildOriginCompany(originCompanyId: string | null): CompanyViewModel | 
     },
     [COMPANY_IDS.BRADFORD]: {
       id: COMPANY_IDS.BRADFORD,
-      name: 'Bradford Direct',
+      name: 'Bradford',
       email: 'steve.gustafson@bgeltd.com',
     },
     [COMPANY_IDS.JD_GRAPHIC]: {

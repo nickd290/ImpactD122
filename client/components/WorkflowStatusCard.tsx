@@ -53,33 +53,19 @@ export function WorkflowStatusCard({
       {/* Top row: status label + progress dots */}
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-          Workflow Status
+          Floor stage
         </span>
         {/* Progress indicator */}
         <div className="flex items-center gap-0.5">
-          {WORKFLOW_STAGES.slice(0, 5).map((_, idx) => (
+          {WORKFLOW_STAGES.map((_, idx) => (
             <div
               key={idx}
               className={cn(
                 'w-1.5 h-1.5 rounded-full',
-                idx <= Math.min(stageIndex, 4) ? 'bg-blue-500' : 'bg-gray-300'
+                idx <= stageIndex ? 'bg-blue-500' : 'bg-gray-300'
               )}
             />
           ))}
-          {stageIndex > 4 && (
-            <>
-              <span className="text-[10px] text-gray-400 mx-0.5">...</span>
-              {WORKFLOW_STAGES.slice(-3).map((_, idx) => (
-                <div
-                  key={idx + 7}
-                  className={cn(
-                    'w-1.5 h-1.5 rounded-full',
-                    stageIndex >= WORKFLOW_STAGES.length - 3 + idx ? 'bg-blue-500' : 'bg-gray-300'
-                  )}
-                />
-              ))}
-            </>
-          )}
         </div>
       </div>
 

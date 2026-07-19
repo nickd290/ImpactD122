@@ -10,6 +10,17 @@ import { InlineEditableCell } from './InlineEditableCell';
 import { StatusDropdown } from './StatusDropdown';
 import { cn } from '../lib/utils';
 import { pdfApi, jobsApi } from '../lib/api';
+import {
+  type OpsStage,
+  getOpsStage,
+  opsStageLabel,
+  isClientPaid,
+  needsVendorPay,
+  impactProductionPayee,
+  moneyStatusLabel,
+  getMoneyStage,
+  effectiveWorkflow,
+} from '../lib/jobPipeline';
 
 interface Job {
   id: string;
@@ -45,6 +56,7 @@ interface Job {
   purchaseOrders?: any[];
   customerPaymentDate?: string;
   customerPaymentAmount?: number;
+  customerPaymentPaid?: boolean;
   bradfordPaymentDate?: string;
   bradfordPaymentPaid?: boolean;
   jdPaymentDate?: string;
@@ -52,100 +64,62 @@ interface Job {
   paperSource?: string;
 }
 
-/** Client paid Impact */
-function isClientPaid(job: Job): boolean {
-  return !!(job.customerPaymentDate || job.status === 'PAID');
-}
-
-function isBgePaid(job: Job): boolean {
-  return !!(job.bradfordPaymentDate || job.bradfordPaymentPaid);
-}
-
-function isJdPaid(job: Job): boolean {
-  return !!(job.jdPaymentDate || job.jdPaymentPaid);
-}
-
 /**
- * Who Impact pays for production (exclusive — never both):
- *  BRADFORD paper → Impact pays BGE; Bradford pays JD downstream
- *  JD / customer paper → Impact pays JD
- * If only one side is marked paid, that reveals the route.
+ * Primary filters — floor sequence + money after complete.
+ * Active = still on floor (new / proof / production).
  */
-function impactProductionPayee(job: Job): 'BGE' | 'JD' {
-  if (isJdPaid(job) && !isBgePaid(job)) return 'JD';
-  if (isBgePaid(job) && !isJdPaid(job)) return 'BGE';
-  const src = (job.paperSource || 'BRADFORD').toUpperCase();
-  if (src === 'VENDOR' || src === 'CUSTOMER') return 'JD';
-  return 'BGE';
-}
-
-/** Impact has cut its production check (BGE or JD — never need both) */
-function isImpactProductionPaid(job: Job): boolean {
-  return isBgePaid(job) || isJdPaid(job);
-}
-
-/** Client paid us, Impact still owes its one production payee */
-function needsVendorPay(job: Job): boolean {
-  if (!isClientPaid(job)) return false;
-  if (job.status === 'CANCELLED') return false;
-  return !isImpactProductionPaid(job);
-}
-
-function moneyStatus(job: Job): { label: string; className: string } {
-  if (job.status === 'CANCELLED') return { label: '—', className: 'text-zinc-400' };
-  if (!isClientPaid(job)) {
-    return { label: 'Await client', className: 'text-amber-700' };
-  }
-  if (isImpactProductionPaid(job)) {
-    return { label: 'Settled', className: 'text-emerald-700' };
-  }
-  const payee = impactProductionPayee(job);
-  return {
-    label: payee === 'BGE' ? 'Pay BGE' : 'Pay JD',
-    className: 'text-[#C0512A]',
-  };
-}
-
-const WORKFLOW_SHORT: Record<string, string> = {
-  NEW_JOB: 'New',
-  AWAITING_PROOF_FROM_VENDOR: 'Await proof',
-  PROOF_RECEIVED: 'Proof in',
-  PROOF_SENT_TO_CUSTOMER: 'Proof sent',
-  AWAITING_CUSTOMER_RESPONSE: 'Await cust',
-  APPROVED_PENDING_VENDOR: 'Approved',
-  IN_PRODUCTION: 'Production',
-  COMPLETED: 'Complete',
-  INVOICED: 'Invoiced',
-  PAID: 'Paid',
-  CANCELLED: 'Cancelled',
-};
-
-function effectiveWorkflow(job: Job): string {
-  return job.workflowStatusOverride || job.workflowStatus || 'NEW_JOB';
-}
+type BoardTab =
+  | 'active'
+  | 'new'
+  | 'proofing'
+  | 'production'
+  | 'complete'
+  | 'await_client'
+  | 'pay_vendors'
+  | 'settled'
+  | 'all';
 
 function isJobDone(job: Job): boolean {
   if (job.status === 'PAID' || job.status === 'CANCELLED') return true;
-  return ['COMPLETED', 'INVOICED', 'PAID', 'CANCELLED'].includes(effectiveWorkflow(job));
+  return getOpsStage(job) === 'complete';
 }
 
-/**
- * Board buckets (3 — keep it simple):
- *  Production → still on the floor (proof / make / ship)
- *  Invoiced  → done producing, client not paid yet
- *  Paid      → client paid (vendor pay is a filter, not a 4th tab)
- */
-type BoardTab = 'production' | 'invoiced' | 'paid' | 'all';
-
-function getBoardBucket(
+function jobMatchesTab(
   job: Job,
+  tab: BoardTab,
   optimisticallyPaidIds?: Set<string>
-): 'production' | 'invoiced' | 'paid' | 'cancelled' {
-  if (job.status === 'CANCELLED') return 'cancelled';
-  if (optimisticallyPaidIds?.has(job.id) || isClientPaid(job)) return 'paid';
-  const wf = effectiveWorkflow(job);
-  if (wf === 'COMPLETED' || wf === 'INVOICED' || wf === 'PAID') return 'invoiced';
-  return 'production';
+): boolean {
+  if (tab === 'all') return true;
+  if (job.status === 'CANCELLED' && tab !== 'all') return false;
+
+  const ops = getOpsStage(job);
+  const clientPaid = optimisticallyPaidIds?.has(job.id) || isClientPaid(job);
+  const money = clientPaid
+    ? needsVendorPay({ ...job, customerPaymentDate: job.customerPaymentDate || 'paid' })
+      ? 'pay_vendor'
+      : 'settled'
+    : getMoneyStage(job);
+
+  switch (tab) {
+    case 'active':
+      return ops === 'new' || ops === 'proofing' || ops === 'production';
+    case 'new':
+      return ops === 'new';
+    case 'proofing':
+      return ops === 'proofing';
+    case 'production':
+      return ops === 'production';
+    case 'complete':
+      return ops === 'complete';
+    case 'await_client':
+      return ops === 'complete' && !clientPaid;
+    case 'pay_vendors':
+      return needsVendorPay(job) || (clientPaid && money === 'pay_vendor');
+    case 'settled':
+      return money === 'settled' || (clientPaid && !needsVendorPay(job) && ops === 'complete');
+    default:
+      return true;
+  }
 }
 
 interface JobsViewProps {
@@ -192,8 +166,8 @@ export function JobsView({
   onCloseDrawer,
 }: JobsViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  /** Default = production board; complete → Invoiced or Paid */
-  const [activeTab, setActiveTab] = useState<BoardTab>('production');
+  /** Default = floor work (new + proof + production) */
+  const [activeTab, setActiveTab] = useState<BoardTab>('active');
   // Local open state; parent can also force open (search / action items)
   const [localOpen, setLocalOpen] = useState(false);
   useEffect(() => {
@@ -215,10 +189,8 @@ export function JobsView({
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
   const sortMenuRef = useRef<HTMLDivElement>(null);
 
-  // Quick filters
-  const [quickFilter, setQuickFilter] = useState<
-    'all' | 'overdue' | 'due-soon' | 'no-vendor' | 'pay-vendors' | 'client-unpaid'
-  >('all');
+  // Secondary: overdue / due-soon only (money is primary tabs)
+  const [quickFilter, setQuickFilter] = useState<'all' | 'overdue' | 'due-soon'>('all');
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const [collapsedCustomers, setCollapsedCustomers] = useState<Set<string>>(new Set());
@@ -257,35 +229,44 @@ export function JobsView({
   };
 
   const tabFilteredJobs = useMemo(() => {
-    if (activeTab === 'all') return localJobs;
-    return localJobs.filter(
-      (job) => getBoardBucket(job, optimisticallyPaidIds) === activeTab
-    );
+    return localJobs.filter((job) => jobMatchesTab(job, activeTab, optimisticallyPaidIds));
   }, [localJobs, activeTab, optimisticallyPaidIds]);
 
   const tabCounts = useMemo(() => {
-    let production = 0;
-    let invoiced = 0;
-    let paid = 0;
-    for (const job of localJobs) {
-      const b = getBoardBucket(job, optimisticallyPaidIds);
-      if (b === 'production') production++;
-      else if (b === 'invoiced') invoiced++;
-      else if (b === 'paid') paid++;
-    }
-    return {
-      production,
-      invoiced,
-      paid,
+    const counts: Record<BoardTab, number> = {
+      active: 0,
+      new: 0,
+      proofing: 0,
+      production: 0,
+      complete: 0,
+      await_client: 0,
+      pay_vendors: 0,
+      settled: 0,
       all: localJobs.length,
     };
+    for (const job of localJobs) {
+      (['active', 'new', 'proofing', 'production', 'complete', 'await_client', 'pay_vendors', 'settled'] as BoardTab[]).forEach(
+        (t) => {
+          if (jobMatchesTab(job, t, optimisticallyPaidIds)) counts[t]++;
+        }
+      );
+    }
+    return counts;
   }, [localJobs, optimisticallyPaidIds]);
 
-  const tabs: { id: BoardTab; label: string; count: number }[] = [
-    { id: 'production', label: 'Production', count: tabCounts.production },
-    { id: 'invoiced', label: 'Invoiced', count: tabCounts.invoiced },
-    { id: 'paid', label: 'Paid', count: tabCounts.paid },
-    { id: 'all', label: 'All', count: tabCounts.all },
+  const floorTabs: { id: BoardTab; label: string; count: number; title: string }[] = [
+    { id: 'active', label: 'Active', count: tabCounts.active, title: 'New + Proofing + Production' },
+    { id: 'new', label: 'New', count: tabCounts.new, title: 'Just entered' },
+    { id: 'proofing', label: 'Proofing', count: tabCounts.proofing, title: 'Proof cycle' },
+    { id: 'production', label: 'Production', count: tabCounts.production, title: 'Approved / on press' },
+    { id: 'complete', label: 'Complete', count: tabCounts.complete, title: 'Produced — money next' },
+  ];
+
+  const moneyTabs: { id: BoardTab; label: string; count: number; title: string }[] = [
+    { id: 'await_client', label: 'Await client', count: tabCounts.await_client, title: 'Complete, customer not paid' },
+    { id: 'pay_vendors', label: 'Pay BGE/JD', count: tabCounts.pay_vendors, title: 'Client paid — Impact pays BGE or JD' },
+    { id: 'settled', label: 'Settled', count: tabCounts.settled, title: 'Client paid + production paid' },
+    { id: 'all', label: 'All', count: tabCounts.all, title: 'Everything' },
   ];
 
   // Close dropdowns when clicking outside
@@ -331,62 +312,50 @@ export function JobsView({
     return Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
   };
 
-  // Quick filter counts
+  // Due-date filter counts (within current tab)
   const filterCounts = useMemo(() => {
     const now = new Date();
     return {
-      all: tabFilteredJobs.length,
-      overdue: tabFilteredJobs.filter(j => {
+      overdue: tabFilteredJobs.filter((j) => j.dueDate && new Date(j.dueDate) < now).length,
+      'due-soon': tabFilteredJobs.filter((j) => {
         if (!j.dueDate) return false;
-        return new Date(j.dueDate) < now;
-      }).length,
-      'due-soon': tabFilteredJobs.filter(j => {
-        if (!j.dueDate) return false;
-        const due = new Date(j.dueDate);
-        const days = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        const days = Math.ceil((new Date(j.dueDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
         return days >= 0 && days <= 7;
       }).length,
-      'no-vendor': tabFilteredJobs.filter(j => !j.vendor?.name).length,
-      // Client paid → Impact still owes BGE or JD (one payee)
-      'pay-vendors': tabFilteredJobs.filter((j) => needsVendorPay(j)).length,
-      'client-unpaid': tabFilteredJobs.filter((j) => !isClientPaid(j) && j.status !== 'CANCELLED').length,
     };
   }, [tabFilteredJobs]);
 
-  // Apply search filter on top of tab filter
-  const searchFilteredJobs = tabFilteredJobs.filter((job: Job) =>
-    job.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    job.number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    job.customerPONumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    job.partnerPONumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    job.customer?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    job.vendor?.name?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Search: when typing, always search across ALL jobs (not trapped in Active/Production)
+  const searchBaseJobs = useMemo(() => {
+    if (searchTerm.trim()) return localJobs;
+    return tabFilteredJobs;
+  }, [searchTerm, localJobs, tabFilteredJobs]);
 
-  // Apply quick filter
+  const searchFilteredJobs = searchBaseJobs.filter((job: Job) => {
+    if (!searchTerm.trim()) return true;
+    const q = searchTerm.toLowerCase();
+    return (
+      job.title?.toLowerCase().includes(q) ||
+      job.number?.toLowerCase().includes(q) ||
+      job.customerPONumber?.toLowerCase().includes(q) ||
+      job.partnerPONumber?.toLowerCase().includes(q) ||
+      job.customer?.name?.toLowerCase().includes(q) ||
+      job.vendor?.name?.toLowerCase().includes(q)
+    );
+  });
+
+  // Apply due-date quick filter
   const quickFilteredJobs = useMemo(() => {
     const now = new Date();
-    return searchFilteredJobs.filter(job => {
+    return searchFilteredJobs.filter((job) => {
       if (quickFilter === 'all') return true;
       if (quickFilter === 'overdue') {
-        if (!job.dueDate) return false;
-        return new Date(job.dueDate) < now;
+        return !!(job.dueDate && new Date(job.dueDate) < now);
       }
       if (quickFilter === 'due-soon') {
         if (!job.dueDate) return false;
-        const due = new Date(job.dueDate);
-        const days = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        const days = Math.ceil((new Date(job.dueDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
         return days >= 0 && days <= 7;
-      }
-      if (quickFilter === 'no-vendor') {
-        return !job.vendor?.name;
-      }
-      if (quickFilter === 'pay-vendors') {
-        // Client paid → Impact still owes production payee (BGE or JD)
-        return needsVendorPay(job);
-      }
-      if (quickFilter === 'client-unpaid') {
-        return !isClientPaid(job) && job.status !== 'CANCELLED';
       }
       return true;
     });
@@ -661,7 +630,7 @@ export function JobsView({
             : j
         )
       );
-      toast.success('Complete — moved to Invoiced');
+      toast.success('Complete — next: invoice / collect / pay BGE or JD');
       onRefresh();
     } catch (error) {
       console.error('Failed to mark complete:', error);
@@ -777,9 +746,9 @@ export function JobsView({
           <p className="text-[10px] uppercase tracking-[0.14em] text-[#C0512A] font-semibold mb-1">Jobs board</p>
           <h1 className="text-2xl font-semibold text-[#2B3A4A] tracking-tight">Jobs</h1>
           <p className="text-sm text-zinc-500 mt-1">
-            <span className="font-mono tabular-nums text-[#2B3A4A]">{tabCounts.production}</span> in production
+            New → Proof → Production → Complete
             <span className="mx-1.5 text-zinc-300">·</span>
-            complete → Invoiced · client pays → Paid
+            then client pays → pay BGE or JD
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -912,70 +881,91 @@ export function JobsView({
           </div>
         </div>
 
-        {/* Tabs + one filter control — keep it quiet */}
-        <div className="px-4 py-2.5 border-b border-zinc-100 flex items-center gap-3">
-          <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-zinc-100/80">
-            {tabs.map((t) => (
+        {/* Floor sequence + money filters */}
+        <div className="px-4 py-2.5 border-b border-zinc-100 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-400 font-semibold w-10 shrink-0">
+              Floor
+            </span>
+            <div className="flex flex-wrap items-center gap-0.5 p-0.5 rounded-lg bg-zinc-100/80">
+              {floorTabs.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => {
+                    setActiveTab(t.id);
+                    setSelectedJobIds(new Set());
+                  }}
+                  className={cn(
+                    'px-2.5 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors',
+                    activeTab === t.id
+                      ? 'bg-white text-[#2B3A4A] shadow-sm'
+                      : 'text-zinc-500 hover:text-zinc-800'
+                  )}
+                  title={t.title}
+                >
+                  {t.label}
+                  <span className="ml-1 tabular-nums text-xs text-zinc-400">{t.count}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-400 font-semibold w-10 shrink-0">
+              Money
+            </span>
+            <div className="flex flex-wrap items-center gap-0.5 p-0.5 rounded-lg bg-[#C0512A]/5 border border-[#C0512A]/10">
+              {moneyTabs.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => {
+                    setActiveTab(t.id);
+                    setSelectedJobIds(new Set());
+                  }}
+                  className={cn(
+                    'px-2.5 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors',
+                    activeTab === t.id
+                      ? 'bg-white text-[#2B3A4A] shadow-sm'
+                      : 'text-zinc-500 hover:text-zinc-800'
+                  )}
+                  title={t.title}
+                >
+                  {t.label}
+                  <span className="ml-1 tabular-nums text-xs text-zinc-400">{t.count}</span>
+                </button>
+              ))}
+            </div>
+            <select
+              value={quickFilter}
+              onChange={(e) => setQuickFilter(e.target.value as typeof quickFilter)}
+              className="text-sm border border-zinc-200 rounded-lg px-2.5 py-1.5 bg-white text-zinc-700 focus:ring-1 focus:ring-[#2B3A4A]/20 ml-auto"
+            >
+              <option value="all">Due date…</option>
+              {filterCounts.overdue > 0 && (
+                <option value="overdue">Overdue ({filterCounts.overdue})</option>
+              )}
+              {filterCounts['due-soon'] > 0 && (
+                <option value="due-soon">Due this week ({filterCounts['due-soon']})</option>
+              )}
+            </select>
+            {(quickFilter !== 'all' || searchTerm.trim()) && (
               <button
-                key={t.id}
                 type="button"
                 onClick={() => {
-                  setActiveTab(t.id);
-                  setSelectedJobIds(new Set());
+                  setQuickFilter('all');
+                  setSearchTerm('');
                 }}
-                className={cn(
-                  'px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors',
-                  activeTab === t.id
-                    ? 'bg-white text-[#2B3A4A] shadow-sm'
-                    : 'text-zinc-500 hover:text-zinc-800'
-                )}
-                title={
-                  t.id === 'production'
-                    ? 'On the floor — not complete yet'
-                    : t.id === 'invoiced'
-                      ? 'Complete / invoiced — waiting on client pay'
-                      : t.id === 'paid'
-                        ? 'Client paid (use filter for Pay BGE/JD)'
-                        : 'Everything'
-                }
+                className="text-xs text-zinc-500 hover:text-[#2B3A4A] hover:underline"
               >
-                {t.label}
-                <span className={cn('ml-1.5 tabular-nums text-xs', activeTab === t.id ? 'text-zinc-400' : 'text-zinc-400')}>
-                  {t.count}
-                </span>
+                Clear
               </button>
-            ))}
+            )}
           </div>
-          <select
-            value={quickFilter}
-            onChange={(e) => setQuickFilter(e.target.value as typeof quickFilter)}
-            className="text-sm border border-zinc-200 rounded-lg px-2.5 py-1.5 bg-white text-zinc-700 focus:ring-1 focus:ring-[#2B3A4A]/20 focus:border-zinc-300"
-          >
-            <option value="all">All filters</option>
-            {filterCounts.overdue > 0 && (
-              <option value="overdue">Overdue ({filterCounts.overdue})</option>
-            )}
-            {filterCounts['due-soon'] > 0 && (
-              <option value="due-soon">Due this week ({filterCounts['due-soon']})</option>
-            )}
-            {filterCounts['pay-vendors'] > 0 && (
-              <option value="pay-vendors">Pay BGE or JD ({filterCounts['pay-vendors']})</option>
-            )}
-            {filterCounts['client-unpaid'] > 0 && (
-              <option value="client-unpaid">Client unpaid ({filterCounts['client-unpaid']})</option>
-            )}
-            {filterCounts['no-vendor'] > 0 && (
-              <option value="no-vendor">No vendor ({filterCounts['no-vendor']})</option>
-            )}
-          </select>
-          {quickFilter !== 'all' && (
-            <button
-              type="button"
-              onClick={() => setQuickFilter('all')}
-              className="text-xs text-zinc-500 hover:text-[#2B3A4A] hover:underline"
-            >
-              Clear filter
-            </button>
+          {searchTerm.trim() && activeTab !== 'all' && (
+            <p className="text-[11px] text-zinc-500">
+              Searching all jobs (not just {activeTab})
+            </p>
           )}
         </div>
 
@@ -1060,7 +1050,8 @@ export function JobsView({
                 const isOverdue = daysUntil !== null && daysUntil < 0;
                 const isDueSoon = daysUntil !== null && daysUntil >= 0 && daysUntil <= 3;
                 const done = isJobDone(job);
-                const { label: moneyLabel, className: moneyClass } = moneyStatus(job);
+                const { label: moneyLabel, className: moneyClass } = moneyStatusLabel(job);
+                const stageLabel = opsStageLabel(job);
                 return (
                   <tr
                     key={job.id}
@@ -1114,7 +1105,18 @@ export function JobsView({
                     </td>
                     <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex flex-col gap-0.5 items-start">
-                        <StatusDropdown status={job.status} onStatusChange={(s) => handleStatusChange(job.id, s)} />
+                        <span
+                          className={cn(
+                            'inline-flex px-2 py-0.5 rounded-md text-[11px] font-semibold',
+                            stageLabel === 'New' && 'bg-slate-100 text-slate-700',
+                            stageLabel === 'Proofing' && 'bg-blue-100 text-blue-800',
+                            stageLabel === 'Production' && 'bg-amber-100 text-amber-800',
+                            stageLabel === 'Complete' && 'bg-emerald-100 text-emerald-800'
+                          )}
+                          title={`Floor: ${stageLabel}`}
+                        >
+                          {stageLabel}
+                        </span>
                         <span
                           className={cn('text-[11px] font-medium', moneyClass)}
                           title={

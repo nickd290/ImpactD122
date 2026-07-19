@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { prisma } from '../utils/prisma';
+import { isBradfordVendor } from '../constants/companies';
 
 // Get all entities (companies for customers, vendors for vendors)
 export const getAllEntities = async (req: Request, res: Response) => {
@@ -23,7 +24,7 @@ export const getAllEntities = async (req: Request, res: Response) => {
         phone: v.phone || '',
         address: `${v.streetAddress || ''}, ${v.city || ''}, ${v.state || ''} ${v.zip || ''}`.trim(),
         contactPerson: v.VendorContact.find(c => c.isPrimary)?.name || v.VendorContact[0]?.name || '',
-        isPartner: v.vendorCode === 'BRADFORD' || v.name?.toLowerCase().includes('bradford'),
+        isPartner: v.isPartner || isBradfordVendor(v),
         notes: '',
         contacts: v.VendorContact.map(c => ({
           id: c.id,
@@ -117,7 +118,7 @@ export const getAllEntities = async (req: Request, res: Response) => {
         phone: v.phone || '',
         address: `${v.streetAddress || ''}, ${v.city || ''}, ${v.state || ''} ${v.zip || ''}`.trim(),
         contactPerson: v.VendorContact?.find(c => c.isPrimary)?.name || v.VendorContact?.[0]?.name || '',
-        isPartner: v.vendorCode === 'BRADFORD' || v.name?.toLowerCase().includes('bradford'),
+        isPartner: v.isPartner || isBradfordVendor(v),
         notes: '',
         contacts: v.VendorContact?.map(c => ({
           id: c.id,

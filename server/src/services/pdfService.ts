@@ -2380,7 +2380,7 @@ export const generateJDToBradfordInvoicePDF = (jobData: any): Buffer => {
   doc.text('BILL TO:', 120, bradfordY);
   doc.setTextColor(0, 0, 0);
   doc.setFont('helvetica', 'normal');
-  doc.text('Bradford Direct', 120, bradfordY + 6);
+  doc.text('Bradford', 120, bradfordY + 6);
   doc.text('Steve Gustafson', 120, bradfordY + 12);
   doc.text('steve.gustafson@bgeltd.com', 120, bradfordY + 18);
 
