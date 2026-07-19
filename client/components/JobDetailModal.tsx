@@ -1126,22 +1126,30 @@ export function JobDetailModal({
   const handleInlineSave = async (field: string, value: any) => {
     if (!job?.id) return;
     try {
+      // jobNo is the DB field; `number` is the frontend alias — send jobNo for renumbers
+      const payloadField = field === 'number' ? 'jobNo' : field;
       const response = await fetch(`/api/jobs/${job.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [field]: value }),
+        body: JSON.stringify({ [payloadField]: value }),
       });
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
         throw new Error(error.message || error.error || 'Failed to save');
       }
       // Optimistic local hydrate so popup updates without full remount
-      setFullJob((prev: any) => (prev ? { ...prev, [field]: value } : prev));
+      setFullJob((prev: any) => {
+        if (!prev) return prev;
+        if (payloadField === 'jobNo') {
+          return { ...prev, jobNo: value, number: value };
+        }
+        return { ...prev, [field]: value };
+      });
       if (onRefresh) onRefresh();
-      toast.success('Saved');
+      toast.success(payloadField === 'jobNo' ? `Job # → ${value}` : 'Saved');
     } catch (error) {
       console.error(`Failed to save ${field}:`, error);
-      toast.error(`Failed to save ${field}`);
+      toast.error(error instanceof Error ? error.message : `Failed to save ${field}`);
       throw error;
     }
   };
@@ -3269,9 +3277,38 @@ export function JobDetailModal({
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                  <h2 className="font-mono text-[1.65rem] font-semibold tracking-tight text-[#2B3A4A] leading-none">
-                    {jobNumber}
-                  </h2>
+                  <input
+                    type="text"
+                    defaultValue={jobNumber === 'Unknown' ? '' : jobNumber}
+                    key={`jobNo-${job.id}-${jobNumber}`}
+                    title="Click to edit job number"
+                    onBlur={async (e) => {
+                      const v = e.target.value.trim();
+                      const current = job.number || job.jobNo || '';
+                      if (!v) {
+                        e.target.value = current;
+                        toast.error('Job number cannot be empty');
+                        return;
+                      }
+                      if (v !== current) {
+                        try {
+                          await handleInlineSave('jobNo', v);
+                        } catch {
+                          e.target.value = current;
+                        }
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                      if (e.key === 'Escape') {
+                        (e.target as HTMLInputElement).value = job.number || job.jobNo || '';
+                        (e.target as HTMLInputElement).blur();
+                      }
+                    }}
+                    className="font-mono text-[1.65rem] font-semibold tracking-tight text-[#2B3A4A] leading-none w-[min(100%,14rem)] px-1.5 py-0.5 -ml-1.5 border border-transparent hover:border-border focus:border-[#C0512A]/40 rounded-md focus:ring-2 focus:ring-[#C0512A]/15 bg-transparent"
+                    placeholder="Job #"
+                    aria-label="Job number"
+                  />
                   {job.baseJobId && (
                     <span className="text-[11px] font-mono text-muted-foreground tracking-wider" title="Canonical Job ID">
                       {job.baseJobId}

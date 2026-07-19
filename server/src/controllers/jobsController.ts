@@ -973,6 +973,8 @@ export const updateJob = async (req: Request, res: Response) => {
       paperSource: inputPaperSource,
       bradfordRefNumber,  // Bradford reference number (for all jobs)
       bradfordPaperLbs: inputBradfordPaperLbs,  // Bradford paper weight in lbs
+      jobNo: inputJobNo,
+      number: inputNumber, // frontend alias for jobNo
       ...rest
     } = req.body;
 
@@ -1034,6 +1036,28 @@ export const updateJob = async (req: Request, res: Response) => {
     const updateData: any = {
       updatedAt: new Date(),
     };
+
+    // Internal renumber: accept jobNo or frontend alias `number`
+    const rawJobNo = inputJobNo !== undefined ? inputJobNo : inputNumber;
+    if (rawJobNo !== undefined) {
+      const nextJobNo = String(rawJobNo).trim();
+      if (!nextJobNo) {
+        return res.status(400).json({ error: 'Job number cannot be empty' });
+      }
+      if (nextJobNo !== existingJob.jobNo) {
+        const clash = await prisma.job.findUnique({
+          where: { jobNo: nextJobNo },
+          select: { id: true },
+        });
+        if (clash && clash.id !== id) {
+          return res.status(409).json({
+            error: `Job number "${nextJobNo}" already exists`,
+            conflictJobId: clash.id,
+          });
+        }
+        updateData.jobNo = nextJobNo;
+      }
+    }
 
     if (title !== undefined) updateData.title = title;
     if (status !== undefined) updateData.status = status;
@@ -1124,6 +1148,11 @@ export const updateJob = async (req: Request, res: Response) => {
     // Log all changes to JobActivity
     const activityPromises: Promise<void>[] = [];
 
+    if (updateData.jobNo !== undefined && updateData.jobNo !== existingJob.jobNo) {
+      activityPromises.push(
+        logJobChange(id, 'JOB_UPDATED', 'jobNo', existingJob.jobNo, updateData.jobNo)
+      );
+    }
     if (title !== undefined && title !== existingJob.title) {
       activityPromises.push(logJobChange(id, 'JOB_UPDATED', 'title', existingJob.title, title));
     }
@@ -1415,8 +1444,12 @@ export const updateJob = async (req: Request, res: Response) => {
     }
 
     res.json(transformJob(job));
-  } catch (error) {
+  } catch (error: any) {
     console.error('Update job error:', error);
+    // Race on unique jobNo
+    if (error?.code === 'P2002' && error?.meta?.target?.includes?.('jobNo')) {
+      return res.status(409).json({ error: 'Job number already exists' });
+    }
     res.status(500).json({ error: 'Failed to update job' });
   }
 };
