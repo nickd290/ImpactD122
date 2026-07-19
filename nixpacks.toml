@@ -5,7 +5,9 @@
 nixPkgs = ["nodejs_20"]
 
 [phases.install]
-cmds = ["npm install"]
+# Vite + TS live in client/server devDependencies — production-omit installs drop them
+# and break `vite build` (sh: vite: not found). Force full install for build tools.
+cmds = ["NPM_CONFIG_PRODUCTION=false npm install --include=dev"]
 
 [phases.build]
 cmds = [
