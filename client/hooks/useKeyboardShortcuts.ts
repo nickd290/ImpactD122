@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-type View = 'DASHBOARD' | 'JOBS' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
+type View = 'DASHBOARD' | 'JOBS' | 'INVOICES' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
 
 interface KeyboardShortcutsConfig {
   onShowSearch: () => void;
@@ -53,6 +53,10 @@ export function useKeyboardShortcuts({
         case 'j':
           e.preventDefault();
           onViewChange('JOBS');
+          break;
+        case 'i':
+          e.preventDefault();
+          onViewChange('INVOICES');
           break;
         case 'c':
           e.preventDefault();

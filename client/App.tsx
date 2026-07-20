@@ -19,6 +19,7 @@ import { VendorRFQView } from './components/VendorRFQView';
 import { JobBoardView } from './components/JobBoardView';
 import { ProductionBoard } from './components/production';
 import { ActionItemsView } from './components/ActionItemsView';
+import { InvoicesView } from './components/InvoicesView';
 import { JobFormModal } from './components/JobFormModal';
 import { JobExcelImporter } from './components/JobExcelImporter';
 import { JobImportPreviewModal } from './components/JobImportPreviewModal';
@@ -26,7 +27,7 @@ import { NewJobChoiceModal } from './components/NewJobChoiceModal';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { AppLoadingSkeleton } from './components/LoadingSkeleton';
 
-type View = 'DASHBOARD' | 'ACTION_ITEMS' | 'JOBS' | 'JOB_BOARD' | 'PRODUCTION_BOARD' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
+type View = 'DASHBOARD' | 'ACTION_ITEMS' | 'JOBS' | 'INVOICES' | 'JOB_BOARD' | 'PRODUCTION_BOARD' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
 
 // Impact Direct entity for PDF generation
 const IMPACT_DIRECT_ENTITY = {
@@ -108,6 +109,15 @@ function App() {
 
     return overdueCount + missingArtworkCount + missingDataCount + readyToBillCount + pendingCommunicationsCount;
   }, [jobs, pendingCommunicationsCount]);
+
+  // Unpaid customer invoices (badge on Invoices nav)
+  const unpaidInvoicesCount = useMemo(() => {
+    return jobs.filter((j) => {
+      if (!j.invoiceGeneratedAt) return false;
+      if (j.status === 'PAID' || j.customerPaymentDate || j.customerPaymentPaid) return false;
+      return true;
+    }).length;
+  }, [jobs]);
 
   // Load data
   useEffect(() => {
@@ -680,6 +690,7 @@ function App() {
         partnerJobsCount={jobs.filter(j => j.vendor?.isPartner).length}
         pendingCommunicationsCount={pendingCommunicationsCount}
         actionItemsCount={actionItemsCount}
+        invoicesCount={unpaidInvoicesCount}
         onShowSpecParser={() => setShowSpecParser(true)}
         onCreateJob={handleCreateJob}
         onShowSearch={() => setShowSearchModal(true)}
@@ -737,6 +748,10 @@ function App() {
               onOpenDrawer={() => setIsDrawerOpen(true)}
               onCloseDrawer={() => setIsDrawerOpen(false)}
             />
+          )}
+
+          {currentView === 'INVOICES' && (
+            <InvoicesView onRefresh={loadData} />
           )}
 
           {currentView === 'JOB_BOARD' && (

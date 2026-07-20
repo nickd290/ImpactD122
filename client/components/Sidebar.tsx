@@ -1,8 +1,8 @@
 import React from 'react';
-import { BarChart3, Briefcase, Users, DollarSign, Search, LayoutGrid } from 'lucide-react';
+import { BarChart3, Briefcase, Users, DollarSign, Search, LayoutGrid, Receipt } from 'lucide-react';
 import { cn } from '../lib/utils';
 
-type View = 'DASHBOARD' | 'ACTION_ITEMS' | 'JOBS' | 'JOB_BOARD' | 'PRODUCTION_BOARD' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS' | 'ENTITIES';
+type View = 'DASHBOARD' | 'ACTION_ITEMS' | 'JOBS' | 'JOB_BOARD' | 'PRODUCTION_BOARD' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS' | 'ENTITIES' | 'INVOICES';
 
 interface SidebarProps {
   currentView: View;
@@ -13,6 +13,7 @@ interface SidebarProps {
   partnerJobsCount: number;
   pendingCommunicationsCount: number;
   actionItemsCount: number;
+  invoicesCount?: number;
   onShowSpecParser: () => void;
   onCreateJob: () => void;
   onShowSearch: () => void;
@@ -76,6 +77,7 @@ export function Sidebar({
   partnerJobsCount,
   pendingCommunicationsCount,
   actionItemsCount,
+  invoicesCount = 0,
   onShowSpecParser,
   onCreateJob,
   onShowSearch,
@@ -125,6 +127,14 @@ export function Sidebar({
             onClick={() => onViewChange('JOBS')}
             badge={jobsCount}
             shortcut="J"
+          />
+          <NavItem
+            icon={<Receipt />}
+            label="Invoices"
+            active={currentView === 'INVOICES'}
+            onClick={() => onViewChange('INVOICES')}
+            badge={invoicesCount > 0 ? invoicesCount : undefined}
+            shortcut="I"
           />
           <NavItem
             icon={<LayoutGrid />}

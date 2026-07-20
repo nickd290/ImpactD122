@@ -7,6 +7,7 @@ import { FinancialsView } from '../FinancialsView';
 import { PaperInventoryView } from '../PaperInventoryView';
 import { AccountingDashboardView } from '../AccountingDashboardView';
 import { JDView } from '../JDView';
+import { InvoicesView } from '../InvoicesView';
 
 interface UnifiedFinancialsViewProps {
   jobs: any[];
@@ -18,9 +19,10 @@ interface UnifiedFinancialsViewProps {
   onShowEmailDraft: (job: any) => void;
 }
 
-type FinancialsTab = 'partner' | 'cashflow' | 'inventory' | 'analysis' | 'jd';
+type FinancialsTab = 'invoices' | 'partner' | 'cashflow' | 'inventory' | 'analysis' | 'jd';
 
 const tabs: { id: FinancialsTab; label: string; icon: React.ReactNode }[] = [
+  { id: 'invoices', label: 'Customer Invoices', icon: <FileText className="w-4 h-4" /> },
   { id: 'partner', label: 'Partner', icon: <Users className="w-4 h-4" /> },
   { id: 'cashflow', label: 'Cash Flow', icon: <DollarSign className="w-4 h-4" /> },
   { id: 'inventory', label: 'Inventory', icon: <Package className="w-4 h-4" /> },
@@ -37,7 +39,7 @@ export function UnifiedFinancialsView({
   onRefresh,
   onShowEmailDraft,
 }: UnifiedFinancialsViewProps) {
-  const [activeTab, setActiveTab] = useState<FinancialsTab>('partner');
+  const [activeTab, setActiveTab] = useState<FinancialsTab>('invoices');
 
   // Filter partner jobs for BradfordStatsView
   const partnerJobs = jobs.filter(j => j.vendor?.isPartner);
@@ -69,6 +71,12 @@ export function UnifiedFinancialsView({
 
       {/* Tab Content */}
       <div className="flex-1 overflow-auto">
+        {activeTab === 'invoices' && (
+          <div className="p-6">
+            <InvoicesView onRefresh={onRefresh} />
+          </div>
+        )}
+
         {activeTab === 'partner' && (
           <BradfordStatsView
             jobs={partnerJobs}
