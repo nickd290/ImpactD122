@@ -1341,6 +1341,7 @@ export function JobDetailModal({
         bradfordPaidDate={job.bradfordPaymentDate}
         jdPaid={!!(job.jdPaymentPaid || job.jdPaymentDate)}
         jdPaidDate={job.jdPaymentDate}
+        invoiceGeneratedAt={job.invoiceGeneratedAt}
         onSaved={handlePanelSaved}
       />
 
@@ -2040,11 +2041,11 @@ export function JobDetailModal({
         </div>
       </div>
 
-      {/* Line Items - Editable CRUD */}
+      {/* Line Items - Editable CRUD (allowed after invoice; re-download PDF) */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Line Items</h3>
-          {!job.invoiceGeneratedAt && !isAddingLineItem && (
+          {!isAddingLineItem && (
             <div className="relative">
               <button
                 onClick={() => setShowLineItemPresets(!showLineItemPresets)}
@@ -2086,9 +2087,7 @@ export function JobDetailModal({
               <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs uppercase w-24">Unit Cost</th>
               <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs uppercase w-24">Unit Price</th>
               <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs uppercase w-24">Total</th>
-              {!job.invoiceGeneratedAt && (
-                <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs uppercase w-20">Actions</th>
-              )}
+              <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs uppercase w-20">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -2101,7 +2100,6 @@ export function JobDetailModal({
                 onEdit={() => setEditingLineItemIndex(editingLineItemIndex === index ? null : index)}
                 onSave={async (updated) => await handleLineItemSave(index, updated)}
                 onDelete={() => handleLineItemDelete(index)}
-                disabled={!!job.invoiceGeneratedAt}
               />
             ))}
             {isAddingLineItem && (
@@ -2115,8 +2113,8 @@ export function JobDetailModal({
             )}
             {(!job.lineItems || job.lineItems.length === 0) && !isAddingLineItem && (
               <tr>
-                <td colSpan={job.invoiceGeneratedAt ? 5 : 6} className="px-4 py-8 text-center text-gray-400 text-sm">
-                  No line items yet. {!job.invoiceGeneratedAt && 'Click "Add Line Item" to add one.'}
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-400 text-sm">
+                  No line items yet. Click &quot;Add Line Item&quot; to add one.
                 </td>
               </tr>
             )}
@@ -2124,7 +2122,7 @@ export function JobDetailModal({
           {(job.lineItems && job.lineItems.length > 0) && (
             <tfoot>
               <tr className="bg-gray-50 border-t-2 border-gray-200">
-                <td colSpan={job.invoiceGeneratedAt ? 4 : 5} className="px-4 py-3 text-right font-semibold text-gray-700 uppercase text-xs">Total</td>
+                <td colSpan={5} className="px-4 py-3 text-right font-semibold text-gray-700 uppercase text-xs">Total</td>
                 <td className="px-4 py-3 text-right font-bold text-gray-900">{formatCurrency(lineItemsTotal)}</td>
               </tr>
             </tfoot>

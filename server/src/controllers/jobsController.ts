@@ -992,34 +992,15 @@ export const updateJob = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Job not found' });
     }
 
-    // Guard: Field locking after invoice generated
-    const LOCKED_AFTER_INVOICE = ['sellPrice', 'quantity', 'specs'];
-    if (existingJob.invoiceGeneratedAt) {
-      const attemptedLockedFields = LOCKED_AFTER_INVOICE.filter(field => {
-        const reqValue = req.body[field] ?? req.body.inputSellPrice ?? req.body.inputQuantity;
-        if (field === 'sellPrice' && req.body.sellPrice !== undefined) {
-          return Number(req.body.sellPrice) !== Number(existingJob.sellPrice);
-        }
-        if (field === 'quantity' && req.body.quantity !== undefined) {
-          return Number(req.body.quantity) !== Number(existingJob.quantity);
-        }
-        if (field === 'specs' && req.body.specs !== undefined) {
-          return true; // Specs changes after invoice are blocked
-        }
-        if (field === 'specs' && req.body.lineItems !== undefined) {
-          return true; // LineItems changes after invoice are blocked
-        }
-        return false;
+    // After invoice: still allow customer pricing edits (sellPrice, quantity, lineItems)
+    // so ops can fix CPM/price/qty and re-download the PDF. Specs JSON stays locked.
+    if (existingJob.invoiceGeneratedAt && req.body.specs !== undefined) {
+      return res.status(403).json({
+        error: 'Job specs are locked after invoice generation',
+        lockedFields: ['specs'],
+        invoiceGeneratedAt: existingJob.invoiceGeneratedAt,
+        hint: 'Edit sell price, quantity, or line items instead — then re-generate the invoice PDF',
       });
-
-      if (attemptedLockedFields.length > 0) {
-        return res.status(403).json({
-          error: 'Job is locked after invoice generation',
-          lockedFields: attemptedLockedFields,
-          invoiceGeneratedAt: existingJob.invoiceGeneratedAt,
-          hint: 'Create a credit memo or new job for changes'
-        });
-      }
     }
 
     // Calculate quantity and totals from line items if provided

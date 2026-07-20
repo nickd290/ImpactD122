@@ -44,6 +44,8 @@ interface JobMoneyBoardProps {
   bradfordPaidDate?: string | null;
   jdPaid?: boolean;
   jdPaidDate?: string | null;
+  /** When set, show note that PDF must be re-downloaded after price edits */
+  invoiceGeneratedAt?: string | null;
   onSaved?: () => void;
 }
 
@@ -87,10 +89,16 @@ export function JobMoneyBoard({
   bradfordPaidDate,
   jdPaid = false,
   jdPaidDate,
+  invoiceGeneratedAt = null,
   onSaved,
 }: JobMoneyBoardProps) {
   const [sell, setSell] = useState(String(sellProp || ''));
   const [qty, setQty] = useState(String(qtyProp || ''));
+  const [cpm, setCpm] = useState(() => {
+    const s = Number(sellProp) || 0;
+    const q = Number(qtyProp) || 0;
+    return q > 0 ? String(round2((s / q) * 1000)) : '';
+  });
   const [size, setSize] = useState(sizeProp || '');
   const [paper, setPaper] = useState<PaperSourceKey>((paperProp as PaperSourceKey) || 'BRADFORD');
   const [dirtyHeader, setDirtyHeader] = useState(false);
@@ -122,6 +130,9 @@ export function JobMoneyBoard({
     if (!dirtyHeader) {
       setSell(String(sellProp || ''));
       setQty(String(qtyProp || ''));
+      const s = Number(sellProp) || 0;
+      const q = Number(qtyProp) || 0;
+      setCpm(q > 0 ? String(round2((s / q) * 1000)) : '');
       setSize(sizeProp || '');
       setPaper((paperProp as PaperSourceKey) || 'BRADFORD');
     }
@@ -374,7 +385,12 @@ export function JobMoneyBoard({
         </a>
       </div>
 
-      {/* 1. Sell / qty / size */}
+      {/* 1. Sell / CPM / qty / size — editable even after invoice (re-download PDF) */}
+      {invoiceGeneratedAt && (
+        <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 text-[11px] text-amber-800">
+          Invoice already generated — edit sell / CPM / qty below, then re-download Invoice PDF.
+        </div>
+      )}
       <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3 border-b border-zinc-100">
         <label className="block">
           <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Sell $</span>
@@ -383,11 +399,36 @@ export function JobMoneyBoard({
             step="0.01"
             value={sell}
             onChange={(e) => {
-              setSell(e.target.value);
+              const next = e.target.value;
+              setSell(next);
+              const sn = parseFloat(next) || 0;
+              if (qtyN > 0) setCpm(String(round2((sn / qtyN) * 1000)));
               setDirtyHeader(true);
             }}
             onBlur={() => dirtyHeader && saveHeader()}
             className="mt-1 w-full px-2.5 py-1.5 text-sm font-mono font-semibold border border-zinc-200 rounded-lg focus:ring-2 focus:ring-[#C0512A]/20 focus:border-[#C0512A]/40"
+          />
+        </label>
+        <label className="block">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+            Sell CPM ($/M)
+          </span>
+          <input
+            type="number"
+            step="0.01"
+            value={cpm}
+            onChange={(e) => {
+              const next = e.target.value;
+              setCpm(next);
+              const cpmN = parseFloat(next) || 0;
+              if (qtyN > 0) {
+                setSell(String(round2((cpmN * qtyN) / 1000)));
+              }
+              setDirtyHeader(true);
+            }}
+            onBlur={() => dirtyHeader && saveHeader()}
+            className="mt-1 w-full px-2.5 py-1.5 text-sm font-mono font-semibold border border-zinc-200 rounded-lg focus:ring-2 focus:ring-[#C0512A]/20 focus:border-[#C0512A]/40"
+            placeholder="0"
           />
         </label>
         <label className="block">
@@ -396,14 +437,23 @@ export function JobMoneyBoard({
             type="number"
             value={qty}
             onChange={(e) => {
-              setQty(e.target.value);
+              const next = e.target.value;
+              setQty(next);
+              const qn = parseInt(next, 10) || 0;
+              const cpmN = parseFloat(cpm) || 0;
+              // Keep CPM fixed when qty changes → recompute sell total
+              if (qn > 0 && cpmN > 0) {
+                setSell(String(round2((cpmN * qn) / 1000)));
+              } else if (qn > 0 && sellN > 0) {
+                setCpm(String(round2((sellN / qn) * 1000)));
+              }
               setDirtyHeader(true);
             }}
             onBlur={() => dirtyHeader && saveHeader()}
             className="mt-1 w-full px-2.5 py-1.5 text-sm font-mono border border-zinc-200 rounded-lg focus:ring-2 focus:ring-[#C0512A]/20"
           />
         </label>
-        <label className="block sm:col-span-2">
+        <label className="block">
           <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Size</span>
           <select
             value={size}
