@@ -1155,9 +1155,21 @@ export function JobsView({
                   : prodLate
                     ? `${getDaysProductionLate(job)}d past delivery`
                     : 'Delivery / mail';
-                const moneyBadges = moneyStatusBadges(job);
+                const moneyBadges = (() => {
+                  try {
+                    return moneyStatusBadges(job);
+                  } catch {
+                    return [{ text: '—', tone: 'muted' as const }];
+                  }
+                })();
                 const stageLabel = opsStageLabel(job);
-                const needPay = needsVendorPay(job);
+                const needPay = (() => {
+                  try {
+                    return needsVendorPay(job);
+                  } catch {
+                    return false;
+                  }
+                })();
                 return (
                   <tr
                     key={job.id}

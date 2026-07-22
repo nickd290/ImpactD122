@@ -789,7 +789,7 @@ export function JobMoneyBoard({
         </div>
         <p className="text-[11px] text-zinc-500 mb-2">
           Invoice date + customer terms ({termsLbl}) = payment due. Not delivery date.
-          {payDue && (
+          {payDue && !Number.isNaN(payDue.getTime()) && (
             <span className={payOverdue ? ' text-red-600 font-semibold' : ' text-zinc-700'}>
               {' '}Pay due {fmtDate(payDue.toISOString())}
               {payOverdue && daysOver != null ? ` · ${daysOver}d overdue` : ''}

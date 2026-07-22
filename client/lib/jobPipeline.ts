@@ -172,16 +172,23 @@ export function getPaymentDueDate(job: {
   customer?: { paymentTermsDays?: number | null } | null;
   paymentDueDate?: string | null | Date;
 }): Date | null {
-  if (job.paymentDueDate) {
-    const d = new Date(job.paymentDueDate);
-    if (!Number.isNaN(d.getTime())) return d;
+  try {
+    if (job.paymentDueDate) {
+      const d = new Date(job.paymentDueDate);
+      if (!Number.isNaN(d.getTime())) return d;
+    }
+    const inv = getInvoiceDate(job);
+    if (!inv) return null;
+    const terms = getPaymentTermsDays(job);
+    if (!Number.isFinite(terms)) return null;
+    const due = new Date(inv);
+    due.setHours(0, 0, 0, 0);
+    due.setDate(due.getDate() + terms);
+    if (Number.isNaN(due.getTime())) return null;
+    return due;
+  } catch {
+    return null;
   }
-  const inv = getInvoiceDate(job);
-  if (!inv) return null;
-  const due = new Date(inv);
-  due.setHours(0, 0, 0, 0);
-  due.setDate(due.getDate() + getPaymentTermsDays(job));
-  return due;
 }
 
 /** AR overdue: invoiced, client not paid, past payment due (terms-based) */
@@ -421,38 +428,43 @@ export function moneyStatusBadges(job: {
   bradfordPaymentDate?: string | null;
   bradfordPaymentPaid?: boolean | null;
 }): Array<{ text: string; tone: 'muted' | 'warn' | 'good' | 'action' | 'paid' }> {
-  if (job.status === 'CANCELLED') {
-    return [{ text: 'Cancelled', tone: 'muted' }];
-  }
-  const badges: Array<{ text: string; tone: 'muted' | 'warn' | 'good' | 'action' | 'paid' }> = [];
+  try {
+    if (!job) return [{ text: '—', tone: 'muted' }];
+    if (job.status === 'CANCELLED') {
+      return [{ text: 'Cancelled', tone: 'muted' }];
+    }
+    const badges: Array<{ text: string; tone: 'muted' | 'warn' | 'good' | 'action' | 'paid' }> = [];
 
-  if (!isClientPaid(job)) {
-    badges.push({ text: 'Unpaid', tone: 'warn' });
+    if (!isClientPaid(job)) {
+      badges.push({ text: 'Unpaid', tone: 'warn' });
+      return badges;
+    }
+
+    // Client paid Impact — not the same as vendor paid
+    badges.push({ text: 'PAID (Impact)', tone: 'paid' });
+
+    if (isMoneyComplete(job)) {
+      badges.push({ text: 'COMPLETE', tone: 'good' });
+      return badges;
+    }
+
+    const payee = impactProductionPayee(job);
+    if (!isImpactProductionPaid(job)) {
+      badges.push({
+        text: payee === 'BGE' ? 'Need pay BGE' : 'Need pay JD',
+        tone: 'action',
+      });
+      return badges;
+    }
+
+    // JD paper: production paid, commission still open
+    if (needsBradfordCommission(job)) {
+      badges.push({ text: 'Need Bradford commission', tone: 'action' });
+    }
     return badges;
+  } catch {
+    return [{ text: '—', tone: 'muted' }];
   }
-
-  // Client paid Impact
-  badges.push({ text: 'PAID', tone: 'paid' });
-
-  if (isMoneyComplete(job)) {
-    badges.push({ text: 'COMPLETE', tone: 'good' });
-    return badges;
-  }
-
-  const payee = impactProductionPayee(job);
-  if (!isImpactProductionPaid(job)) {
-    badges.push({
-      text: payee === 'BGE' ? 'Need pay BGE' : 'Need pay JD',
-      tone: 'action',
-    });
-    return badges;
-  }
-
-  // JD paper: production paid, commission still open
-  if (needsBradfordCommission(job)) {
-    badges.push({ text: 'Need Bradford commission', tone: 'action' });
-  }
-  return badges;
 }
 
 /** Simple status options for dropdowns (what staff pick) */

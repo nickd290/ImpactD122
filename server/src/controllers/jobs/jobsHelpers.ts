@@ -203,6 +203,35 @@ export function calculateProfit(job: any) {
  * - Tier pricing for standard sizes
  */
 export function transformJob(job: any) {
+  try {
+    return transformJobInner(job);
+  } catch (err) {
+    console.error('transformJob failed for', job?.jobNo || job?.id, err);
+    // Minimal safe payload so one bad job never blanks the Jobs board
+    return {
+      ...job,
+      id: job?.id,
+      jobNo: job?.jobNo,
+      number: job?.jobNo,
+      sellPrice: Number(job?.sellPrice) || 0,
+      status: job?.status || 'ACTIVE',
+      workflowStatus: job?.workflowStatus || 'NEW_JOB',
+      paperSource: job?.paperSource || 'BRADFORD',
+      customer: job?.Company
+        ? { id: job.Company.id, name: job.Company.name, type: 'CUSTOMER', paymentTermsDays: 30 }
+        : { id: '', name: 'Unknown', type: 'CUSTOMER', paymentTermsDays: 30 },
+      vendor: job?.Vendor
+        ? { id: job.Vendor.id, name: job.Vendor.name, type: 'VENDOR' }
+        : null,
+      purchaseOrders: [],
+      profit: { sellPrice: 0, totalCost: 0, spread: 0 },
+      paymentTermsDays: 30,
+      paymentDueDate: null,
+    };
+  }
+}
+
+function transformJobInner(job: any) {
   // Use sellPrice as revenue
   const revenue = Number(job.sellPrice) || 0;
   const quantity = job.quantity || 0;
@@ -325,22 +354,22 @@ export function transformJob(job: any) {
     completedAt: job.completedAt || null,
 
     // AR: payment due = invoice date + customer terms (not deliveryDate)
-    paymentTermsDays:
-      job.Company?.paymentTermsDays != null
-        ? Number(job.Company.paymentTermsDays)
-        : 30,
+    paymentTermsDays: (() => {
+      const n = Number(job.Company?.paymentTermsDays);
+      return Number.isFinite(n) && n >= 0 ? n : 30;
+    })(),
     paymentDueDate: (() => {
       if (!job.invoiceGeneratedAt) return null;
       const inv = new Date(job.invoiceGeneratedAt);
       if (Number.isNaN(inv.getTime())) return null;
-      const terms =
-        job.Company?.paymentTermsDays != null
-          ? Number(job.Company.paymentTermsDays)
-          : 30;
+      const n = Number(job.Company?.paymentTermsDays);
+      const terms = Number.isFinite(n) && n >= 0 ? n : 30;
       const due = new Date(inv);
       due.setHours(0, 0, 0, 0);
-      due.setDate(due.getDate() + Math.max(0, terms));
-      return due;
+      due.setDate(due.getDate() + terms);
+      if (Number.isNaN(due.getTime())) return null;
+      // ISO string so clients never get a raw Date object
+      return due.toISOString();
     })(),
 
     // Simplified profit object (from ProfitSplit model or calculated)
@@ -370,10 +399,10 @@ export function transformJob(job: any) {
       email: job.Company.email || '',
       phone: job.Company.phone || '',
       address: job.Company.address || '',
-      paymentTermsDays:
-        job.Company.paymentTermsDays != null
-          ? Number(job.Company.paymentTermsDays)
-          : 30,
+      paymentTermsDays: (() => {
+        const n = Number(job.Company.paymentTermsDays);
+        return Number.isFinite(n) && n >= 0 ? n : 30;
+      })(),
     } : {
       id: '',
       name: 'Unknown Customer',
