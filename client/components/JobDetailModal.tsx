@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X, Calendar, User, Package, FileText, Edit2, Mail, Printer, Receipt,
   DollarSign, Plus, Trash2, Building2, Check, Save, Download, AlertTriangle, Send, ChevronDown, Link, ExternalLink, MessageSquare, Upload, Truck, Circle, CheckCircle2, Eye, Database, Image as ImageIcon
@@ -254,6 +255,8 @@ export function JobDetailModal({
   // Always hydrate full job when popup opens so list/board rows show complete detail
   const [fullJob, setFullJob] = useState<Job | null>(jobProp);
   const [isLoadingJob, setIsLoadingJob] = useState(false);
+  /** Only dismiss when pointer-down AND click both land on the dimmed shell — not after a re-render mid-click */
+  const backdropPointerDownRef = useRef(false);
 
   useEffect(() => {
     if (!isOpen || !jobProp?.id) {
@@ -549,15 +552,74 @@ export function JobDetailModal({
     onRefresh?.();
   };
 
+  // Escape closes only the top job popup (not when nested confirm/email is open)
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (showCOModal || showEmailInvoiceModal || selectedPOForEmail || showArtworkConfirmModal || showSendProofModal || docViewer) {
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [
+    isOpen,
+    onClose,
+    showCOModal,
+    showEmailInvoiceModal,
+    selectedPOForEmail,
+    showArtworkConfirmModal,
+    showSendProofModal,
+    docViewer,
+  ]);
+
+  // Lock body scroll while open so the jobs list underneath doesn't steal gestures
+  useEffect(() => {
+    if (!isOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [isOpen]);
+
   if (!isOpen || !job) return null;
 
   const jobNumber = job.number || job.jobNo || 'Unknown';
   const createdDate = job.createdAt || job.dateCreated;
 
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
+  const nestedUiOpen =
+    !!showCOModal ||
+    !!showEmailInvoiceModal ||
+    !!selectedPOForEmail ||
+    !!showArtworkConfirmModal ||
+    !!showSendProofModal ||
+    !!docViewer;
+
+  const handleOverlayPointerDown = (e: React.PointerEvent) => {
+    // Never start a dismiss while a nested dialog/viewer is open
+    if (nestedUiOpen) {
+      backdropPointerDownRef.current = false;
+      return;
+    }
+    // Mark only if the dimmed shell itself was pressed (not the white panel)
+    backdropPointerDownRef.current = e.target === e.currentTarget;
+  };
+
+  const handleOverlayClick = (e: React.MouseEvent) => {
+    // Require both press + release on the shell so mid-click re-renders can't "click out"
+    if (
+      !nestedUiOpen &&
+      backdropPointerDownRef.current &&
+      e.target === e.currentTarget
+    ) {
       onClose();
     }
+    backdropPointerDownRef.current = false;
   };
 
   const formatCurrency = (amount: number) => {
@@ -3177,27 +3239,25 @@ export function JobDetailModal({
     );
   };
 
-  return (
+  const modalTree = (
     <>
-      {/* Backdrop */}
+      {/* Full-screen overlay: dim + dismiss only when press+release both hit the shell */}
       <div
-        className={`fixed inset-0 bg-black transition-opacity duration-200 z-[60] ${
-          isOpen ? 'opacity-50' : 'opacity-0 pointer-events-none'
-        }`}
-        onClick={handleBackdropClick}
-      />
-
-      {/* Modal */}
-      <div
-        className={`fixed inset-0 z-[70] flex items-center justify-center p-4 transition-all duration-200 ${
-          isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
-        }`}
-        onClick={handleBackdropClick}
+        className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50"
+        role="presentation"
+        onPointerDown={handleOverlayPointerDown}
+        onClick={handleOverlayClick}
       >
         <div
-          className={`bg-card rounded-2xl shadow-[0_24px_80px_-12px_rgba(26,32,44,0.35)] ring-1 ring-border/80 w-full max-w-6xl max-h-[92vh] overflow-hidden flex flex-col transform transition-transform duration-200 ${
-            isOpen ? 'scale-100' : 'scale-95'
-          }`}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Job ${jobNumber}`}
+          className="bg-card rounded-2xl shadow-[0_24px_80px_-12px_rgba(26,32,44,0.35)] ring-1 ring-border/80 w-full max-w-6xl max-h-[92vh] overflow-hidden flex flex-col"
+          onPointerDown={(e) => {
+            // Panel interaction must never count as backdrop dismiss
+            backdropPointerDownRef.current = false;
+            e.stopPropagation();
+          }}
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
@@ -3905,4 +3965,7 @@ export function JobDetailModal({
       )}
     </>
   );
+
+  // Portal out of Jobs list so row/parent click handlers cannot steal events
+  return createPortal(modalTree, document.body);
 }

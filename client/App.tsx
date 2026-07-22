@@ -682,7 +682,9 @@ function App() {
     onShowSearch: () => setShowSearchModal(true),
     onViewChange: setCurrentView,
     onCreateJob: handleCreateJob,
-    enabled: !showSpecParser && !showPOUploader && !showEmailDraft && !showReviewModal && !showJobFormModal && !showEntityEditModal && !showEntityCreateModal && !showDeleteModal && !showSearchModal && !showExcelImporter && !showImportPreview,
+    // Also disable while job popup is open — single-letter shortcuts (j/c/f/…) were
+    // switching views and unmounting the modal mid-edit.
+    enabled: !showSpecParser && !showPOUploader && !showEmailDraft && !showReviewModal && !showJobFormModal && !showEntityEditModal && !showEntityCreateModal && !showDeleteModal && !showSearchModal && !showExcelImporter && !showImportPreview && !isDrawerOpen,
   });
 
   if (loading) {

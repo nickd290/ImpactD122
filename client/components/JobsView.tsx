@@ -223,16 +223,17 @@ export function JobsView({
   const [invoiceModalDate, setInvoiceModalDate] = useState('');
   const [invoiceModalSaving, setInvoiceModalSaving] = useState(false);
 
-  // Load jobs on mount and when refresh is triggered
-  const loadLocalJobs = async () => {
+  // Load jobs on mount and when refresh is triggered.
+  // silent:true = keep job popup open (do not thrash list loading state mid-edit)
+  const loadLocalJobs = async (opts?: { silent?: boolean }) => {
     try {
-      setIsLoading(true);
+      if (!opts?.silent) setIsLoading(true);
       const response = await jobsApi.getAll();
       setLocalJobs(response.jobs || []);
     } catch (error) {
       console.error('Failed to load jobs:', error);
     } finally {
-      setIsLoading(false);
+      if (!opts?.silent) setIsLoading(false);
     }
   };
 
@@ -241,9 +242,9 @@ export function JobsView({
     loadLocalJobs();
   }, []);
 
-  // Wrap onRefresh to also reload local jobs
+  // Soft refresh while popup open — never full-page loading
   const handleRefresh = async () => {
-    await loadLocalJobs();
+    await loadLocalJobs({ silent: true });
     onRefresh();
   };
 

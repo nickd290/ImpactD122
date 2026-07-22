@@ -367,6 +367,77 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
     });
   }, [filteredJobs]);
 
+  /**
+   * Three-leg paid totals (all active jobs — not filter-scoped).
+   * Impact → JD     = JD paper, jdPayment marked
+   * Impact → BGE    = bradfordPayment marked (production or commission)
+   * Bradford → JD   = BGE paper, jdPayment marked (partner mfg track)
+   */
+  const paidByLeg = useMemo(() => {
+    return activeJobs.reduce(
+      (acc, job) => {
+        const fin = getJobFinancials(job);
+        const payee = impactProductionPayee(job);
+        const pos: any[] = job.purchaseOrders || [];
+        const impactJdPO = pos.find(
+          (p) => p.originCompanyId === 'impact-direct' && p.targetCompanyId === 'jd-graphic'
+        );
+        const impactBgePO = pos.find(
+          (p) => p.originCompanyId === 'impact-direct' && p.targetCompanyId === 'bradford'
+        );
+        const bradfordJdPO = pos.find(
+          (p) => p.originCompanyId === 'bradford' && p.targetCompanyId === 'jd-graphic'
+        );
+
+        // Impact → Bradford (any paper when BGE marked paid)
+        if (isBgePaid(job)) {
+          const amt =
+            Number(job.bradfordPaymentAmount) ||
+            Number(impactBgePO?.buyCost) ||
+            Number(fin.bradfordTotal) ||
+            (payee === 'BGE' ? Number(fin.totalCost) : 0) ||
+            0;
+          acc.impactToBradford += amt;
+          acc.jobsImpactToBradford += 1;
+        }
+
+        if (isJdPaid(job)) {
+          if (payee === 'JD') {
+            // Impact → JD production
+            const amt =
+              Number(job.jdPaymentAmount) ||
+              Number(impactJdPO?.buyCost) ||
+              Number(fin.totalCost) ||
+              0;
+            acc.impactToJd += amt;
+            acc.jobsImpactToJd += 1;
+          } else {
+            // Bradford paper: JD mark = Bradford → JD mfg
+            const amt =
+              Number(job.jdPaymentAmount) ||
+              Number(bradfordJdPO?.buyCost) ||
+              Number(bradfordJdPO?.mfgCost) ||
+              Number(job.profit?.bradfordOwesJD) ||
+              Number(impactBgePO?.mfgCost) ||
+              0;
+            acc.bradfordToJd += amt;
+            acc.jobsBradfordToJd += 1;
+          }
+        }
+
+        return acc;
+      },
+      {
+        impactToJd: 0,
+        impactToBradford: 0,
+        bradfordToJd: 0,
+        jobsImpactToJd: 0,
+        jobsImpactToBradford: 0,
+        jobsBradfordToJd: 0,
+      }
+    );
+  }, [activeJobs]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -386,12 +457,12 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
         <p className="text-sm text-zinc-400 mt-0.5">Payment tracking and cash flow</p>
       </div>
 
-      {/* Cash Position Summary */}
+      {/* Cash Position Summary (respects money filter below) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         <div className="bg-white rounded-lg border border-zinc-200 p-4">
           <p className="text-xs font-medium text-zinc-500">Received from Customers</p>
           <p className="text-2xl font-medium text-green-600 mt-2 tabular-nums">{formatCurrency(cashPosition.received)}</p>
-          <p className="text-xs text-zinc-400 mt-1">{cashPosition.jobsReceived} jobs</p>
+          <p className="text-xs text-zinc-400 mt-1">{cashPosition.jobsReceived} jobs · filtered</p>
         </div>
         <div className="bg-white rounded-lg border border-zinc-200 p-4">
           <p className="text-xs font-medium text-zinc-500">Owe BGE (client paid)</p>
@@ -404,14 +475,70 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
           <p className="text-xs text-zinc-400 mt-1">{cashPosition.jobsOwedJd} jobs · JD paper</p>
         </div>
         <div className="bg-white rounded-lg border border-zinc-200 p-4">
-          <p className="text-xs font-medium text-zinc-500">Paid production</p>
+          <p className="text-xs font-medium text-zinc-500">Still owe production</p>
           <p className="text-2xl font-medium text-zinc-700 mt-2 tabular-nums">
-            {formatCurrency(cashPosition.paidBradford + cashPosition.paidJd)}
+            {formatCurrency(cashPosition.owedBradford + cashPosition.owedJd)}
           </p>
           <p className="text-xs text-zinc-400 mt-1">
-            BGE {cashPosition.jobsPaidBradford} · JD {cashPosition.jobsPaidJd}
+            BGE {cashPosition.jobsOwedBradford} · JD {cashPosition.jobsOwedJd}
           </p>
         </div>
+      </div>
+
+      {/* Paid by leg — all active jobs (true totals, not filter-scoped) */}
+      <div className="mb-4">
+        <div className="flex items-baseline justify-between mb-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Paid out by leg
+          </p>
+          <p className="text-[11px] text-zinc-400">All active jobs · mark-paid amounts</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white rounded-lg border border-[#2B3A4A]/20 p-4 ring-1 ring-[#2B3A4A]/5">
+            <p className="text-xs font-medium text-zinc-500">Impact → JD</p>
+            <p className="text-[11px] text-zinc-400 mt-0.5">Paid to JD from Impact</p>
+            <p className="text-2xl font-semibold text-[#2B3A4A] mt-2 tabular-nums">
+              {formatCurrency(paidByLeg.impactToJd)}
+            </p>
+            <p className="text-xs text-zinc-400 mt-1">
+              {paidByLeg.jobsImpactToJd} job{paidByLeg.jobsImpactToJd === 1 ? '' : 's'} · JD paper
+            </p>
+          </div>
+          <div className="bg-white rounded-lg border border-[#C0512A]/25 p-4 ring-1 ring-[#C0512A]/5">
+            <p className="text-xs font-medium text-zinc-500">Impact → Bradford</p>
+            <p className="text-[11px] text-zinc-400 mt-0.5">Paid to BGE from Impact</p>
+            <p className="text-2xl font-semibold text-[#C0512A] mt-2 tabular-nums">
+              {formatCurrency(paidByLeg.impactToBradford)}
+            </p>
+            <p className="text-xs text-zinc-400 mt-1">
+              {paidByLeg.jobsImpactToBradford} job{paidByLeg.jobsImpactToBradford === 1 ? '' : 's'} ·
+              production or commission
+            </p>
+          </div>
+          <div className="bg-white rounded-lg border border-zinc-200 p-4">
+            <p className="text-xs font-medium text-zinc-500">Bradford → JD</p>
+            <p className="text-[11px] text-zinc-400 mt-0.5">Paid to JD from Bradford</p>
+            <p className="text-2xl font-semibold text-zinc-800 mt-2 tabular-nums">
+              {formatCurrency(paidByLeg.bradfordToJd)}
+            </p>
+            <p className="text-xs text-zinc-400 mt-1">
+              {paidByLeg.jobsBradfordToJd} job{paidByLeg.jobsBradfordToJd === 1 ? '' : 's'} · BGE paper mfg
+            </p>
+          </div>
+        </div>
+        <p className="text-[11px] text-zinc-400 mt-2 tabular-nums">
+          Combined paid out:{' '}
+          <span className="font-medium text-zinc-700">
+            {formatCurrency(
+              paidByLeg.impactToJd + paidByLeg.impactToBradford + paidByLeg.bradfordToJd
+            )}
+          </span>
+          <span className="mx-1.5 text-zinc-300">·</span>
+          Impact cash only (→JD + →BGE):{' '}
+          <span className="font-medium text-zinc-700">
+            {formatCurrency(paidByLeg.impactToJd + paidByLeg.impactToBradford)}
+          </span>
+        </p>
       </div>
 
       {/* Net Cash Position */}
