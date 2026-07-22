@@ -122,11 +122,15 @@ export const jobsApi = {
     method: 'PATCH',
     body: JSON.stringify(data || {}),
   }),
-  // Impact → Bradford (full outlay on Bradford paper; margin-only on JD paper)
-  markBradfordPaid: (id: string, data?: { date?: string; sendInvoice?: boolean; status?: string }) => apiFetch(`/jobs/${id}/bradford-paid`, {
-    method: 'PATCH',
-    body: JSON.stringify(data || {}),
-  }),
+  // Impact → Bradford (full outlay on Bradford paper; commission on JD paper — amount overridable)
+  markBradfordPaid: (
+    id: string,
+    data?: { date?: string; sendInvoice?: boolean; status?: string; amount?: number }
+  ) =>
+    apiFetch(`/jobs/${id}/bradford-paid`, {
+      method: 'PATCH',
+      body: JSON.stringify(data || {}),
+    }),
   sendJDInvoice: (id: string) => apiFetch(`/jobs/${id}/send-jd-invoice`, {
     method: 'POST',
   }),

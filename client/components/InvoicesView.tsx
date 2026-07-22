@@ -26,10 +26,14 @@ import {
   getDaysPaymentOverdue,
   paymentTermsLabel,
   getPaymentTermsDays,
+  moneyStatusBadges,
+  needsVendorPay,
+  impactProductionPayee,
+  isMoneyComplete,
 } from '../lib/jobPipeline';
 import { JobDetailModal } from './JobDetailModal';
 
-type InvoiceTab = 'all' | 'unpaid' | 'paid' | 'ready';
+type InvoiceTab = 'all' | 'unpaid' | 'pay_vendor' | 'paid' | 'ready';
 
 interface InvoiceJob {
   id: string;
@@ -38,8 +42,12 @@ interface InvoiceJob {
   title?: string;
   status?: string;
   workflowStatus?: string;
+  workflowStatusOverride?: string;
   customer?: { id: string; name: string; paymentTermsDays?: number | null };
   customerPONumber?: string;
+  partnerPONumber?: string;
+  bradfordRefNumber?: string;
+  paperSource?: string;
   quantity?: number;
   sellPrice?: number | string;
   invoiceGeneratedAt?: string | null;
@@ -51,6 +59,10 @@ interface InvoiceJob {
   customerPaymentDate?: string | null;
   customerPaymentPaid?: boolean;
   customerPaymentAmount?: number | null;
+  bradfordPaymentDate?: string | null;
+  bradfordPaymentPaid?: boolean;
+  jdPaymentDate?: string | null;
+  jdPaymentPaid?: boolean;
   paymentTermsDays?: number | null;
   paymentDueDate?: string | null;
   specs?: { quantity?: number };
@@ -111,8 +123,18 @@ function isReadyToBill(j: InvoiceJob): boolean {
   return wf === 'SHIPPED' || wf === 'COMPLETED';
 }
 
+/** Client paid Impact (not necessarily settled with BGE/JD) */
 function isPaid(j: InvoiceJob): boolean {
-  return isClientPaid(j) || j.status === 'PAID';
+  return isClientPaid(j);
+}
+
+/** Fully complete: client + Impact production payee (BGE or JD) */
+function isSettled(j: InvoiceJob): boolean {
+  return isMoneyComplete(j);
+}
+
+function bgePoOf(j: InvoiceJob): string {
+  return j.partnerPONumber || j.bradfordRefNumber || '';
 }
 
 interface InvoicesViewProps {
@@ -123,7 +145,7 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
   const [jobs, setJobs] = useState<InvoiceJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [tab, setTab] = useState<InvoiceTab>('all');
+  const [tab, setTab] = useState<InvoiceTab>('unpaid');
   const [customerFilter, setCustomerFilter] = useState('');
   const [selectedJob, setSelectedJob] = useState<InvoiceJob | null>(null);
   const [payingId, setPayingId] = useState<string | null>(null);
@@ -132,8 +154,8 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
   const [invDate, setInvDate] = useState('');
   const [invSaving, setInvSaving] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await jobsApi.getAll();
       setJobs(res.jobs || []);
@@ -141,7 +163,7 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
       console.error(e);
       toast.error('Failed to load invoices');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
@@ -154,10 +176,12 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
 
   const counts = useMemo(() => {
     const unpaid = invoicedJobs.filter((j) => !isPaid(j));
-    const paid = invoicedJobs.filter(isPaid);
+    const pay_vendor = invoicedJobs.filter((j) => needsVendorPay(j));
+    const paid = invoicedJobs.filter(isSettled);
     return {
       all: invoicedJobs.length,
       unpaid: unpaid.length,
+      pay_vendor: pay_vendor.length,
       paid: paid.length,
       ready: readyJobs.length,
     };
@@ -169,12 +193,13 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
         ? readyJobs
         : invoicedJobs.filter((j) => {
             if (tab === 'unpaid') return !isPaid(j);
-            if (tab === 'paid') return isPaid(j);
+            if (tab === 'pay_vendor') return needsVendorPay(j);
+            if (tab === 'paid') return isSettled(j);
             return true;
           });
     const amount = pool.reduce((s, j) => s + sellOf(j), 0);
     const unpaidAmt = invoicedJobs.filter((j) => !isPaid(j)).reduce((s, j) => s + sellOf(j), 0);
-    const paidAmt = invoicedJobs.filter(isPaid).reduce((s, j) => s + sellOf(j), 0);
+    const paidAmt = invoicedJobs.filter(isSettled).reduce((s, j) => s + sellOf(j), 0);
     return { amount, unpaidAmt, paidAmt, count: pool.length };
   }, [tab, invoicedJobs, readyJobs]);
 
@@ -194,7 +219,8 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
         ? readyJobs
         : invoicedJobs.filter((j) => {
             if (tab === 'unpaid') return !isPaid(j);
-            if (tab === 'paid') return isPaid(j);
+            if (tab === 'pay_vendor') return needsVendorPay(j);
+            if (tab === 'paid') return isSettled(j);
             return true;
           });
 
@@ -209,9 +235,12 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
           j.jobNo,
           j.number,
           j.invoiceNumber,
+          j.customerInvoiceNumber,
           j.title,
           j.customer?.name,
           j.customerPONumber,
+          j.partnerPONumber,
+          j.bradfordRefNumber,
         ]
           .filter(Boolean)
           .join(' ')
@@ -232,12 +261,35 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
     setPayingId(job.id);
     try {
       await jobsApi.markCustomerPaid(job.id);
-      await jobsApi.updateStatus(job.id, 'PAID').catch(() => null);
-      toast.success(`${job.jobNo || job.number} marked paid`);
-      await load();
+      toast.success(`${job.jobNo || job.number} client paid — next: pay BGE or JD`);
+      await load(true);
       onRefresh?.();
     } catch {
       toast.error('Failed to mark paid');
+    } finally {
+      setPayingId(null);
+    }
+  };
+
+  const handleMarkProductionPaid = async (
+    job: InvoiceJob,
+    e: React.MouseEvent,
+    who: 'bradford' | 'jd'
+  ) => {
+    e.stopPropagation();
+    setPayingId(`${job.id}-${who}`);
+    try {
+      if (who === 'bradford') {
+        await jobsApi.markBradfordPaid(job.id, { sendInvoice: false });
+        toast.success('Marked BGE paid');
+      } else {
+        await jobsApi.markJDPaid(job.id);
+        toast.success('Marked JD paid');
+      }
+      await load(true);
+      onRefresh?.();
+    } catch {
+      toast.error('Failed to mark production paid');
     } finally {
       setPayingId(null);
     }
@@ -284,9 +336,10 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
   };
 
   const tabs: { id: InvoiceTab; label: string; count: number }[] = [
+    { id: 'unpaid', label: 'Unpaid (client)', count: counts.unpaid },
+    { id: 'pay_vendor', label: 'Client paid → pay BGE/JD', count: counts.pay_vendor },
+    { id: 'paid', label: 'Complete', count: counts.paid },
     { id: 'all', label: 'All invoices', count: counts.all },
-    { id: 'unpaid', label: 'Unpaid', count: counts.unpaid },
-    { id: 'paid', label: 'Paid', count: counts.paid },
     { id: 'ready', label: 'Ready to bill', count: counts.ready },
   ];
 
@@ -300,7 +353,7 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
             <h1 className="text-xl font-semibold text-[#2B3A4A] tracking-tight">Invoices</h1>
           </div>
           <p className="text-sm text-zinc-500 mt-1">
-            Customer invoices — edit price/CPM/qty on a job, then re-download PDF
+            Customer invoices — mark invoiced / client paid / still owe BGE or JD
           </p>
         </div>
         <button
@@ -316,9 +369,9 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
       {/* KPI strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
         <Kpi label="Invoices" value={String(counts.all)} sub={money(totals.unpaidAmt + totals.paidAmt)} />
-        <Kpi label="Unpaid" value={money(totals.unpaidAmt)} sub={`${counts.unpaid} open`} tone="warn" />
-        <Kpi label="Collected" value={money(totals.paidAmt)} sub={`${counts.paid} paid`} tone="good" />
-        <Kpi label="Ready to bill" value={String(counts.ready)} sub="not generated yet" tone="muted" />
+        <Kpi label="Unpaid client" value={money(totals.unpaidAmt)} sub={`${counts.unpaid} open`} tone="warn" />
+        <Kpi label="Need pay BGE/JD" value={String(counts.pay_vendor)} sub="client paid us" tone="warn" />
+        <Kpi label="Complete" value={money(totals.paidAmt)} sub={`${counts.paid} both paid`} tone="good" />
       </div>
 
       {/* Filters */}
@@ -382,22 +435,21 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 border-b border-zinc-200 sticky top-0 z-10">
               <tr className="text-left text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">
-                <th className="px-4 py-3">Invoice / Job</th>
-                <th className="px-4 py-3">Invoice date</th>
-                <th className="px-4 py-3">Pay due</th>
-                <th className="px-4 py-3">Customer</th>
-                <th className="px-4 py-3">Cust PO</th>
-                <th className="px-4 py-3 text-right">Qty</th>
-                <th className="px-4 py-3 text-right">CPM</th>
-                <th className="px-4 py-3 text-right">Amount</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                <th className="px-3 py-3">Invoice / Job</th>
+                <th className="px-3 py-3">Inv date</th>
+                <th className="px-3 py-3">Pay due</th>
+                <th className="px-3 py-3">Customer</th>
+                <th className="px-3 py-3">Cust PO</th>
+                <th className="px-3 py-3">BGE PO</th>
+                <th className="px-3 py-3 text-right">Amount</th>
+                <th className="px-3 py-3">Money</th>
+                <th className="px-3 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {loading && (
                 <tr>
-                  <td colSpan={10} className="px-4 py-16 text-center text-zinc-400">
+                  <td colSpan={9} className="px-4 py-16 text-center text-zinc-400">
                     <Loader2 className="w-5 h-5 animate-spin inline mr-2" />
                     Loading invoices…
                   </td>
@@ -405,26 +457,30 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
               )}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="px-4 py-16 text-center text-zinc-400">
+                  <td colSpan={9} className="px-4 py-16 text-center text-zinc-400">
                     {tab === 'ready'
-                      ? 'No jobs ready to bill right now.'
-                      : 'No invoices in this filter.'}
+                      ? 'No jobs ready to bill — mark complete first, then Mark invoiced.'
+                      : tab === 'pay_vendor'
+                        ? 'No client-paid jobs still owing BGE/JD.'
+                        : 'No invoices in this filter. Use Ready to bill → Mark invoiced.'}
                   </td>
                 </tr>
               )}
               {!loading &&
                 rows.map((job) => {
                   const paid = isPaid(job);
+                  const needPay = needsVendorPay(job);
+                  const payee = impactProductionPayee(job);
                   const invoiced = isInvoiced(job);
                   const sell = sellOf(job);
-                  const qty = qtyOf(job);
-                  const cpm = cpmOf(job);
                   const displayInv =
                     job.customerInvoiceNumber || job.invoiceNumber || job.jobNo || job.number || '—';
                   const payDue = getPaymentDueDate(job);
                   const payOverdue = isPaymentOverdue(job);
                   const daysOver = getDaysPaymentOverdue(job);
                   const terms = paymentTermsLabel(getPaymentTermsDays(job));
+                  const badges = moneyStatusBadges(job);
+                  const bgePo = bgePoOf(job);
 
                   return (
                     <tr
@@ -432,76 +488,85 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
                       onClick={() => setSelectedJob(job)}
                       className={cn(
                         'hover:bg-zinc-50/80 cursor-pointer transition-colors',
-                        payOverdue && 'bg-red-50/40'
+                        needPay && 'bg-orange-50/40',
+                        payOverdue && !needPay && 'bg-red-50/40'
                       )}
                     >
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <div className="font-mono font-semibold text-[#2B3A4A]">{displayInv}</div>
                         <div className="text-[10px] text-zinc-400 font-mono">
                           {job.jobNo || job.number}
                         </div>
                         {job.title && (
-                          <div className="text-xs text-zinc-500 truncate max-w-[200px]">
+                          <div className="text-xs text-zinc-500 truncate max-w-[160px]">
                             {job.title}
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-zinc-600 tabular-nums">
+                      <td className="px-3 py-3 text-zinc-600 tabular-nums text-xs">
                         {fmtDate(job.invoiceGeneratedAt)}
                       </td>
-                      <td className="px-4 py-3 tabular-nums">
+                      <td className="px-3 py-3 tabular-nums text-xs">
                         {payDue ? (
                           <div>
                             <span className={cn(payOverdue ? 'text-red-600 font-semibold' : 'text-zinc-600')}>
                               {fmtDate(payDue.toISOString())}
                             </span>
                             <div className="text-[10px] text-zinc-400">{terms}</div>
+                            {payOverdue && daysOver != null && (
+                              <div className="text-[10px] font-semibold text-red-600">{daysOver}d overdue</div>
+                            )}
                           </div>
                         ) : (
                           <span className="text-zinc-300">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 font-medium text-zinc-800">
+                      <td className="px-3 py-3 font-medium text-zinc-800 text-sm max-w-[120px] truncate">
                         {job.customer?.name || '—'}
                       </td>
-                      <td className="px-4 py-3 font-mono text-xs text-zinc-600">
+                      <td className="px-3 py-3 font-mono text-xs text-zinc-700">
                         {job.customerPONumber || '—'}
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-zinc-700">
-                        {qty > 0 ? qty.toLocaleString() : '—'}
+                      <td className="px-3 py-3 font-mono text-xs text-zinc-700">
+                        {bgePo || '—'}
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-zinc-600">
-                        {cpm > 0 ? money2(cpm) : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums font-semibold text-[#2B3A4A]">
+                      <td className="px-3 py-3 text-right tabular-nums font-semibold text-[#2B3A4A]">
                         {sell > 0 ? money(sell) : '—'}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         {!invoiced ? (
-                          <span className="inline-flex px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-100">
+                          <span className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-bold uppercase bg-amber-50 text-amber-800 border border-amber-200">
                             Ready
                           </span>
-                        ) : paid ? (
-                          <span className="inline-flex px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-100">
-                            Paid
-                            {job.customerPaymentDate && (
-                              <span className="ml-1 font-normal opacity-80">
-                                {fmtDate(job.customerPaymentDate)}
-                              </span>
-                            )}
-                          </span>
-                        ) : payOverdue ? (
-                          <span className="inline-flex px-2 py-0.5 rounded text-[11px] font-semibold bg-red-50 text-red-700 border border-red-100">
-                            {daysOver}d overdue
-                          </span>
                         ) : (
-                          <span className="inline-flex px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-100">
-                            Unpaid
-                          </span>
+                          <div className="flex flex-col gap-1">
+                            <div className="flex flex-wrap gap-1">
+                              {badges.map((b) => (
+                                <span
+                                  key={b.text}
+                                  className={cn(
+                                    'inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border',
+                                    b.tone === 'paid' && 'bg-emerald-50 text-emerald-800 border-emerald-200',
+                                    b.tone === 'good' && 'bg-emerald-100 text-emerald-900 border-emerald-300',
+                                    b.tone === 'action' && 'bg-orange-100 text-[#C0512A] border-orange-300',
+                                    b.tone === 'warn' && 'bg-amber-50 text-amber-800 border-amber-200',
+                                    b.tone === 'muted' && 'bg-zinc-100 text-zinc-500 border-zinc-200'
+                                  )}
+                                >
+                                  {b.text}
+                                </span>
+                              ))}
+                            </div>
+                            {needPay && (
+                              <div className="text-[10px] font-semibold text-[#C0512A]">
+                                Client paid — still owe {payee}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1">
+                      <td className="px-3 py-3">
+                        <div className="flex items-center justify-end gap-1 flex-wrap">
                           {invoiced && (
                             <button
                               type="button"
@@ -525,7 +590,29 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
                               ) : (
                                 <DollarSign className="w-3 h-3" />
                               )}
-                              Paid
+                              Client paid
+                            </button>
+                          )}
+                          {invoiced && needPay && payee === 'BGE' && (
+                            <button
+                              type="button"
+                              title="Impact paid BGE"
+                              disabled={payingId === `${job.id}-bradford`}
+                              onClick={(e) => handleMarkProductionPaid(job, e, 'bradford')}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold text-white bg-orange-500 hover:bg-orange-600 disabled:opacity-50"
+                            >
+                              Mark BGE paid
+                            </button>
+                          )}
+                          {invoiced && needPay && payee === 'JD' && (
+                            <button
+                              type="button"
+                              title="Impact paid JD"
+                              disabled={payingId === `${job.id}-jd`}
+                              onClick={(e) => handleMarkProductionPaid(job, e, 'jd')}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold text-white bg-[#2B3A4A] hover:bg-[#1f2a36] disabled:opacity-50"
+                            >
+                              Mark JD paid
                             </button>
                           )}
                           {!invoiced && (
@@ -569,10 +656,10 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
             {!loading && rows.length > 0 && (
               <tfoot className="bg-zinc-50 border-t border-zinc-200">
                 <tr>
-                  <td colSpan={7} className="px-4 py-3 text-right text-xs font-semibold uppercase text-zinc-500">
-                    {rows.length} invoice{rows.length === 1 ? '' : 's'} · total
+                  <td colSpan={6} className="px-3 py-3 text-right text-xs font-semibold uppercase text-zinc-500">
+                    {rows.length} row{rows.length === 1 ? '' : 's'} · total
                   </td>
-                  <td className="px-4 py-3 text-right font-bold tabular-nums text-[#2B3A4A]">
+                  <td className="px-3 py-3 text-right font-bold tabular-nums text-[#2B3A4A]">
                     {money(rows.reduce((s, j) => s + sellOf(j), 0))}
                   </td>
                   <td colSpan={2} />

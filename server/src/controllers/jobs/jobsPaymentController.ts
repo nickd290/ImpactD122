@@ -1,19 +1,18 @@
 /**
  * Jobs Payment Controller
  *
- * Paper-driven payment routes (Impact Direct):
+ * Paper-driven payment routes (Impact Direct) — two money legs only:
  *
  * BRADFORD paper:
  *   1. Customer → Impact
- *   2. Impact → Bradford (full outlay; auto JD invoice to Bradford)
- *   3. Bradford → JD (mfg only — partner tracking)
+ *   2. Impact → Bradford (BGE) production
+ *   (BGE→JD mfg is partner-side; we do NOT track/require it)
  *
  * JD / vendor paper:
  *   1. Customer → Impact
- *   2. Impact → JD (production)
- *   3. Impact → Bradford (margin split only)
+ *   2. Impact → JD production
  *
- * Production payee from Impact is exclusive by paperSource.
+ * When both legs recorded → status PAID + workflow COMPLETED.
  */
 
 import { Request, Response } from 'express';
@@ -23,6 +22,101 @@ import { sendJDInvoiceToBradfordEmail } from '../../services/emailService';
 import { transformJob, logPaymentChange, calculateProfit, JOB_INCLUDE } from './jobsHelpers';
 import { COMPANY_IDS } from '../../constants';
 import { getPaymentAmounts, getPaymentRoute } from '../../services/paymentRouteService';
+
+/** Impact production payee from paperSource only */
+function productionPayee(paperSource?: string | null): 'BGE' | 'JD' {
+  const src = (paperSource || 'BRADFORD').toUpperCase();
+  if (src === 'VENDOR' || src === 'CUSTOMER') return 'JD';
+  return 'BGE';
+}
+
+function isProdPaid(job: {
+  paperSource?: string | null;
+  bradfordPaymentDate?: Date | null;
+  bradfordPaymentPaid?: boolean | null;
+  jdPaymentDate?: Date | null;
+  jdPaymentPaid?: boolean | null;
+}): boolean {
+  if (productionPayee(job.paperSource) === 'JD') {
+    return !!(job.jdPaymentPaid || job.jdPaymentDate);
+  }
+  return !!(job.bradfordPaymentPaid || job.bradfordPaymentDate);
+}
+
+/** JD paper: commission to Bradford is a separate required payment */
+function isCommissionPaid(job: {
+  paperSource?: string | null;
+  bradfordPaymentDate?: Date | null;
+  bradfordPaymentPaid?: boolean | null;
+}): boolean {
+  if (productionPayee(job.paperSource) !== 'JD') return true; // N/A
+  return !!(job.bradfordPaymentPaid || job.bradfordPaymentDate);
+}
+
+function isFullySettled(job: {
+  paperSource?: string | null;
+  customerPaymentDate?: Date | null;
+  bradfordPaymentDate?: Date | null;
+  bradfordPaymentPaid?: boolean | null;
+  jdPaymentDate?: Date | null;
+  jdPaymentPaid?: boolean | null;
+}): boolean {
+  if (!job.customerPaymentDate) return false;
+  if (!isProdPaid(job)) return false;
+  return isCommissionPaid(job);
+}
+
+/**
+ * After client and/or production/commission pay flips, set money-complete status.
+ * Fully settled → PAID + COMPLETED.
+ */
+function moneyCompletePatch(job: {
+  paperSource?: string | null;
+  customerPaymentDate?: Date | null;
+  bradfordPaymentDate?: Date | null;
+  bradfordPaymentPaid?: boolean | null;
+  jdPaymentDate?: Date | null;
+  jdPaymentPaid?: boolean | null;
+  workflowStatus?: string | null;
+  invoiceGeneratedAt?: Date | null;
+  customerInvoiceNumber?: string | null;
+}): Record<string, unknown> {
+  const now = new Date();
+  const client = !!job.customerPaymentDate;
+  const settled = isFullySettled(job);
+
+  if (client && settled) {
+    return {
+      status: 'PAID',
+      workflowStatus: 'COMPLETED',
+      workflowStatusOverride: 'COMPLETED',
+      workflowStatusOverrideAt: now,
+      workflowStatusOverrideBy: 'staff',
+      workflowUpdatedAt: now,
+      completedAt: now,
+    };
+  }
+
+  // Client paid, production still open — not COMPLETE yet
+  if (client) {
+    const invoiced = !!(job.invoiceGeneratedAt || job.customerInvoiceNumber);
+    const current = job.workflowStatus || '';
+    // Keep COMPLETED floor state; else INVOICED if billed; never PAID until both legs
+    let wf = 'COMPLETED';
+    if (current === 'COMPLETED' || current === 'INVOICED') wf = current;
+    else if (invoiced) wf = 'INVOICED';
+    return {
+      status: 'ACTIVE',
+      workflowStatus: wf,
+      workflowStatusOverride: wf,
+      workflowStatusOverrideAt: now,
+      workflowStatusOverrideBy: 'staff',
+      workflowUpdatedAt: now,
+    };
+  }
+
+  return { status: 'ACTIVE' };
+}
 
 // ============================================================================
 // STEP 1: CUSTOMER PAYMENT (Customer → Impact)
@@ -42,6 +136,14 @@ export const markCustomerPaid = async (req: Request, res: Response) => {
         sellPrice: true,
         customerPaymentDate: true,
         customerPaymentAmount: true,
+        paperSource: true,
+        bradfordPaymentDate: true,
+        bradfordPaymentPaid: true,
+        jdPaymentDate: true,
+        jdPaymentPaid: true,
+        workflowStatus: true,
+        invoiceGeneratedAt: true,
+        customerInvoiceNumber: true,
       },
     });
 
@@ -53,11 +155,7 @@ export const markCustomerPaid = async (req: Request, res: Response) => {
     if (status === 'unpaid') {
       await logPaymentChange(id, 'customerPaymentDate', existingJob.customerPaymentDate, null, 'admin');
 
-      const full = await prisma.job.findUnique({
-        where: { id },
-        select: { invoiceGeneratedAt: true, customerInvoiceNumber: true },
-      });
-      const stillInvoiced = !!(full?.invoiceGeneratedAt || full?.customerInvoiceNumber);
+      const stillInvoiced = !!(existingJob.invoiceGeneratedAt || existingJob.customerInvoiceNumber);
 
       const job = await prisma.job.update({
         where: { id },
@@ -82,25 +180,23 @@ export const markCustomerPaid = async (req: Request, res: Response) => {
       return res.json(transformJob(job));
     }
 
-    // Default: mark as paid
+    // Default: mark as paid (client only — production may still be open)
     const paymentDate = date ? new Date(date) : new Date();
     const paymentAmount = Number(existingJob.sellPrice) || 0;
 
-    // Log the change
     await logPaymentChange(id, 'customerPaymentDate', existingJob.customerPaymentDate, paymentDate, 'admin');
+
+    const settle = moneyCompletePatch({
+      ...existingJob,
+      customerPaymentDate: paymentDate,
+    });
 
     const job = await prisma.job.update({
       where: { id },
       data: {
         customerPaymentDate: paymentDate,
         customerPaymentAmount: paymentAmount,
-        // Money complete on customer side
-        status: 'PAID',
-        workflowStatus: 'PAID',
-        workflowStatusOverride: 'PAID',
-        workflowStatusOverrideAt: new Date(),
-        workflowStatusOverrideBy: 'staff',
-        workflowUpdatedAt: new Date(),
+        ...settle,
         updatedAt: new Date(),
       },
       include: {
@@ -388,7 +484,7 @@ export const markVendorPaid = async (req: Request, res: Response) => {
 export const markImpactToBradfordPaid = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { date, sendInvoice, status } = req.body;
+    const { date, sendInvoice, status, amount } = req.body;
 
     const existingJob = await prisma.job.findUnique({
       where: { id },
@@ -406,12 +502,18 @@ export const markImpactToBradfordPaid = async (req: Request, res: Response) => {
     // Clear payment
     if (status === 'unpaid') {
       await logPaymentChange(id, 'bradfordPaymentDate', existingJob.bradfordPaymentDate, null, 'admin');
+      const settle = moneyCompletePatch({
+        ...existingJob,
+        bradfordPaymentDate: null,
+        bradfordPaymentPaid: false,
+      });
       const job = await prisma.job.update({
         where: { id },
         data: {
           bradfordPaymentPaid: false,
           bradfordPaymentDate: null,
           bradfordPaymentAmount: null,
+          ...settle,
           updatedAt: new Date(),
         },
         include: JOB_INCLUDE as any,
@@ -428,32 +530,35 @@ export const markImpactToBradfordPaid = async (req: Request, res: Response) => {
       });
     }
 
-    // Idempotency
-    if (existingJob.bradfordPaymentDate) {
-      return res.status(409).json({
-        error: 'Bradford payment already recorded',
-        existingDate: existingJob.bradfordPaymentDate,
-        existingAmount: existingJob.bradfordPaymentAmount,
-        hint: 'To resend JD invoice, use the sendJDInvoice endpoint instead',
-      });
-    }
-
     const route = getPaymentRoute(existingJob.paperSource);
     const profit = calculateProfit(existingJob);
     const amounts = getPaymentAmounts(existingJob.paperSource, profit);
-    const paymentDate = date ? new Date(date) : new Date();
-    const paymentAmount = amounts.impactToBradford;
+    const paymentDate = date ? new Date(date) : existingJob.bradfordPaymentDate || new Date();
+    // Allow override — JD-paper commission often differs from table share
+    const paymentAmount =
+      amount != null && amount !== '' && !Number.isNaN(Number(amount))
+        ? Math.round(Number(amount) * 100) / 100
+        : Number(existingJob.bradfordPaymentAmount) || amounts.impactToBradford;
 
+    // Allow amount override / re-save (JD-paper commission often differs from table)
     await logPaymentChange(id, 'bradfordPaymentDate', existingJob.bradfordPaymentDate, paymentDate, 'admin');
+    await logPaymentChange(id, 'bradfordPaymentAmount', existingJob.bradfordPaymentAmount, paymentAmount, 'admin');
+
+    const settle = moneyCompletePatch({
+      ...existingJob,
+      bradfordPaymentDate: paymentDate,
+      bradfordPaymentPaid: true,
+    });
 
     let updateData: any = {
       bradfordPaymentPaid: true,
       bradfordPaymentDate: paymentDate,
       bradfordPaymentAmount: paymentAmount,
+      ...settle,
       updatedAt: new Date(),
     };
 
-    // JD invoice only when Bradford is production payee (Bradford paper)
+    // Optional JD-invoice email to Bradford (partner billing) — not a payment we track
     const shouldSendInvoice =
       route.sendJdInvoiceToBradford && (sendInvoice !== false);
 
@@ -767,12 +872,18 @@ export const markJDPaid = async (req: Request, res: Response) => {
 
     if (status === 'unpaid') {
       await logPaymentChange(id, 'jdPaymentDate', existingJob.jdPaymentDate, null, 'admin');
+      const settleClear = moneyCompletePatch({
+        ...existingJob,
+        jdPaymentDate: null,
+        jdPaymentPaid: false,
+      });
       const job = await prisma.job.update({
         where: { id },
         data: {
           jdPaymentPaid: false,
           jdPaymentDate: null,
           jdPaymentAmount: null,
+          ...settleClear,
           updatedAt: new Date(),
         },
         include: JOB_INCLUDE as any,
@@ -785,30 +896,21 @@ export const markJDPaid = async (req: Request, res: Response) => {
     const amounts = getPaymentAmounts(existingJob.paperSource, profit);
     const paymentDate = date ? new Date(date) : new Date();
 
+    // Only Impact → JD production (JD paper). BGE→JD mfg is not tracked.
     if (route.productionPayee === 'BRADFORD') {
-      // Bradford → JD mfg tracking: Impact must have paid Bradford first
-      if (!existingJob.customerPaymentDate) {
-        return res.status(400).json({
-          error: 'Cannot mark JD paid before customer payment',
-          jobNo: existingJob.jobNo,
-        });
-      }
-      if (!existingJob.bradfordPaymentDate && !existingJob.bradfordPaymentPaid) {
-        return res.status(400).json({
-          error: 'On Bradford-paper jobs, Impact pays Bradford first; then Bradford pays JD for mfg',
-          hint: 'Mark Impact → Bradford paid first',
-          jobNo: existingJob.jobNo,
-        });
-      }
-    } else {
-      // Impact → JD production: customer must have paid
-      if (!existingJob.customerPaymentDate) {
-        return res.status(400).json({
-          error: 'Cannot pay JD before customer payment received',
-          hint: 'Use markCustomerPaid first',
-          jobNo: existingJob.jobNo,
-        });
-      }
+      return res.status(400).json({
+        error: 'Bradford-paper jobs only require Impact → BGE. BGE→JD is not tracked.',
+        hint: 'Mark Impact → Bradford (BGE) paid instead',
+        jobNo: existingJob.jobNo,
+      });
+    }
+
+    if (!existingJob.customerPaymentDate) {
+      return res.status(400).json({
+        error: 'Cannot pay JD before customer payment received',
+        hint: 'Use markCustomerPaid first',
+        jobNo: existingJob.jobNo,
+      });
     }
 
     if (existingJob.jdPaymentDate) {
@@ -850,12 +952,19 @@ export const markJDPaid = async (req: Request, res: Response) => {
 
     await logPaymentChange(id, 'jdPaymentDate', existingJob.jdPaymentDate, paymentDate, 'admin');
 
+    const settle = moneyCompletePatch({
+      ...existingJob,
+      jdPaymentDate: paymentDate,
+      jdPaymentPaid: true,
+    });
+
     const job = await prisma.job.update({
       where: { id },
       data: {
         jdPaymentPaid: true,
         jdPaymentDate: paymentDate,
         jdPaymentAmount: jdPaymentAmount,
+        ...settle,
         updatedAt: new Date(),
       },
       include: {

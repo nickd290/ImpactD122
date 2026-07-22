@@ -9,7 +9,7 @@ import {
   isJdPaid,
   needsVendorPay,
   impactProductionPayee,
-  isImpactProductionPaid,
+  isMoneyComplete,
   moneyStatusBadges,
 } from '../lib/jobPipeline';
 import { cn } from '../lib/utils';
@@ -260,7 +260,7 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
         const payee = impactProductionPayee(j);
         if (payee === 'BGE') pay_bge++;
         else pay_jd++;
-      } else if (isImpactProductionPaid(j)) {
+      } else if (isMoneyComplete(j)) {
         settled++;
       }
     }
@@ -288,7 +288,7 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
         case 'pay_jd':
           return needsVendorPay(job) && impactProductionPayee(job) === 'JD';
         case 'settled':
-          return isClientPaid(job) && isImpactProductionPaid(job);
+          return isMoneyComplete(job);
         case 'all':
         default:
           return true;
@@ -450,7 +450,7 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
               { id: 'pay_bge' as const, label: 'Pay BGE', count: moneyCounts.pay_bge, active: 'bg-amber-600 text-white' },
               { id: 'pay_jd' as const, label: 'Pay JD', count: moneyCounts.pay_jd, active: 'bg-[#2B3A4A] text-white' },
               { id: 'await_client' as const, label: 'Await client', count: moneyCounts.await_client, active: 'bg-amber-500 text-white' },
-              { id: 'settled' as const, label: 'Settled', count: moneyCounts.settled, active: 'bg-emerald-600 text-white' },
+              { id: 'settled' as const, label: 'Complete', count: moneyCounts.settled, active: 'bg-emerald-600 text-white' },
               { id: 'all' as const, label: 'All', count: moneyCounts.all, active: 'bg-zinc-900 text-white' },
             ] as const
           ).map((t) => (
@@ -710,7 +710,7 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
                       ) : (
                         <span className="px-2 py-1 bg-green-50 text-green-700 rounded-full text-xs font-medium inline-flex items-center gap-1">
                           <Check className="w-3 h-3" />
-                          Settled
+                          Complete
                         </span>
                       )}
                     </div>

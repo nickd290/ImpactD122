@@ -126,6 +126,8 @@ export function JobMoneyBoard({
       : new Date().toISOString().slice(0, 10)
   );
   const [savingInv, setSavingInv] = useState(false);
+  /** JD-paper commission override (Impact → Bradford margin) */
+  const [commissionAmt, setCommissionAmt] = useState('');
   const [sell, setSell] = useState(String(sellProp || ''));
   const [qty, setQty] = useState(String(qtyProp || ''));
   const [cpm, setCpm] = useState(() => {
@@ -427,6 +429,24 @@ export function JobMoneyBoard({
     toast.success('Filled from size table — hit Save costs');
   };
 
+  const sizes = getSizeOptions();
+  const bgeAmt = jdPaper ? 0 : prodCostN || Number(impactBradfordPO?.buyCost) || 0;
+  const jdAmt = jdPaper
+    ? prodCostN || Number(impactJdPO?.buyCost) || 0
+    : jdMfgN || Number(bradfordJdPO?.buyCost) || 0;
+  // JD paper commission default = table Bradford share; user can override
+  const commissionDefault = Number(calc.bradfordGets) || Number(calc.bradfordMarginShare) || 0;
+  const commissionN =
+    parseFloat(commissionAmt) ||
+    (bradfordPaidDate ? 0 : 0) ||
+    commissionDefault;
+
+  // Seed commission override from table (user can type e.g. 35)
+  useEffect(() => {
+    if (commissionAmt !== '') return;
+    if (commissionDefault > 0) setCommissionAmt(String(round2(commissionDefault)));
+  }, [commissionDefault]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const togglePaid = async (who: 'customer' | 'bradford' | 'jd', currently: boolean) => {
     setPayLoading(who);
     try {
@@ -437,22 +457,36 @@ export function JobMoneyBoard({
         onSaved?.(
           currently
             ? { customerPaymentDate: null, status: 'ACTIVE' }
-            : { customerPaymentDate: new Date().toISOString(), status: 'PAID' }
+            : { customerPaymentDate: new Date().toISOString() }
         );
       } else if (who === 'bradford') {
+        const amt = jdPaper
+          ? parseFloat(commissionAmt) || commissionDefault
+          : bgeAmt;
         await jobsApi.markBradfordPaid(jobId, {
           status,
           sendInvoice: !jdPaper && !currently,
+          amount: currently ? undefined : amt > 0 ? amt : undefined,
         });
-        toast.success(currently ? 'Bradford → unpaid' : 'Bradford paid');
+        toast.success(
+          currently
+            ? 'Bradford → unpaid'
+            : jdPaper
+              ? `Bradford commission $${amt.toFixed(0)} recorded`
+              : 'BGE production paid'
+        );
         onSaved?.(
           currently
-            ? { bradfordPaymentDate: null, bradfordPaymentPaid: false }
-            : { bradfordPaymentDate: new Date().toISOString(), bradfordPaymentPaid: true }
+            ? { bradfordPaymentDate: null, bradfordPaymentPaid: false, bradfordPaymentAmount: null }
+            : {
+                bradfordPaymentDate: new Date().toISOString(),
+                bradfordPaymentPaid: true,
+                bradfordPaymentAmount: amt,
+              }
         );
       } else {
         await jobsApi.markJDPaid(jobId, { status });
-        toast.success(currently ? 'JD → unpaid' : 'JD paid');
+        toast.success(currently ? 'JD → unpaid' : 'JD production paid');
         onSaved?.(
           currently
             ? { jdPaymentDate: null, jdPaymentPaid: false }
@@ -465,12 +499,6 @@ export function JobMoneyBoard({
       setPayLoading(null);
     }
   };
-
-  const sizes = getSizeOptions();
-  const bgeAmt = jdPaper ? 0 : prodCostN || Number(impactBradfordPO?.buyCost) || 0;
-  const jdAmt = jdPaper
-    ? prodCostN || Number(impactJdPO?.buyCost) || 0
-    : jdMfgN || Number(bradfordJdPO?.buyCost) || 0;
 
   return (
     <div className="bg-white border border-zinc-200 rounded-xl overflow-hidden shadow-sm">
@@ -810,12 +838,20 @@ export function JobMoneyBoard({
         </div>
       </div>
 
-      {/* 3. Paid / unpaid */}
+      {/* 3. Payments
+          Bradford paper: Client + Impact→BGE
+          JD paper: Client + Impact→JD + Impact→Bradford commission (overridable $)
+      */}
       <div className="p-4">
         <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-          Payments — click to toggle paid / unpaid
+          Payments — click to mark paid / unpaid
         </span>
-        <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <div
+          className={cn(
+            'mt-2 grid grid-cols-1 gap-2',
+            jdPaper ? 'sm:grid-cols-3' : 'sm:grid-cols-2'
+          )}
+        >
           <PayToggle
             title="Customer"
             sub="Client → Impact"
@@ -825,30 +861,91 @@ export function JobMoneyBoard({
             loading={payLoading === 'customer'}
             onClick={() => togglePaid('customer', !!customerPaid)}
           />
-          <PayToggle
-            title={jdPaper ? 'Bradford (commission)' : 'Bradford (BGE)'}
-            sub={jdPaper ? 'Margin only' : 'Impact → BGE production'}
-            amount={jdPaper ? calc.bradfordGets || 0 : bgeAmt}
-            paid={!!bradfordPaid}
-            date={bradfordPaidDate}
-            loading={payLoading === 'bradford'}
-            onClick={() => togglePaid('bradford', !!bradfordPaid)}
-            accent="rust"
-          />
-          <PayToggle
-            title="JD Graphic"
-            sub={jdPaper ? 'Impact → JD production' : 'BGE → JD mfg track'}
-            amount={jdAmt}
-            paid={!!jdPaid}
-            date={jdPaidDate}
-            loading={payLoading === 'jd'}
-            onClick={() => togglePaid('jd', !!jdPaid)}
-            accent="navy"
-          />
+          {jdPaper ? (
+            <>
+              <PayToggle
+                title="JD Graphic"
+                sub="Impact → JD production"
+                amount={jdAmt}
+                paid={!!jdPaid}
+                date={jdPaidDate}
+                loading={payLoading === 'jd'}
+                onClick={() => togglePaid('jd', !!jdPaid)}
+                accent="navy"
+              />
+              <div className="rounded-xl border border-[#C0512A]/35 bg-orange-50/40 p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-[#2B3A4A]">Bradford commission</p>
+                    <p className="text-[10px] text-zinc-500 mt-0.5">Impact → Bradford margin</p>
+                  </div>
+                  {bradfordPaid ? (
+                    <span className="inline-flex items-center gap-0.5 text-[10px] font-bold uppercase text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                      Paid
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold uppercase text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded">
+                      Open
+                    </span>
+                  )}
+                </div>
+                <label className="block mt-2">
+                  <span className="text-[10px] font-semibold uppercase text-zinc-500">
+                    Commission $ (override)
+                  </span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={commissionAmt}
+                    onChange={(e) => setCommissionAmt(e.target.value)}
+                    disabled={!!bradfordPaid || payLoading === 'bradford'}
+                    placeholder={commissionDefault > 0 ? String(commissionDefault) : '35'}
+                    className="mt-0.5 w-full px-2 py-1.5 text-lg font-mono font-semibold border border-zinc-200 rounded-lg bg-white disabled:bg-zinc-50"
+                  />
+                  <span className="text-[10px] text-zinc-400 mt-0.5 block">
+                    Table suggests {money2(commissionDefault)} — type actual (e.g. 35)
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  disabled={payLoading === 'bradford'}
+                  onClick={() => togglePaid('bradford', !!bradfordPaid)}
+                  className={cn(
+                    'mt-2 w-full px-2 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-50',
+                    bradfordPaid
+                      ? 'bg-white border border-zinc-200 text-zinc-600 hover:bg-zinc-50'
+                      : 'bg-[#C0512A] text-white hover:bg-[#a84422]'
+                  )}
+                >
+                  {payLoading === 'bradford'
+                    ? '…'
+                    : bradfordPaid
+                      ? 'Clear commission paid'
+                      : `Mark commission paid $${(parseFloat(commissionAmt) || commissionDefault || 0).toFixed(0)}`}
+                </button>
+                {bradfordPaid && bradfordPaidDate && (
+                  <p className="text-[10px] text-emerald-700 mt-1">
+                    Paid {fmtDate(bradfordPaidDate)}
+                  </p>
+                )}
+              </div>
+            </>
+          ) : (
+            <PayToggle
+              title="Bradford (BGE)"
+              sub="Impact → BGE production"
+              amount={bgeAmt}
+              paid={!!bradfordPaid}
+              date={bradfordPaidDate}
+              loading={payLoading === 'bradford'}
+              onClick={() => togglePaid('bradford', !!bradfordPaid)}
+              accent="rust"
+            />
+          )}
         </div>
         {customerPaid && !jdPaper && !bradfordPaid && (
           <p className="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            Client paid — still need to <strong>pay BGE</strong> ({money(bgeAmt || prodCostN)}).
+            Client paid — still need to <strong>pay BGE</strong> ({money(bgeAmt || prodCostN)}). Then Complete.
           </p>
         )}
         {customerPaid && jdPaper && !jdPaid && (
@@ -856,6 +953,17 @@ export function JobMoneyBoard({
             Client paid — still need to <strong>pay JD</strong> ({money(jdAmt || prodCostN)}).
           </p>
         )}
+        {customerPaid && jdPaper && jdPaid && !bradfordPaid && (
+          <p className="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            JD paid — still need <strong>Bradford commission</strong> (enter $ and mark paid). Then Complete.
+          </p>
+        )}
+        {customerPaid &&
+          ((jdPaper && jdPaid && bradfordPaid) || (!jdPaper && bradfordPaid)) && (
+            <p className="mt-2 text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+              All payments recorded — job <strong>Complete</strong>.
+            </p>
+          )}
       </div>
     </div>
   );

@@ -91,15 +91,21 @@ export function opsStageLabel(job: {
   return OPS_STAGE_META[getOpsStage(job)].label;
 }
 
-/** Client paid Impact */
+/**
+ * Client paid Impact (cash received).
+ * Prefer real payment date/flag. status===PAID alone = migration/legacy
+ * "Impact got paid" — still must check production payee (BGE/JD).
+ */
 export function isClientPaid(job: {
   status?: string | null;
   customerPaymentDate?: string | null;
   customerPaymentPaid?: boolean | null;
 }): boolean {
-  if (job.status === 'PAID') return true;
   if (job.customerPaymentPaid === true) return true;
-  return !!job.customerPaymentDate;
+  if (job.customerPaymentDate) return true;
+  // Legacy/migration: status PAID meant client paid (not necessarily vendor paid)
+  if (job.status === 'PAID') return true;
+  return false;
 }
 
 /** Customer invoice on file (PDF generated, legacy #, or workflow INVOICED+) */
@@ -277,33 +283,56 @@ export function isJdPaid(job: {
   return !!job.jdPaymentDate;
 }
 
-/** Impact pays one production payee — BGE on Bradford paper, else JD */
+/**
+ * Impact pays ONE production payee only:
+ * - Bradford paper → BGE
+ * - JD / customer paper → JD
+ * (No BGE→JD mfg tracking required.)
+ */
 export function impactProductionPayee(job: {
   paperSource?: string | null;
-  jdPaymentDate?: string | null;
-  jdPaymentPaid?: boolean | null;
-  bradfordPaymentDate?: string | null;
-  bradfordPaymentPaid?: boolean | null;
 }): 'BGE' | 'JD' {
-  if (isJdPaid(job) && !isBgePaid(job)) return 'JD';
-  if (isBgePaid(job) && !isJdPaid(job)) return 'BGE';
   const src = (job.paperSource || 'BRADFORD').toUpperCase();
   if (src === 'VENDOR' || src === 'CUSTOMER') return 'JD';
   return 'BGE';
 }
 
+/** True when Impact has paid the paper-route production payee (BGE or JD — not both). */
 export function isImpactProductionPaid(job: {
+  paperSource?: string | null;
   jdPaymentDate?: string | null;
   jdPaymentPaid?: boolean | null;
   bradfordPaymentDate?: string | null;
   bradfordPaymentPaid?: boolean | null;
 }): boolean {
-  return isBgePaid(job) || isJdPaid(job);
+  const payee = impactProductionPayee(job);
+  return payee === 'JD' ? isJdPaid(job) : isBgePaid(job);
 }
 
-/** Client paid us; Impact still owes BGE or JD */
+/**
+ * JD paper only: Impact → Bradford commission (margin share).
+ * On Bradford paper this is NOT separate — BGE payment covers production.
+ */
+export function needsBradfordCommission(job: {
+  paperSource?: string | null;
+  customerPaymentDate?: string | null;
+  customerPaymentPaid?: boolean | null;
+  status?: string | null;
+  jdPaymentDate?: string | null;
+  jdPaymentPaid?: boolean | null;
+  bradfordPaymentDate?: string | null;
+  bradfordPaymentPaid?: boolean | null;
+}): boolean {
+  if (impactProductionPayee(job) !== 'JD') return false;
+  if (!isClientPaid(job)) return false;
+  if (job.status === 'CANCELLED') return false;
+  return !isBgePaid(job);
+}
+
+/** Client paid us; Impact still owes production and/or Bradford commission (JD paper). */
 export function needsVendorPay(job: {
   status?: string | null;
+  paperSource?: string | null;
   customerPaymentDate?: string | null;
   customerPaymentPaid?: boolean | null;
   jdPaymentDate?: string | null;
@@ -313,7 +342,30 @@ export function needsVendorPay(job: {
 }): boolean {
   if (!isClientPaid(job)) return false;
   if (job.status === 'CANCELLED') return false;
-  return !isImpactProductionPaid(job);
+  if (!isImpactProductionPaid(job)) return true;
+  // JD paper: still need commission to Bradford after production paid
+  return needsBradfordCommission(job);
+}
+
+/**
+ * Money complete:
+ * - Bradford paper: client + Impact→BGE
+ * - JD paper: client + Impact→JD + Impact→Bradford commission
+ */
+export function isMoneyComplete(job: {
+  status?: string | null;
+  paperSource?: string | null;
+  customerPaymentDate?: string | null;
+  customerPaymentPaid?: boolean | null;
+  jdPaymentDate?: string | null;
+  jdPaymentPaid?: boolean | null;
+  bradfordPaymentDate?: string | null;
+  bradfordPaymentPaid?: boolean | null;
+}): boolean {
+  if (!isClientPaid(job)) return false;
+  if (!isImpactProductionPaid(job)) return false;
+  if (impactProductionPayee(job) === 'JD' && !isBgePaid(job)) return false;
+  return true;
 }
 
 export function getMoneyStage(job: {
@@ -326,7 +378,7 @@ export function getMoneyStage(job: {
   bradfordPaymentPaid?: boolean | null;
 }): MoneyStage {
   if (job.status === 'CANCELLED') return 'settled';
-  if (isImpactProductionPaid(job) && isClientPaid(job)) return 'settled';
+  if (isMoneyComplete(job)) return 'settled';
   if (isImpactProductionPaid(job) && !isClientPaid(job)) return 'await_client';
   if (needsVendorPay(job)) return 'pay_vendor';
   return 'await_client';
@@ -348,10 +400,9 @@ export function moneyStatusLabel(job: {
   if (!isClientPaid(job)) {
     return { label: 'Await client', className: 'text-amber-700' };
   }
-  if (isImpactProductionPaid(job)) {
-    return { label: 'Settled', className: 'text-emerald-700' };
+  if (isMoneyComplete(job)) {
+    return { label: 'Complete', className: 'text-emerald-700' };
   }
-  // Client paid us — still need to pay production
   const payee = impactProductionPayee(job);
   return {
     label: payee === 'BGE' ? 'Need pay BGE' : 'Need pay JD',
@@ -359,7 +410,7 @@ export function moneyStatusLabel(job: {
   };
 }
 
-/** Dual badges for row UI: client paid? + production next step */
+/** Dual badges for row UI: client paid? + production next step / complete */
 export function moneyStatusBadges(job: {
   status?: string | null;
   paperSource?: string | null;
@@ -383,17 +434,24 @@ export function moneyStatusBadges(job: {
   // Client paid Impact
   badges.push({ text: 'PAID', tone: 'paid' });
 
-  if (isImpactProductionPaid(job)) {
-    badges.push({ text: 'Settled', tone: 'good' });
+  if (isMoneyComplete(job)) {
+    badges.push({ text: 'COMPLETE', tone: 'good' });
     return badges;
   }
 
-  // Still owe production payee
   const payee = impactProductionPayee(job);
-  badges.push({
-    text: payee === 'BGE' ? 'Need pay BGE' : 'Need pay JD',
-    tone: 'action',
-  });
+  if (!isImpactProductionPaid(job)) {
+    badges.push({
+      text: payee === 'BGE' ? 'Need pay BGE' : 'Need pay JD',
+      tone: 'action',
+    });
+    return badges;
+  }
+
+  // JD paper: production paid, commission still open
+  if (needsBradfordCommission(job)) {
+    badges.push({ text: 'Need Bradford commission', tone: 'action' });
+  }
   return badges;
 }
 

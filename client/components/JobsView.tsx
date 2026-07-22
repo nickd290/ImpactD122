@@ -180,7 +180,7 @@ export function JobsView({
   onCloseDrawer,
 }: JobsViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  /** Default = floor work (new + proof + production) */
+  /** Default = floor work; money tabs surface client-paid → still owe BGE/JD */
   const [activeTab, setActiveTab] = useState<BoardTab>('active');
   // Local open state; parent can also force open (search / action items)
   const [localOpen, setLocalOpen] = useState(false);
@@ -282,9 +282,19 @@ export function JobsView({
   ];
 
   const moneyTabs: { id: BoardTab; label: string; count: number; title: string }[] = [
-    { id: 'await_client', label: 'Await client', count: tabCounts.await_client, title: 'Complete, customer not paid' },
-    { id: 'pay_vendors', label: 'Pay BGE/JD', count: tabCounts.pay_vendors, title: 'Client paid — Impact pays BGE or JD' },
-    { id: 'settled', label: 'Settled', count: tabCounts.settled, title: 'Client paid + production paid' },
+    { id: 'await_client', label: 'Await client', count: tabCounts.await_client, title: 'Invoice out — waiting on customer $' },
+    {
+      id: 'pay_vendors',
+      label: 'Impact paid → pay BGE/JD',
+      count: tabCounts.pay_vendors,
+      title: 'Customer paid Impact — still mark BGE or JD (JD paper also needs Bradford commission)',
+    },
+    {
+      id: 'settled',
+      label: 'Complete',
+      count: tabCounts.settled,
+      title: 'Client + production (+ commission if JD paper) all marked',
+    },
     { id: 'all', label: 'All', count: tabCounts.all, title: 'Everything' },
   ];
 

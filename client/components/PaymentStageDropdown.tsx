@@ -35,21 +35,19 @@ function isJdPaper(paperSource: PaperSourceKey): boolean {
 }
 
 function stagesForPaper(paperSource: PaperSourceKey): StageDef[] {
+  // No BGE→JD mfg tracking. JD paper adds Impact→Bradford commission.
   if (isJdPaper(paperSource)) {
-    // Impact pays JD for production; Bradford gets margin only
     return [
       { key: 'invoice', label: 'Invoice Sent', shortLabel: 'Invoiced', mapsTo: 'invoice' },
       { key: 'customer', label: 'Customer Paid', shortLabel: 'Cust. Paid', mapsTo: 'customer' },
       { key: 'production', label: 'Impact → JD', shortLabel: 'JD Paid', mapsTo: 'jd' },
-      { key: 'secondary', label: 'Impact → Bradford (margin)', shortLabel: 'Bradford', mapsTo: 'bradford' },
+      { key: 'secondary', label: 'Impact → Bradford (commission)', shortLabel: 'Commission', mapsTo: 'bradford' },
     ];
   }
-  // Bradford paper: Impact pays Bradford; Bradford pays JD mfg
   return [
     { key: 'invoice', label: 'Invoice Sent', shortLabel: 'Invoiced', mapsTo: 'invoice' },
     { key: 'customer', label: 'Customer Paid', shortLabel: 'Cust. Paid', mapsTo: 'customer' },
-    { key: 'production', label: 'Impact → Bradford', shortLabel: 'Bradford', mapsTo: 'bradford' },
-    { key: 'secondary', label: 'Bradford → JD (mfg)', shortLabel: 'JD Paid', mapsTo: 'jd' },
+    { key: 'production', label: 'Impact → BGE', shortLabel: 'BGE Paid', mapsTo: 'bradford' },
   ];
 }
 
@@ -159,11 +157,7 @@ export function PaymentStageDropdown({
             status: isCompleted ? 'unpaid' : 'paid',
           });
           toast.success(
-            isCompleted
-              ? 'JD payment cleared'
-              : jdPaper
-                ? 'Impact → JD payment recorded'
-                : 'Bradford → JD (mfg) recorded'
+            isCompleted ? 'JD payment cleared' : 'Impact → JD payment recorded — job complete if client paid'
           );
           break;
       }

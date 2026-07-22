@@ -2991,8 +2991,8 @@ export function JobDetailModal({
         },
       ];
 
+      // No BGE→JD mfg. JD paper adds Impact→Bradford commission.
       if (jdPaper) {
-        // JD paper: Impact → JD production + Impact → Bradford commission
         return [
           ...baseStages,
           {
@@ -3009,33 +3009,23 @@ export function JobDetailModal({
             label: 'Impact → Bradford (commission)',
             isComplete: job.bradfordPaymentPaid || !!job.bradfordPaymentDate,
             date: job.bradfordPaymentDate,
-            amount: job.bradfordPaymentAmount || job.profit?.bradfordTotal,
+            amount: job.bradfordPaymentAmount || job.profit?.bradfordShare || job.profit?.bradfordTotal,
             action: job.bradfordPaymentPaid || job.bradfordPaymentDate ? 'Mark Unpaid' : 'Mark Paid',
             actionStatus: job.bradfordPaymentPaid || job.bradfordPaymentDate ? 'unpaid' : 'paid',
           },
         ];
       }
 
-      // Bradford paper: Impact → Bradford full + Bradford → JD mfg
       return [
         ...baseStages,
         {
           key: 'bradfordPaid',
-          label: 'Impact → Bradford',
+          label: 'Impact → BGE',
           isComplete: job.bradfordPaymentPaid || !!job.bradfordPaymentDate,
           date: job.bradfordPaymentDate,
           amount: job.bradfordPaymentAmount || job.profit?.bradfordTotal,
           action: job.bradfordPaymentPaid || job.bradfordPaymentDate ? 'Mark Unpaid' : 'Mark Paid',
           actionStatus: job.bradfordPaymentPaid || job.bradfordPaymentDate ? 'unpaid' : 'paid',
-        },
-        {
-          key: 'jdPaid',
-          label: 'Bradford → JD (mfg)',
-          isComplete: job.jdPaymentPaid || !!job.jdPaymentDate,
-          date: job.jdPaymentDate,
-          amount: job.jdPaymentAmount || job.profit?.bradfordOwesJD,
-          action: job.jdPaymentPaid || job.jdPaymentDate ? 'Mark Unpaid' : 'Mark Paid',
-          actionStatus: job.jdPaymentPaid || job.jdPaymentDate ? 'unpaid' : 'paid',
         },
       ];
     };
