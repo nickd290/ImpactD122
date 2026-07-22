@@ -18,7 +18,7 @@ import {
   isInvoiced,
   needsVendorPay,
   impactProductionPayee,
-  moneyStatusLabel,
+  moneyStatusBadges,
   getMoneyStage,
   effectiveWorkflow,
   isPaymentOverdue,
@@ -1145,8 +1145,9 @@ export function JobsView({
                   : prodLate
                     ? `${getDaysProductionLate(job)}d past delivery`
                     : 'Delivery / mail';
-                const { label: moneyLabel, className: moneyClass } = moneyStatusLabel(job);
+                const moneyBadges = moneyStatusBadges(job);
                 const stageLabel = opsStageLabel(job);
+                const needPay = needsVendorPay(job);
                 return (
                   <tr
                     key={job.id}
@@ -1157,6 +1158,7 @@ export function JobsView({
                     className={cn(
                       "border-b border-zinc-100 hover:bg-zinc-50/80 transition-colors cursor-pointer",
                       isOverdue && "bg-red-50/30",
+                      needPay && "bg-orange-50/40",
                       selectedJobIds.has(job.id) && "bg-zinc-50"
                     )}
                   >
@@ -1199,7 +1201,7 @@ export function JobsView({
                       />
                     </td>
                     <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex flex-col gap-0.5 items-start">
+                      <div className="flex flex-col gap-1 items-start">
                         <span
                           className={cn(
                             'inline-flex px-2 py-0.5 rounded-md text-[11px] font-semibold',
@@ -1212,16 +1214,30 @@ export function JobsView({
                         >
                           {stageLabel}
                         </span>
-                        <span
-                          className={cn('text-[11px] font-medium', moneyClass)}
-                          title={
-                            impactProductionPayee(job) === 'BGE'
-                              ? 'Impact → BGE (Bradford pays JD after)'
-                              : 'Impact → JD (JD paper route)'
-                          }
-                        >
-                          {moneyLabel}
-                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          {moneyBadges.map((b) => (
+                            <span
+                              key={b.text}
+                              title={
+                                b.tone === 'action'
+                                  ? impactProductionPayee(job) === 'BGE'
+                                    ? 'Client paid — Impact still owes BGE'
+                                    : 'Client paid — Impact still owes JD'
+                                  : b.text
+                              }
+                              className={cn(
+                                'inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide',
+                                b.tone === 'paid' && 'bg-emerald-50 text-emerald-800 border border-emerald-200',
+                                b.tone === 'good' && 'bg-emerald-100 text-emerald-900',
+                                b.tone === 'action' && 'bg-orange-100 text-[#C0512A] border border-orange-300',
+                                b.tone === 'warn' && 'bg-amber-50 text-amber-800 border border-amber-200',
+                                b.tone === 'muted' && 'bg-zinc-100 text-zinc-500'
+                              )}
+                            >
+                              {b.text}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     </td>
                     <td className="px-3 py-3">

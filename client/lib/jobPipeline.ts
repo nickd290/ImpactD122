@@ -351,11 +351,50 @@ export function moneyStatusLabel(job: {
   if (isImpactProductionPaid(job)) {
     return { label: 'Settled', className: 'text-emerald-700' };
   }
+  // Client paid us — still need to pay production
   const payee = impactProductionPayee(job);
   return {
-    label: payee === 'BGE' ? 'Pay BGE' : 'Pay JD',
+    label: payee === 'BGE' ? 'Need pay BGE' : 'Need pay JD',
     className: 'text-[#C0512A]',
   };
+}
+
+/** Dual badges for row UI: client paid? + production next step */
+export function moneyStatusBadges(job: {
+  status?: string | null;
+  paperSource?: string | null;
+  customerPaymentDate?: string | null;
+  customerPaymentPaid?: boolean | null;
+  jdPaymentDate?: string | null;
+  jdPaymentPaid?: boolean | null;
+  bradfordPaymentDate?: string | null;
+  bradfordPaymentPaid?: boolean | null;
+}): Array<{ text: string; tone: 'muted' | 'warn' | 'good' | 'action' | 'paid' }> {
+  if (job.status === 'CANCELLED') {
+    return [{ text: 'Cancelled', tone: 'muted' }];
+  }
+  const badges: Array<{ text: string; tone: 'muted' | 'warn' | 'good' | 'action' | 'paid' }> = [];
+
+  if (!isClientPaid(job)) {
+    badges.push({ text: 'Unpaid', tone: 'warn' });
+    return badges;
+  }
+
+  // Client paid Impact
+  badges.push({ text: 'PAID', tone: 'paid' });
+
+  if (isImpactProductionPaid(job)) {
+    badges.push({ text: 'Settled', tone: 'good' });
+    return badges;
+  }
+
+  // Still owe production payee
+  const payee = impactProductionPayee(job);
+  badges.push({
+    text: payee === 'BGE' ? 'Need pay BGE' : 'Need pay JD',
+    tone: 'action',
+  });
+  return badges;
 }
 
 /** Simple status options for dropdowns (what staff pick) */

@@ -10,9 +10,32 @@ import {
   needsVendorPay,
   impactProductionPayee,
   isImpactProductionPaid,
-  moneyStatusLabel,
+  moneyStatusBadges,
 } from '../lib/jobPipeline';
 import { cn } from '../lib/utils';
+
+function MoneyBadge({
+  text,
+  tone,
+}: {
+  text: string;
+  tone: 'muted' | 'warn' | 'good' | 'action' | 'paid';
+}) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wide border',
+        tone === 'paid' && 'bg-emerald-50 text-emerald-800 border-emerald-200',
+        tone === 'good' && 'bg-emerald-100 text-emerald-900 border-emerald-300',
+        tone === 'action' && 'bg-orange-100 text-[#C0512A] border-orange-300',
+        tone === 'warn' && 'bg-amber-50 text-amber-800 border-amber-200',
+        tone === 'muted' && 'bg-zinc-100 text-zinc-500 border-zinc-200'
+      )}
+    >
+      {text}
+    </span>
+  );
+}
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('en-US', {
@@ -574,7 +597,7 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
               const clientPaid = isClientPaid(job);
               const needPay = needsVendorPay(job);
               const payee = impactProductionPayee(job);
-              const money = moneyStatusLabel(job);
+              const badges = moneyStatusBadges(job);
               const paper = (job.paperSource || 'BRADFORD').toUpperCase();
               const paperLabel =
                 paper === 'VENDOR' || paper === 'CUSTOMER' ? 'JD paper' : 'BGE paper';
@@ -584,7 +607,7 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
                   key={job.id}
                   className={cn(
                     'border-b border-zinc-100 hover:bg-zinc-50 transition-colors',
-                    needPay && 'bg-orange-50/40'
+                    needPay && 'bg-orange-50/50'
                   )}
                 >
                   <td className="px-4 py-3 text-sm">
@@ -628,15 +651,19 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
                     {paperLabel}
                   </td>
                   <td onClick={() => handleRowClick(job)} className="px-4 py-3 cursor-pointer">
-                    <span className={cn('text-xs font-semibold', money.className)}>
-                      {money.label}
-                    </span>
-                    {clientPaid && (
-                      <div className="text-[10px] text-zinc-400 mt-0.5">
-                        Client paid
-                        {job.customerPaymentDate
-                          ? ` · ${new Date(job.customerPaymentDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
-                          : ''}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {badges.map((b) => (
+                        <MoneyBadge key={b.text} text={b.text} tone={b.tone} />
+                      ))}
+                    </div>
+                    {clientPaid && job.customerPaymentDate && (
+                      <div className="text-[10px] text-zinc-400 mt-1">
+                        Client {new Date(job.customerPaymentDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' })}
+                      </div>
+                    )}
+                    {needPay && (
+                      <div className="text-[10px] font-semibold text-[#C0512A] mt-0.5">
+                        Client paid — still owe {payee === 'BGE' ? 'BGE' : 'JD'}
                       </div>
                     )}
                   </td>
@@ -652,26 +679,28 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
                         >
                           Mark client paid
                         </button>
-                      ) : needPay && payee === 'BGE' ? (
-                        <button
-                          type="button"
-                          disabled={payingId === `${job.id}-bradford`}
-                          onClick={(e) => handleMarkProductionPaid(job, e, 'bradford')}
-                          className="px-2.5 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-semibold hover:bg-amber-200 transition-colors disabled:opacity-50"
-                          title="Impact paid Bradford / BGE"
-                        >
-                          Mark BGE paid
-                        </button>
-                      ) : needPay && payee === 'JD' ? (
-                        <button
-                          type="button"
-                          disabled={payingId === `${job.id}-jd`}
-                          onClick={(e) => handleMarkProductionPaid(job, e, 'jd')}
-                          className="px-2.5 py-1 bg-slate-200 text-[#2B3A4A] rounded-full text-xs font-semibold hover:bg-slate-300 transition-colors disabled:opacity-50"
-                          title="Impact paid JD Graphic"
-                        >
-                          Mark JD paid
-                        </button>
+                      ) : needPay ? (
+                        payee === 'BGE' ? (
+                          <button
+                            type="button"
+                            disabled={payingId === `${job.id}-bradford`}
+                            onClick={(e) => handleMarkProductionPaid(job, e, 'bradford')}
+                            className="px-2.5 py-1 bg-orange-500 text-white rounded-full text-xs font-bold hover:bg-orange-600 transition-colors disabled:opacity-50"
+                            title="Impact paid Bradford / BGE"
+                          >
+                            Mark BGE paid
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={payingId === `${job.id}-jd`}
+                            onClick={(e) => handleMarkProductionPaid(job, e, 'jd')}
+                            className="px-2.5 py-1 bg-[#2B3A4A] text-white rounded-full text-xs font-bold hover:bg-[#1f2a36] transition-colors disabled:opacity-50"
+                            title="Impact paid JD Graphic"
+                          >
+                            Mark JD paid
+                          </button>
+                        )
                       ) : (
                         <span className="px-2 py-1 bg-green-50 text-green-700 rounded-full text-xs font-medium inline-flex items-center gap-1">
                           <Check className="w-3 h-3" />
