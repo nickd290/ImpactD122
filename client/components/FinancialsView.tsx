@@ -573,21 +573,22 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
                   className="w-4 h-4 text-zinc-900 rounded border-zinc-300 focus:ring-zinc-400"
                 />
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Job</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Customer PO #</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Customer</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Sell</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Spread</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Split</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Paper</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Money</th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-zinc-500">Actions</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-zinc-500">Job</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-zinc-500">Customer</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-zinc-500">Cust PO</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-zinc-500">BGE PO</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-zinc-500">Inv #</th>
+              <th className="px-3 py-3 text-right text-xs font-medium text-zinc-500">Sell</th>
+              <th className="px-3 py-3 text-right text-xs font-medium text-zinc-500">Spread</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-zinc-500">Paper</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-zinc-500">Money</th>
+              <th className="px-3 py-3 text-center text-xs font-medium text-zinc-500">Actions</th>
             </tr>
           </thead>
           <tbody>
             {filteredJobs.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-4 py-12 text-center text-sm text-zinc-400">
+                <td colSpan={11} className="px-4 py-12 text-center text-sm text-zinc-400">
                   No jobs in this filter.
                 </td>
               </tr>
@@ -601,6 +602,12 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
               const paper = (job.paperSource || 'BRADFORD').toUpperCase();
               const paperLabel =
                 paper === 'VENDOR' || paper === 'CUSTOMER' ? 'JD paper' : 'BGE paper';
+              const invNo =
+                job.customerInvoiceNumber || job.invoiceNumber || null;
+              const bgePo =
+                job.partnerPONumber ||
+                job.bradfordRefNumber ||
+                null;
 
               return (
                 <tr
@@ -610,7 +617,7 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
                     needPay && 'bg-orange-50/50'
                   )}
                 >
-                  <td className="px-4 py-3 text-sm">
+                  <td className="px-3 py-3 text-sm">
                     <input
                       type="checkbox"
                       checked={selectedJobIds.has(job.id)}
@@ -623,31 +630,30 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
                   </td>
                   <td
                     onClick={() => handleRowClick(job)}
-                    className="px-4 py-3 cursor-pointer"
+                    className="px-3 py-3 cursor-pointer"
                   >
-                    <p className="text-sm font-medium text-zinc-900">{job.number || job.jobNo}</p>
-                    <p className="text-xs text-zinc-400 truncate max-w-[150px]">{job.title}</p>
+                    <p className="text-sm font-mono font-semibold text-zinc-900">{job.number || job.jobNo}</p>
+                    <p className="text-xs text-zinc-400 truncate max-w-[140px]" title={job.title}>{job.title}</p>
                   </td>
-                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-zinc-600 cursor-pointer">
-                    {job.customerPONumber || '-'}
+                  <td onClick={() => handleRowClick(job)} className="px-3 py-3 text-sm text-zinc-700 cursor-pointer max-w-[140px] truncate" title={job.customer?.name || ''}>
+                    {job.customer?.name || '—'}
                   </td>
-                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-zinc-600 cursor-pointer">
-                    {job.customer?.name || '-'}
+                  <td onClick={() => handleRowClick(job)} className="px-3 py-3 text-sm font-mono text-zinc-700 cursor-pointer tabular-nums">
+                    {job.customerPONumber || '—'}
                   </td>
-                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-right font-medium text-green-600 cursor-pointer tabular-nums">
+                  <td onClick={() => handleRowClick(job)} className="px-3 py-3 text-sm font-mono text-zinc-700 cursor-pointer tabular-nums">
+                    {bgePo || '—'}
+                  </td>
+                  <td onClick={() => handleRowClick(job)} className="px-3 py-3 text-sm font-mono text-zinc-600 cursor-pointer tabular-nums">
+                    {invNo || '—'}
+                  </td>
+                  <td onClick={() => handleRowClick(job)} className="px-3 py-3 text-sm text-right font-medium text-green-600 cursor-pointer tabular-nums">
                     {formatCurrency(fin.sellPrice)}
                   </td>
-                  <td onClick={() => handleRowClick(job)} className={`px-4 py-3 text-sm text-right font-medium cursor-pointer tabular-nums ${fin.spread >= 0 ? 'text-zinc-900' : 'text-red-600'}`}>
+                  <td onClick={() => handleRowClick(job)} className={`px-3 py-3 text-sm text-right font-medium cursor-pointer tabular-nums ${fin.spread >= 0 ? 'text-zinc-900' : 'text-red-600'}`}>
                     {formatCurrency(fin.spread)}
                   </td>
-                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-right cursor-pointer relative group tabular-nums">
-                    <span className="font-medium text-zinc-600">{formatCurrency(fin.impactTotal)}</span>
-                    <div className="hidden group-hover:block absolute bg-zinc-900 text-white text-xs p-2 rounded -top-12 right-0 whitespace-nowrap z-10 shadow-lg">
-                      <div className="text-amber-300 tabular-nums">Bradford: {formatCurrency(fin.bradfordTotal)}</div>
-                      <div className="text-zinc-300 tabular-nums">Impact: {formatCurrency(fin.impactTotal)}</div>
-                    </div>
-                  </td>
-                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-xs text-zinc-500 cursor-pointer">
+                  <td onClick={() => handleRowClick(job)} className="px-3 py-3 text-xs text-zinc-500 cursor-pointer whitespace-nowrap">
                     {paperLabel}
                   </td>
                   <td onClick={() => handleRowClick(job)} className="px-4 py-3 cursor-pointer">
@@ -715,16 +721,13 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
           </tbody>
           <tfoot className="bg-zinc-900 text-white">
             <tr>
-              <td className="px-4 py-3"></td>
-              <td colSpan={3} className="px-4 py-3 text-sm font-medium">Totals ({filteredJobs.length} jobs)</td>
-              <td className="px-4 py-3 text-sm text-right font-medium tabular-nums">{formatCurrency(totals.sellPrice)}</td>
-              <td className="px-4 py-3 text-sm text-right font-medium tabular-nums">{formatCurrency(totals.spread)}</td>
-              <td className="px-4 py-3 text-sm text-right font-medium tabular-nums">
-                <span className="text-amber-400">{formatCurrency(totals.bradfordTotal)}</span>
-                <span className="text-zinc-500 mx-1">/</span>
-                <span className="text-zinc-300">{formatCurrency(totals.impactTotal)}</span>
+              <td className="px-3 py-3"></td>
+              <td colSpan={5} className="px-3 py-3 text-sm font-medium">Totals ({filteredJobs.length} jobs)</td>
+              <td className="px-3 py-3 text-sm text-right font-medium tabular-nums">{formatCurrency(totals.sellPrice)}</td>
+              <td className="px-3 py-3 text-sm text-right font-medium tabular-nums">{formatCurrency(totals.spread)}</td>
+              <td colSpan={3} className="px-3 py-3 text-xs text-zinc-400">
+                BGE share {formatCurrency(totals.bradfordTotal)} · Impact {formatCurrency(totals.impactTotal)}
               </td>
-              <td colSpan={3} className="px-4 py-3"></td>
             </tr>
           </tfoot>
         </table>

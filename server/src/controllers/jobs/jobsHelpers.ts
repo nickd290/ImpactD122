@@ -282,7 +282,8 @@ export function transformJob(job: any) {
     dueDate: job.deliveryDate,
     // Map createdAt to dateCreated for frontend
     dateCreated: job.createdAt,
-    // Bradford ref number (now using dedicated partnerPONumber field)
+    // Bradford / BGE PO (partnerPONumber) — expose both names for UI
+    partnerPONumber: job.partnerPONumber || '',
     bradfordRefNumber: job.partnerPONumber || '',
 
     // === PAYMENT TRACKING ===
