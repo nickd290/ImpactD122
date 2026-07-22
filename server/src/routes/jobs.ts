@@ -50,6 +50,7 @@ import {
 // Paper-source-aware payees (Bradford margin vs JD production)
 import {
   markInvoiceSent,
+  markInvoiced,
   markCustomerPaid,
   markVendorPaid,
   markImpactToBradfordPaid,
@@ -144,6 +145,8 @@ router.post('/batch-payment', batchUpdatePayments);
 // Multi-step payment workflow (4-step process)
 // Invoice sent (manual tracking)
 router.patch('/:id/invoice-sent', markInvoiceSent);
+// Record customer invoice (legacy # + date) — completed, invoiced, unpaid
+router.patch('/:id/mark-invoiced', markInvoiced);
 // Step 1: Customer → Impact (Financials tab)
 router.patch('/:id/customer-paid', markCustomerPaid);
 // Vendor payment (for non-Bradford vendors)

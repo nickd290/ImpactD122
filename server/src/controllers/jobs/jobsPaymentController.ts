@@ -49,15 +49,27 @@ export const markCustomerPaid = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Job not found' });
     }
 
-    // Handle unpaid status - clear payment date
+    // Handle unpaid status - clear payment date (stay invoiced if invoice on file)
     if (status === 'unpaid') {
       await logPaymentChange(id, 'customerPaymentDate', existingJob.customerPaymentDate, null, 'admin');
+
+      const full = await prisma.job.findUnique({
+        where: { id },
+        select: { invoiceGeneratedAt: true, customerInvoiceNumber: true },
+      });
+      const stillInvoiced = !!(full?.invoiceGeneratedAt || full?.customerInvoiceNumber);
 
       const job = await prisma.job.update({
         where: { id },
         data: {
           customerPaymentDate: null,
           customerPaymentAmount: null,
+          status: 'ACTIVE',
+          workflowStatus: stillInvoiced ? 'INVOICED' : 'COMPLETED',
+          workflowStatusOverride: stillInvoiced ? 'INVOICED' : 'COMPLETED',
+          workflowStatusOverrideAt: new Date(),
+          workflowStatusOverrideBy: 'staff',
+          workflowUpdatedAt: new Date(),
           updatedAt: new Date(),
         },
         include: {
@@ -82,6 +94,13 @@ export const markCustomerPaid = async (req: Request, res: Response) => {
       data: {
         customerPaymentDate: paymentDate,
         customerPaymentAmount: paymentAmount,
+        // Money complete on customer side
+        status: 'PAID',
+        workflowStatus: 'PAID',
+        workflowStatusOverride: 'PAID',
+        workflowStatusOverrideAt: new Date(),
+        workflowStatusOverrideBy: 'staff',
+        workflowUpdatedAt: new Date(),
         updatedAt: new Date(),
       },
       include: {
@@ -166,6 +185,122 @@ export const markInvoiceSent = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Mark invoice sent error:', error);
     res.status(500).json({ error: 'Failed to mark invoice sent' });
+  }
+};
+
+// ============================================================================
+// MARK INVOICED (migration / AR) — old system invoice # + date; unpaid until client paid
+// ============================================================================
+
+/**
+ * Record that a customer invoice exists (legacy system or new).
+ * Sets workflow INVOICED, stores invoice # + date, does NOT mark paid.
+ *
+ * Body: { invoiceNumber: string, invoicedAt?: ISO date, status?: 'invoiced' | 'clear' }
+ */
+export const markInvoiced = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { invoiceNumber, invoicedAt, status } = req.body as {
+      invoiceNumber?: string;
+      invoicedAt?: string;
+      status?: 'invoiced' | 'clear';
+    };
+
+    const existingJob = await prisma.job.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        jobNo: true,
+        customerInvoiceNumber: true,
+        invoiceGeneratedAt: true,
+        workflowStatus: true,
+        completedAt: true,
+        customerPaymentDate: true,
+        status: true,
+      },
+    });
+
+    if (!existingJob) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    const now = new Date();
+
+    // Clear invoiced state (back to completed / production)
+    if (status === 'clear') {
+      await logPaymentChange(
+        id,
+        'customerInvoiceNumber',
+        existingJob.customerInvoiceNumber,
+        null,
+        'admin'
+      );
+
+      const job = await prisma.job.update({
+        where: { id },
+        data: {
+          customerInvoiceNumber: null,
+          invoiceGeneratedAt: null,
+          workflowStatus: 'COMPLETED',
+          workflowStatusOverride: 'COMPLETED',
+          workflowStatusOverrideAt: now,
+          workflowStatusOverrideBy: 'staff',
+          workflowUpdatedAt: now,
+          // Keep money status as-is; only reopen floor state if not paid
+          status: existingJob.customerPaymentDate || existingJob.status === 'PAID' ? existingJob.status : 'ACTIVE',
+          updatedAt: now,
+        },
+        include: JOB_INCLUDE as any,
+      });
+      return res.json(transformJob(job));
+    }
+
+    const invNo = (invoiceNumber || existingJob.customerInvoiceNumber || '').trim();
+    if (!invNo) {
+      return res.status(400).json({
+        error: 'invoiceNumber required',
+        message: 'Enter the invoice number from the old (or new) system',
+      });
+    }
+
+    const issued = invoicedAt ? new Date(invoicedAt) : existingJob.invoiceGeneratedAt || now;
+    if (Number.isNaN(issued.getTime())) {
+      return res.status(400).json({ error: 'Invalid invoicedAt date' });
+    }
+
+    await logPaymentChange(
+      id,
+      'customerInvoiceNumber',
+      existingJob.customerInvoiceNumber,
+      invNo,
+      'admin'
+    );
+
+    const job = await prisma.job.update({
+      where: { id },
+      data: {
+        customerInvoiceNumber: invNo,
+        invoiceGeneratedAt: issued,
+        // Floor already done if not set
+        completedAt: existingJob.completedAt || now,
+        // Invoiced AR state — not paid unless already collected
+        workflowStatus: existingJob.customerPaymentDate ? 'PAID' : 'INVOICED',
+        workflowStatusOverride: existingJob.customerPaymentDate ? 'PAID' : 'INVOICED',
+        workflowStatusOverrideAt: now,
+        workflowStatusOverrideBy: 'staff',
+        workflowUpdatedAt: now,
+        // JobStatus.PAID only when customer paid; invoiced stays ACTIVE
+        status: existingJob.customerPaymentDate || existingJob.status === 'PAID' ? 'PAID' : 'ACTIVE',
+        updatedAt: now,
+      },
+      include: JOB_INCLUDE as any,
+    });
+
+    res.json(transformJob(job));
+  } catch (error: any) {
+    console.error('Mark invoiced error:', error);
+    res.status(500).json({ error: 'Failed to mark invoiced', message: error?.message });
   }
 };
 

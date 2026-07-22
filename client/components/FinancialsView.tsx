@@ -1,7 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Check } from 'lucide-react';
+import { toast } from 'sonner';
 import { jobsApi, pdfApi } from '../lib/api';
 import { JobDetailModal } from './JobDetailModal';
+import {
+  isClientPaid,
+  isBgePaid,
+  isJdPaid,
+  needsVendorPay,
+  impactProductionPayee,
+  isImpactProductionPaid,
+  moneyStatusLabel,
+} from '../lib/jobPipeline';
+import { cn } from '../lib/utils';
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('en-US', {
@@ -10,6 +21,15 @@ const formatCurrency = (amount: number) => {
   }).format(amount);
 };
 
+/** Money AR filters — not floor COMPLETED */
+type MoneyFilter =
+  | 'all'
+  | 'await_client'   // customer not paid
+  | 'pay_vendor'     // customer paid → still owe BGE or JD
+  | 'pay_bge'        // customer paid → Impact owes BGE
+  | 'pay_jd'         // customer paid → Impact owes JD
+  | 'settled';       // client + production paid
+
 interface FinancialsViewProps {
   onRefresh?: () => void;
 }
@@ -17,28 +37,34 @@ interface FinancialsViewProps {
 export function FinancialsView({ onRefresh }: FinancialsViewProps) {
   const [loading, setLoading] = useState(true);
   const [jobs, setJobs] = useState<any[]>([]);
-  const [filter, setFilter] = useState<'all' | 'active' | 'completed' | 'paid'>('all');
+  const [filter, setFilter] = useState<MoneyFilter>('pay_vendor');
   const [selectedJob, setSelectedJob] = useState<any | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
   const [statementCustomerId, setStatementCustomerId] = useState<string>('');
   const [filterCustomerId, setFilterCustomerId] = useState<string>('');
+  const [payingId, setPayingId] = useState<string | null>(null);
 
   useEffect(() => {
     loadJobs();
   }, []);
 
-  const loadJobs = async () => {
+  const loadJobs = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const response = await jobsApi.getAll();
       // API returns { jobs: [...], counts: {...} }
       setJobs(response.jobs || []);
     } catch (error) {
       console.error('Failed to load jobs:', error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
+  };
+
+  const softReload = async () => {
+    await loadJobs(true);
+    onRefresh?.();
   };
 
   const handleUpdateStatus = async (jobId: string, status: string) => {
@@ -92,14 +118,40 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
   // Step 1: Mark Customer → Impact as paid
   const handleMarkCustomerPaid = async (jobId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    setPayingId(jobId);
     try {
       await jobsApi.markCustomerPaid(jobId);
-      await loadJobs();
-      // Trigger global refresh so Bradford Stats gets updated
-      onRefresh?.();
+      toast.success('Customer paid — next: pay BGE or JD');
+      await softReload();
     } catch (error) {
       console.error('Failed to mark customer paid:', error);
-      alert('Failed to mark customer as paid. Please try again.');
+      toast.error('Failed to mark customer paid');
+    } finally {
+      setPayingId(null);
+    }
+  };
+
+  const handleMarkProductionPaid = async (
+    job: any,
+    e: React.MouseEvent,
+    who: 'bradford' | 'jd'
+  ) => {
+    e.stopPropagation();
+    setPayingId(`${job.id}-${who}`);
+    try {
+      if (who === 'bradford') {
+        await jobsApi.markBradfordPaid(job.id, { sendInvoice: false });
+        toast.success('Marked BGE paid');
+      } else {
+        await jobsApi.markJDPaid(job.id);
+        toast.success('Marked JD paid');
+      }
+      await softReload();
+    } catch (error) {
+      console.error('Failed to mark production paid:', error);
+      toast.error('Failed to mark paid');
+    } finally {
+      setPayingId(null);
     }
   };
 
@@ -164,18 +216,65 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
     };
   };
 
-  const filteredJobs = jobs.filter(job => {
-    // Customer filter
-    if (filterCustomerId && job.customer?.id !== filterCustomerId) return false;
-    // Payment status filter
-    if (filter === 'active') return !job.customerPaymentDate && job.status !== 'COMPLETED'; // Active, not paid
-    if (filter === 'completed') return job.status === 'COMPLETED'; // Completed jobs
-    if (filter === 'paid') return !!job.customerPaymentDate; // Paid by customer
-    return true;
-  });
+  const activeJobs = useMemo(
+    () => jobs.filter((j) => j.status !== 'CANCELLED'),
+    [jobs]
+  );
+
+  const moneyCounts = useMemo(() => {
+    let await_client = 0;
+    let pay_vendor = 0;
+    let pay_bge = 0;
+    let pay_jd = 0;
+    let settled = 0;
+    for (const j of activeJobs) {
+      if (!isClientPaid(j)) {
+        await_client++;
+        continue;
+      }
+      if (needsVendorPay(j)) {
+        pay_vendor++;
+        const payee = impactProductionPayee(j);
+        if (payee === 'BGE') pay_bge++;
+        else pay_jd++;
+      } else if (isImpactProductionPaid(j)) {
+        settled++;
+      }
+    }
+    return {
+      all: activeJobs.length,
+      await_client,
+      pay_vendor,
+      pay_bge,
+      pay_jd,
+      settled,
+    };
+  }, [activeJobs]);
+
+  const filteredJobs = useMemo(() => {
+    return activeJobs.filter((job) => {
+      if (filterCustomerId && job.customer?.id !== filterCustomerId) return false;
+      switch (filter) {
+        case 'await_client':
+          return !isClientPaid(job);
+        case 'pay_vendor':
+          // Customer paid us — Impact still owes BGE or JD
+          return needsVendorPay(job);
+        case 'pay_bge':
+          return needsVendorPay(job) && impactProductionPayee(job) === 'BGE';
+        case 'pay_jd':
+          return needsVendorPay(job) && impactProductionPayee(job) === 'JD';
+        case 'settled':
+          return isClientPaid(job) && isImpactProductionPaid(job);
+        case 'all':
+        default:
+          return true;
+      }
+    });
+  }, [activeJobs, filter, filterCustomerId]);
 
   // Extract unique customers for statement dropdown
-  const uniqueCustomers = React.useMemo(() => {
+  const uniqueCustomers = useMemo(() => {
     const customerMap = new Map<string, { id: string; name: string }>();
     jobs.forEach(job => {
       if (job.customer?.id && job.customer?.name) {
@@ -197,35 +296,52 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
     };
   }, { sellPrice: 0, totalCost: 0, spread: 0, bradfordTotal: 0, impactTotal: 0 });
 
-  // Calculate cash position: money received vs paid vs owed
-  const cashPosition = React.useMemo(() => {
+  // Cash position — paper-aware: Impact owes BGE or JD after client pays
+  const cashPosition = useMemo(() => {
     return filteredJobs.reduce((acc, job) => {
       const fin = getJobFinancials(job);
-      const customerPaid = job.customerPaymentDate
+      const clientPaidAmt = isClientPaid(job)
         ? (Number(job.customerPaymentAmount) || Number(job.sellPrice) || 0)
         : 0;
-      const bradfordPaid = job.bradfordPaymentDate
-        ? (Number(job.bradfordPaymentAmount) || 0)
+      const bgePaidAmt = isBgePaid(job)
+        ? (Number(job.bradfordPaymentAmount) || fin.bradfordTotal || 0)
         : 0;
-      const vendorPaid = job.vendorPaymentDate
-        ? (Number(job.vendorPaymentAmount) || 0)
-        : 0;
-      // Owed to Bradford: customer paid us, but we haven't paid Bradford yet
-      const owedBradford = (job.customerPaymentDate && !job.bradfordPaymentDate)
-        ? fin.bradfordTotal
+      const jdPaidAmt = isJdPaid(job)
+        ? (Number(job.jdPaymentAmount) || fin.totalCost || 0)
         : 0;
 
+      let owedBge = 0;
+      let owedJd = 0;
+      if (needsVendorPay(job)) {
+        const payee = impactProductionPayee(job);
+        if (payee === 'BGE') owedBge = fin.bradfordTotal || fin.totalCost || 0;
+        else owedJd = fin.totalCost || 0;
+      }
+
       return {
-        received: acc.received + customerPaid,
-        paidBradford: acc.paidBradford + bradfordPaid,
-        paidVendors: acc.paidVendors + vendorPaid,
-        owedBradford: acc.owedBradford + owedBradford,
-        jobsReceived: acc.jobsReceived + (job.customerPaymentDate ? 1 : 0),
-        jobsPaidBradford: acc.jobsPaidBradford + (job.bradfordPaymentDate ? 1 : 0),
-        jobsPaidVendors: acc.jobsPaidVendors + (job.vendorPaymentDate ? 1 : 0),
-        jobsOwedBradford: acc.jobsOwedBradford + ((job.customerPaymentDate && !job.bradfordPaymentDate) ? 1 : 0),
+        received: acc.received + clientPaidAmt,
+        paidBradford: acc.paidBradford + bgePaidAmt,
+        paidJd: acc.paidJd + jdPaidAmt,
+        owedBradford: acc.owedBradford + owedBge,
+        owedJd: acc.owedJd + owedJd,
+        jobsReceived: acc.jobsReceived + (isClientPaid(job) ? 1 : 0),
+        jobsPaidBradford: acc.jobsPaidBradford + (isBgePaid(job) ? 1 : 0),
+        jobsPaidJd: acc.jobsPaidJd + (isJdPaid(job) ? 1 : 0),
+        jobsOwedBradford: acc.jobsOwedBradford + (owedBge > 0 ? 1 : 0),
+        jobsOwedJd: acc.jobsOwedJd + (owedJd > 0 ? 1 : 0),
       };
-    }, { received: 0, paidBradford: 0, paidVendors: 0, owedBradford: 0, jobsReceived: 0, jobsPaidBradford: 0, jobsPaidVendors: 0, jobsOwedBradford: 0 });
+    }, {
+      received: 0,
+      paidBradford: 0,
+      paidJd: 0,
+      owedBradford: 0,
+      owedJd: 0,
+      jobsReceived: 0,
+      jobsPaidBradford: 0,
+      jobsPaidJd: 0,
+      jobsOwedBradford: 0,
+      jobsOwedJd: 0,
+    });
   }, [filteredJobs]);
 
   if (loading) {
@@ -249,45 +365,43 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
 
       {/* Cash Position Summary */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-        {/* Received from Customers */}
         <div className="bg-white rounded-lg border border-zinc-200 p-4">
           <p className="text-xs font-medium text-zinc-500">Received from Customers</p>
           <p className="text-2xl font-medium text-green-600 mt-2 tabular-nums">{formatCurrency(cashPosition.received)}</p>
-          <p className="text-xs text-zinc-400 mt-1">{cashPosition.jobsReceived} jobs paid</p>
+          <p className="text-xs text-zinc-400 mt-1">{cashPosition.jobsReceived} jobs</p>
         </div>
-
-        {/* Owed to Bradford */}
         <div className="bg-white rounded-lg border border-zinc-200 p-4">
-          <p className="text-xs font-medium text-zinc-500">Owed to Bradford</p>
+          <p className="text-xs font-medium text-zinc-500">Owe BGE (client paid)</p>
           <p className="text-2xl font-medium text-red-600 mt-2 tabular-nums">{formatCurrency(cashPosition.owedBradford)}</p>
-          <p className="text-xs text-zinc-400 mt-1">{cashPosition.jobsOwedBradford} jobs pending</p>
+          <p className="text-xs text-zinc-400 mt-1">{cashPosition.jobsOwedBradford} jobs · Bradford paper</p>
         </div>
-
-        {/* Paid to Bradford */}
         <div className="bg-white rounded-lg border border-zinc-200 p-4">
-          <p className="text-xs font-medium text-zinc-500">Paid to Bradford</p>
-          <p className="text-2xl font-medium text-amber-600 mt-2 tabular-nums">{formatCurrency(cashPosition.paidBradford)}</p>
-          <p className="text-xs text-zinc-400 mt-1">{cashPosition.jobsPaidBradford} jobs paid</p>
+          <p className="text-xs font-medium text-zinc-500">Owe JD (client paid)</p>
+          <p className="text-2xl font-medium text-[#C0512A] mt-2 tabular-nums">{formatCurrency(cashPosition.owedJd)}</p>
+          <p className="text-xs text-zinc-400 mt-1">{cashPosition.jobsOwedJd} jobs · JD paper</p>
         </div>
-
-        {/* Paid to Vendors */}
         <div className="bg-white rounded-lg border border-zinc-200 p-4">
-          <p className="text-xs font-medium text-zinc-500">Paid to Vendors</p>
-          <p className="text-2xl font-medium text-zinc-600 mt-2 tabular-nums">{formatCurrency(cashPosition.paidVendors)}</p>
-          <p className="text-xs text-zinc-400 mt-1">{cashPosition.jobsPaidVendors} jobs paid</p>
+          <p className="text-xs font-medium text-zinc-500">Paid production</p>
+          <p className="text-2xl font-medium text-zinc-700 mt-2 tabular-nums">
+            {formatCurrency(cashPosition.paidBradford + cashPosition.paidJd)}
+          </p>
+          <p className="text-xs text-zinc-400 mt-1">
+            BGE {cashPosition.jobsPaidBradford} · JD {cashPosition.jobsPaidJd}
+          </p>
         </div>
       </div>
 
-      {/* Net Cash Position - Full Width */}
+      {/* Net Cash Position */}
       {(() => {
-        const totalPaid = cashPosition.paidBradford + cashPosition.paidVendors;
-        const netPosition = cashPosition.received - totalPaid - cashPosition.owedBradford;
+        const totalPaid = cashPosition.paidBradford + cashPosition.paidJd;
+        const totalOwed = cashPosition.owedBradford + cashPosition.owedJd;
+        const netPosition = cashPosition.received - totalPaid - totalOwed;
         const isPositive = netPosition >= 0;
         return (
           <div className="bg-white rounded-lg border border-zinc-200 p-4 mb-6">
             <div className="flex justify-between items-center">
               <div>
-                <p className="text-xs font-medium text-zinc-500">Net Cash Position</p>
+                <p className="text-xs font-medium text-zinc-500">Net Cash Position (filtered)</p>
                 <p className={`text-3xl font-medium mt-1 tabular-nums ${
                   isPositive ? 'text-zinc-900' : 'text-red-600'
                 }`}>
@@ -296,63 +410,47 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
               </div>
               <div className="text-right text-sm text-zinc-500">
                 <p>Received: <span className="tabular-nums">{formatCurrency(cashPosition.received)}</span></p>
-                <p>− Paid: <span className="tabular-nums">{formatCurrency(totalPaid)}</span></p>
-                <p>− Owed: <span className="tabular-nums">{formatCurrency(cashPosition.owedBradford)}</span></p>
+                <p>− Paid BGE/JD: <span className="tabular-nums">{formatCurrency(totalPaid)}</span></p>
+                <p>− Still owe: <span className="tabular-nums">{formatCurrency(totalOwed)}</span></p>
               </div>
             </div>
           </div>
         );
       })()}
 
-      {/* Filter Tabs + Statement Download */}
-      <div className="mb-4 flex justify-between items-center">
-        <div className="flex gap-2 items-center">
-          <button
-            onClick={() => setFilter('all')}
-            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-              filter === 'all'
-                ? 'bg-zinc-900 text-white'
-                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900'
-            }`}
-          >
-            All Jobs <span className="text-xs tabular-nums ml-1">{jobs.length}</span>
-          </button>
-          <button
-            onClick={() => setFilter('active')}
-            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-              filter === 'active'
-                ? 'bg-amber-600 text-white'
-                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900'
-            }`}
-          >
-            Unpaid <span className="text-xs tabular-nums ml-1">{jobs.filter(j => !j.customerPaymentDate && j.status !== 'COMPLETED').length}</span>
-          </button>
-          <button
-            onClick={() => setFilter('completed')}
-            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-              filter === 'completed'
-                ? 'bg-blue-600 text-white'
-                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900'
-            }`}
-          >
-            Completed <span className="text-xs tabular-nums ml-1">{jobs.filter(j => j.status === 'COMPLETED').length}</span>
-          </button>
-          <button
-            onClick={() => setFilter('paid')}
-            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-              filter === 'paid'
-                ? 'bg-green-600 text-white'
-                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900'
-            }`}
-          >
-            Paid <span className="text-xs tabular-nums ml-1">{jobs.filter(j => !!j.customerPaymentDate).length}</span>
-          </button>
+      {/* Money filters: client paid → pay BGE/JD */}
+      <div className="mb-4 flex flex-wrap justify-between items-center gap-3">
+        <div className="flex flex-wrap gap-2 items-center">
+          {(
+            [
+              { id: 'pay_vendor' as const, label: 'Client paid → pay BGE/JD', count: moneyCounts.pay_vendor, active: 'bg-[#C0512A] text-white' },
+              { id: 'pay_bge' as const, label: 'Pay BGE', count: moneyCounts.pay_bge, active: 'bg-amber-600 text-white' },
+              { id: 'pay_jd' as const, label: 'Pay JD', count: moneyCounts.pay_jd, active: 'bg-[#2B3A4A] text-white' },
+              { id: 'await_client' as const, label: 'Await client', count: moneyCounts.await_client, active: 'bg-amber-500 text-white' },
+              { id: 'settled' as const, label: 'Settled', count: moneyCounts.settled, active: 'bg-emerald-600 text-white' },
+              { id: 'all' as const, label: 'All', count: moneyCounts.all, active: 'bg-zinc-900 text-white' },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setFilter(t.id)}
+              className={cn(
+                'px-3 py-1.5 rounded-full text-sm font-medium transition-colors',
+                filter === t.id
+                  ? t.active
+                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900'
+              )}
+            >
+              {t.label}{' '}
+              <span className="text-xs tabular-nums ml-1 opacity-80">{t.count}</span>
+            </button>
+          ))}
 
-          {/* Customer Filter */}
           <select
             value={filterCustomerId}
             onChange={(e) => setFilterCustomerId(e.target.value)}
-            className="ml-4 px-3 py-1.5 border border-zinc-200 rounded-lg text-sm text-zinc-600 focus:ring-1 focus:ring-zinc-400 focus:border-zinc-400"
+            className="ml-2 px-3 py-1.5 border border-zinc-200 rounded-lg text-sm text-zinc-600 focus:ring-1 focus:ring-zinc-400 focus:border-zinc-400"
           >
             <option value="">All Customers</option>
             {uniqueCustomers.map(c => (
@@ -361,6 +459,7 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
           </select>
           {filterCustomerId && (
             <button
+              type="button"
               onClick={() => setFilterCustomerId('')}
               className="text-xs text-zinc-400 hover:text-zinc-600"
             >
@@ -457,17 +556,36 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
               <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Sell</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Spread</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Split</th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-zinc-500">Customer Paid</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Paper</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Money</th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-zinc-500">Actions</th>
             </tr>
           </thead>
           <tbody>
+            {filteredJobs.length === 0 && (
+              <tr>
+                <td colSpan={10} className="px-4 py-12 text-center text-sm text-zinc-400">
+                  No jobs in this filter.
+                </td>
+              </tr>
+            )}
             {filteredJobs.map((job) => {
               const fin = getJobFinancials(job);
+              const clientPaid = isClientPaid(job);
+              const needPay = needsVendorPay(job);
+              const payee = impactProductionPayee(job);
+              const money = moneyStatusLabel(job);
+              const paper = (job.paperSource || 'BRADFORD').toUpperCase();
+              const paperLabel =
+                paper === 'VENDOR' || paper === 'CUSTOMER' ? 'JD paper' : 'BGE paper';
 
               return (
                 <tr
                   key={job.id}
-                  className="border-b border-zinc-100 hover:bg-zinc-50 transition-colors"
+                  className={cn(
+                    'border-b border-zinc-100 hover:bg-zinc-50 transition-colors',
+                    needPay && 'bg-orange-50/40'
+                  )}
                 >
                   <td className="px-4 py-3 text-sm">
                     <input
@@ -484,7 +602,7 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
                     onClick={() => handleRowClick(job)}
                     className="px-4 py-3 cursor-pointer"
                   >
-                    <p className="text-sm font-medium text-zinc-900">{job.number}</p>
+                    <p className="text-sm font-medium text-zinc-900">{job.number || job.jobNo}</p>
                     <p className="text-xs text-zinc-400 truncate max-w-[150px]">{job.title}</p>
                   </td>
                   <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-sm text-zinc-600 cursor-pointer">
@@ -506,21 +624,61 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
                       <div className="text-zinc-300 tabular-nums">Impact: {formatCurrency(fin.impactTotal)}</div>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-center">
-                    {job.customerPaymentDate ? (
-                      <span className="px-2 py-1 bg-green-50 text-green-600 rounded-full text-xs font-medium inline-flex items-center gap-1">
-                        <Check className="w-3 h-3" />
-                        Paid
-                      </span>
-                    ) : (
-                      <button
-                        onClick={(e) => handleMarkCustomerPaid(job.id, e)}
-                        className="px-3 py-1 bg-zinc-100 text-zinc-600 rounded-full text-xs font-medium hover:bg-green-50 hover:text-green-600 transition-colors"
-                        title="Mark Customer Paid"
-                      >
-                        Mark Paid
-                      </button>
+                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 text-xs text-zinc-500 cursor-pointer">
+                    {paperLabel}
+                  </td>
+                  <td onClick={() => handleRowClick(job)} className="px-4 py-3 cursor-pointer">
+                    <span className={cn('text-xs font-semibold', money.className)}>
+                      {money.label}
+                    </span>
+                    {clientPaid && (
+                      <div className="text-[10px] text-zinc-400 mt-0.5">
+                        Client paid
+                        {job.customerPaymentDate
+                          ? ` · ${new Date(job.customerPaymentDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+                          : ''}
+                      </div>
                     )}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-center">
+                    <div className="flex flex-wrap items-center justify-center gap-1">
+                      {!clientPaid ? (
+                        <button
+                          type="button"
+                          disabled={payingId === job.id}
+                          onClick={(e) => handleMarkCustomerPaid(job.id, e)}
+                          className="px-2.5 py-1 bg-zinc-100 text-zinc-700 rounded-full text-xs font-medium hover:bg-green-50 hover:text-green-700 transition-colors disabled:opacity-50"
+                          title="Customer paid Impact"
+                        >
+                          Mark client paid
+                        </button>
+                      ) : needPay && payee === 'BGE' ? (
+                        <button
+                          type="button"
+                          disabled={payingId === `${job.id}-bradford`}
+                          onClick={(e) => handleMarkProductionPaid(job, e, 'bradford')}
+                          className="px-2.5 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-semibold hover:bg-amber-200 transition-colors disabled:opacity-50"
+                          title="Impact paid Bradford / BGE"
+                        >
+                          Mark BGE paid
+                        </button>
+                      ) : needPay && payee === 'JD' ? (
+                        <button
+                          type="button"
+                          disabled={payingId === `${job.id}-jd`}
+                          onClick={(e) => handleMarkProductionPaid(job, e, 'jd')}
+                          className="px-2.5 py-1 bg-slate-200 text-[#2B3A4A] rounded-full text-xs font-semibold hover:bg-slate-300 transition-colors disabled:opacity-50"
+                          title="Impact paid JD Graphic"
+                        >
+                          Mark JD paid
+                        </button>
+                      ) : (
+                        <span className="px-2 py-1 bg-green-50 text-green-700 rounded-full text-xs font-medium inline-flex items-center gap-1">
+                          <Check className="w-3 h-3" />
+                          Settled
+                        </span>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );
@@ -537,7 +695,7 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
                 <span className="text-zinc-500 mx-1">/</span>
                 <span className="text-zinc-300">{formatCurrency(totals.impactTotal)}</span>
               </td>
-              <td className="px-4 py-3"></td>
+              <td colSpan={3} className="px-4 py-3"></td>
             </tr>
           </tfoot>
         </table>
@@ -555,7 +713,7 @@ export function FinancialsView({ onRefresh }: FinancialsViewProps) {
           onDownloadPO={() => pdfApi.generateVendorPO(selectedJob.id)}
           onDownloadInvoice={() => pdfApi.generateInvoice(selectedJob.id)}
           onDownloadQuote={() => pdfApi.generateQuote(selectedJob.id)}
-          onRefresh={loadJobs}
+          onRefresh={() => softReload()}
         />
       )}
     </div>

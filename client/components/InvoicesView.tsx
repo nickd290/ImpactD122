@@ -17,7 +17,16 @@ import {
 import { toast } from 'sonner';
 import { jobsApi, pdfApi } from '../lib/api';
 import { cn } from '../lib/utils';
-import { isClientPaid, getOpsStage } from '../lib/jobPipeline';
+import {
+  isClientPaid,
+  getOpsStage,
+  isInvoiced as jobIsInvoiced,
+  getPaymentDueDate,
+  isPaymentOverdue,
+  getDaysPaymentOverdue,
+  paymentTermsLabel,
+  getPaymentTermsDays,
+} from '../lib/jobPipeline';
 import { JobDetailModal } from './JobDetailModal';
 
 type InvoiceTab = 'all' | 'unpaid' | 'paid' | 'ready';
@@ -29,7 +38,7 @@ interface InvoiceJob {
   title?: string;
   status?: string;
   workflowStatus?: string;
-  customer?: { id: string; name: string };
+  customer?: { id: string; name: string; paymentTermsDays?: number | null };
   customerPONumber?: string;
   quantity?: number;
   sellPrice?: number | string;
@@ -38,9 +47,12 @@ interface InvoiceJob {
   invoiceEmailedAt?: string | null;
   invoiceEmailedTo?: string | null;
   invoiceNumber?: string | null;
+  customerInvoiceNumber?: string | null;
   customerPaymentDate?: string | null;
   customerPaymentPaid?: boolean;
   customerPaymentAmount?: number | null;
+  paymentTermsDays?: number | null;
+  paymentDueDate?: string | null;
   specs?: { quantity?: number };
 }
 
@@ -87,17 +99,16 @@ function cpmOf(j: InvoiceJob): number {
 }
 
 function isInvoiced(j: InvoiceJob): boolean {
-  return !!j.invoiceGeneratedAt;
+  return jobIsInvoiced(j);
 }
 
 function isReadyToBill(j: InvoiceJob): boolean {
   if (isInvoiced(j)) return false;
   if (j.status === 'CANCELLED') return false;
-  if (sellOf(j) <= 0) return false;
-  // Floor done (or marked shipped/invoiced) but no customer invoice PDF yet
+  // Floor done but no customer invoice on file yet (migration + new)
   if (getOpsStage(j) === 'complete') return true;
   const wf = j.workflowStatus || '';
-  return wf === 'SHIPPED' || wf === 'INVOICED';
+  return wf === 'SHIPPED' || wf === 'COMPLETED';
 }
 
 function isPaid(j: InvoiceJob): boolean {
@@ -116,6 +127,10 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
   const [customerFilter, setCustomerFilter] = useState('');
   const [selectedJob, setSelectedJob] = useState<InvoiceJob | null>(null);
   const [payingId, setPayingId] = useState<string | null>(null);
+  const [invoiceModal, setInvoiceModal] = useState<InvoiceJob | null>(null);
+  const [invNo, setInvNo] = useState('');
+  const [invDate, setInvDate] = useState('');
+  const [invSaving, setInvSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -228,6 +243,41 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
     }
   };
 
+  const openMarkInvoiced = (job: InvoiceJob, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setInvoiceModal(job);
+    setInvNo(job.customerInvoiceNumber || job.invoiceNumber || '');
+    setInvDate(
+      job.invoiceGeneratedAt
+        ? new Date(job.invoiceGeneratedAt).toISOString().slice(0, 10)
+        : new Date().toISOString().slice(0, 10)
+    );
+  };
+
+  const saveMarkInvoiced = async () => {
+    if (!invoiceModal) return;
+    const no = invNo.trim();
+    if (!no) {
+      toast.error('Invoice number required');
+      return;
+    }
+    setInvSaving(true);
+    try {
+      await jobsApi.markInvoiced(invoiceModal.id, {
+        invoiceNumber: no,
+        invoicedAt: invDate || undefined,
+      });
+      toast.success(`Invoiced ${no} — unpaid`);
+      setInvoiceModal(null);
+      await load();
+      onRefresh?.();
+    } catch {
+      toast.error('Failed to mark invoiced');
+    } finally {
+      setInvSaving(false);
+    }
+  };
+
   const handleOpenPdf = (job: InvoiceJob, e: React.MouseEvent) => {
     e.stopPropagation();
     pdfApi.generateInvoice(job.id);
@@ -333,7 +383,8 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
             <thead className="bg-zinc-50 border-b border-zinc-200 sticky top-0 z-10">
               <tr className="text-left text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">
                 <th className="px-4 py-3">Invoice / Job</th>
-                <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3">Invoice date</th>
+                <th className="px-4 py-3">Pay due</th>
                 <th className="px-4 py-3">Customer</th>
                 <th className="px-4 py-3">Cust PO</th>
                 <th className="px-4 py-3 text-right">Qty</th>
@@ -346,7 +397,7 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
             <tbody className="divide-y divide-zinc-100">
               {loading && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-16 text-center text-zinc-400">
+                  <td colSpan={10} className="px-4 py-16 text-center text-zinc-400">
                     <Loader2 className="w-5 h-5 animate-spin inline mr-2" />
                     Loading invoices…
                   </td>
@@ -354,7 +405,7 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
               )}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-16 text-center text-zinc-400">
+                  <td colSpan={10} className="px-4 py-16 text-center text-zinc-400">
                     {tab === 'ready'
                       ? 'No jobs ready to bill right now.'
                       : 'No invoices in this filter.'}
@@ -368,16 +419,27 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
                   const sell = sellOf(job);
                   const qty = qtyOf(job);
                   const cpm = cpmOf(job);
-                  const invNo = job.invoiceNumber || job.jobNo || job.number || '—';
+                  const displayInv =
+                    job.customerInvoiceNumber || job.invoiceNumber || job.jobNo || job.number || '—';
+                  const payDue = getPaymentDueDate(job);
+                  const payOverdue = isPaymentOverdue(job);
+                  const daysOver = getDaysPaymentOverdue(job);
+                  const terms = paymentTermsLabel(getPaymentTermsDays(job));
 
                   return (
                     <tr
                       key={job.id}
                       onClick={() => setSelectedJob(job)}
-                      className="hover:bg-zinc-50/80 cursor-pointer transition-colors"
+                      className={cn(
+                        'hover:bg-zinc-50/80 cursor-pointer transition-colors',
+                        payOverdue && 'bg-red-50/40'
+                      )}
                     >
                       <td className="px-4 py-3">
-                        <div className="font-mono font-semibold text-[#2B3A4A]">{invNo}</div>
+                        <div className="font-mono font-semibold text-[#2B3A4A]">{displayInv}</div>
+                        <div className="text-[10px] text-zinc-400 font-mono">
+                          {job.jobNo || job.number}
+                        </div>
                         {job.title && (
                           <div className="text-xs text-zinc-500 truncate max-w-[200px]">
                             {job.title}
@@ -386,6 +448,18 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
                       </td>
                       <td className="px-4 py-3 text-zinc-600 tabular-nums">
                         {fmtDate(job.invoiceGeneratedAt)}
+                      </td>
+                      <td className="px-4 py-3 tabular-nums">
+                        {payDue ? (
+                          <div>
+                            <span className={cn(payOverdue ? 'text-red-600 font-semibold' : 'text-zinc-600')}>
+                              {fmtDate(payDue.toISOString())}
+                            </span>
+                            <div className="text-[10px] text-zinc-400">{terms}</div>
+                          </div>
+                        ) : (
+                          <span className="text-zinc-300">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 font-medium text-zinc-800">
                         {job.customer?.name || '—'}
@@ -416,8 +490,12 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
                               </span>
                             )}
                           </span>
-                        ) : (
+                        ) : payOverdue ? (
                           <span className="inline-flex px-2 py-0.5 rounded text-[11px] font-semibold bg-red-50 text-red-700 border border-red-100">
+                            {daysOver}d overdue
+                          </span>
+                        ) : (
+                          <span className="inline-flex px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-100">
                             Unpaid
                           </span>
                         )}
@@ -451,15 +529,25 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
                             </button>
                           )}
                           {!invoiced && (
-                            <button
-                              type="button"
-                              title="Generate invoice PDF"
-                              onClick={(e) => handleOpenPdf(job, e)}
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold text-white bg-[#C0512A] hover:bg-[#a84422]"
-                            >
-                              <Receipt className="w-3 h-3" />
-                              Invoice
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                title="Record old-system invoice # + date"
+                                onClick={(e) => openMarkInvoiced(job, e)}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold text-white bg-[#2B3A4A] hover:bg-[#1f2a36]"
+                              >
+                                <Receipt className="w-3 h-3" />
+                                Mark invoiced
+                              </button>
+                              <button
+                                type="button"
+                                title="Generate invoice PDF"
+                                onClick={(e) => handleOpenPdf(job, e)}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold text-[#C0512A] border border-[#C0512A]/40 hover:bg-orange-50"
+                              >
+                                PDF
+                              </button>
+                            </>
                           )}
                           <button
                             type="button"
@@ -481,7 +569,7 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
             {!loading && rows.length > 0 && (
               <tfoot className="bg-zinc-50 border-t border-zinc-200">
                 <tr>
-                  <td colSpan={6} className="px-4 py-3 text-right text-xs font-semibold uppercase text-zinc-500">
+                  <td colSpan={7} className="px-4 py-3 text-right text-xs font-semibold uppercase text-zinc-500">
                     {rows.length} invoice{rows.length === 1 ? '' : 's'} · total
                   </td>
                   <td className="px-4 py-3 text-right font-bold tabular-nums text-[#2B3A4A]">
@@ -511,6 +599,64 @@ export function InvoicesView({ onRefresh }: InvoicesViewProps) {
           onRefresh?.();
         }}
       />
+
+      {invoiceModal && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/40"
+          onClick={() => !invSaving && setInvoiceModal(null)}
+        >
+          <div
+            className="w-full max-w-sm bg-white rounded-xl shadow-xl border border-zinc-200 p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-semibold text-[#2B3A4A]">Mark invoiced</h3>
+            <p className="text-xs text-zinc-500 mt-1">
+              {invoiceModal.jobNo || invoiceModal.number} — old-system invoice # + date. Stays{' '}
+              <strong>unpaid</strong>.
+            </p>
+            <label className="block mt-4">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                Invoice number
+              </span>
+              <input
+                autoFocus
+                value={invNo}
+                onChange={(e) => setInvNo(e.target.value)}
+                className="mt-1 w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg"
+              />
+            </label>
+            <label className="block mt-3">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                Invoice date
+              </span>
+              <input
+                type="date"
+                value={invDate}
+                onChange={(e) => setInvDate(e.target.value)}
+                className="mt-1 w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg"
+              />
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={invSaving}
+                onClick={() => setInvoiceModal(null)}
+                className="px-3 py-1.5 text-sm text-zinc-600 rounded-lg hover:bg-zinc-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={invSaving}
+                onClick={saveMarkInvoiced}
+                className="px-3 py-1.5 text-sm font-semibold text-white bg-[#2B3A4A] rounded-lg disabled:opacity-50"
+              >
+                {invSaving ? 'Saving…' : 'Save invoiced'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -3,10 +3,18 @@ import {
   AlertCircle, Clock, FileX, Mail, Receipt, ChevronRight,
   Upload, Send, CheckCircle, Filter, Inbox
 } from 'lucide-react';
-import { differenceInDays, parseISO, format } from 'date-fns';
+import { format } from 'date-fns';
 import { cn } from '../lib/utils';
 import { Badge } from './ui';
 import { jobsApi } from '../lib/api';
+import {
+  isPaymentOverdue,
+  getDaysPaymentOverdue,
+  isProductionLate,
+  getDaysProductionLate,
+  paymentTermsLabel,
+  getPaymentTermsDays,
+} from '../lib/jobPipeline';
 
 interface Job {
   id: string;
@@ -17,13 +25,17 @@ interface Job {
   dueDate?: string;
   mailDate?: string;
   inHomesDate?: string;
-  customer?: { id: string; name: string };
+  customer?: { id: string; name: string; paymentTermsDays?: number };
   vendor?: { id: string; name: string };
   customerPOFile?: string;
   qcArtwork?: string;
   qcDataFiles?: string;
   sellPrice?: number;
   invoiceGeneratedAt?: string;
+  customerInvoiceNumber?: string;
+  customerPaymentDate?: string;
+  paymentTermsDays?: number;
+  paymentDueDate?: string;
   profit?: { spread?: number };
 }
 
@@ -65,16 +77,11 @@ interface ActionItem {
   };
 }
 
-function getDeadline(job: Job): Date | null {
-  const dateStr = job.dueDate || job.mailDate || job.inHomesDate;
-  return dateStr ? parseISO(dateStr) : null;
-}
-
+/** AR overdue days (invoice + terms). Production late is separate. */
 function getDaysOverdue(job: Job): number | null {
-  const deadline = getDeadline(job);
-  if (!deadline) return null;
-  const days = differenceInDays(new Date(), deadline);
-  return days > 0 ? days : null;
+  if (isPaymentOverdue(job as any)) return getDaysPaymentOverdue(job as any);
+  if (isProductionLate(job as any)) return getDaysProductionLate(job as any);
+  return null;
 }
 
 export function ActionItemsView({
@@ -115,10 +122,10 @@ export function ActionItemsView({
     const items: ActionItem[] = [];
     const activeJobs = jobs.filter(j => j.status === 'ACTIVE');
 
-    // 1. Overdue jobs (highest priority)
+    // 1. Payment overdue (invoice date + customer terms) — not delivery mislabeled as due
     activeJobs.forEach(job => {
-      const daysOverdue = getDaysOverdue(job);
-      if (daysOverdue && daysOverdue > 0) {
+      if (isPaymentOverdue(job as any)) {
+        const days = getDaysPaymentOverdue(job as any) || 0;
         items.push({
           id: `overdue-${job.id}`,
           type: 'overdue',
@@ -126,7 +133,18 @@ export function ActionItemsView({
           job,
           title: job.title || job.jobNo,
           subtitle: job.customer?.name || 'No customer',
-          daysInfo: `${daysOverdue}d overdue`,
+          daysInfo: `${days}d past pay due · ${paymentTermsLabel(getPaymentTermsDays(job as any))}`,
+        });
+      } else if (isProductionLate(job as any)) {
+        const days = getDaysProductionLate(job as any) || 0;
+        items.push({
+          id: `late-deliv-${job.id}`,
+          type: 'overdue',
+          priority: 2,
+          job,
+          title: job.title || job.jobNo,
+          subtitle: job.customer?.name || 'No customer',
+          daysInfo: `${days}d past delivery`,
         });
       }
     });

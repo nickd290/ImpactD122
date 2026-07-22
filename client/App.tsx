@@ -133,9 +133,15 @@ function App() {
     }
   };
 
-  const loadData = async () => {
+  /**
+   * Load app data.
+   * silent:true = background refresh (paper toggle, mark paid, etc.) — must NOT
+   * flip `loading` or the whole tree unmounts and job popup boots the user out.
+   */
+  const loadData = async (opts?: { silent?: boolean }) => {
+    const silent = !!opts?.silent;
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       // Don't let one endpoint failure block the whole app refresh
       const [jobsResult, customersResult, vendorsResult] = await Promise.allSettled([
         jobsApi.getAll(),
@@ -146,10 +152,12 @@ function App() {
       if (jobsResult.status === 'fulfilled') {
         const jobsData = jobsResult.value.jobs || jobsResult.value;
         setJobs(jobsData);
-        if (selectedJob) {
-          const updatedJob = jobsData.find((j: any) => j.id === selectedJob.id);
-          if (updatedJob) setSelectedJob(updatedJob);
-        }
+        // Functional update avoids stale selectedJob + keeps drawer open on soft refresh
+        setSelectedJob((prev: any) => {
+          if (!prev?.id) return prev;
+          const updatedJob = jobsData.find((j: any) => j.id === prev.id);
+          return updatedJob || prev;
+        });
       } else {
         console.error('Failed to load jobs:', jobsResult.reason);
       }
@@ -167,9 +175,12 @@ function App() {
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
+
+  /** Background list refresh — safe while job popup is open */
+  const softRefresh = () => loadData({ silent: true });
 
   const handleCreateJob = () => {
     setShowNewJobChoiceModal(true);
@@ -710,7 +721,7 @@ function App() {
               onShowPOUploader={() => setShowPOUploader(true)}
               onViewAllJobs={() => setCurrentView('JOBS')}
               onEditJob={handleEditJob}
-              onRefresh={loadData}
+              onRefresh={softRefresh}
               onViewChange={setCurrentView}
             />
           )}
@@ -739,7 +750,7 @@ function App() {
               onCopyJob={handleCopyJob}
               onUpdateStatus={handleUpdateJobStatus}
               onUpdateJob={handleUpdateJob}
-              onRefresh={loadData}
+              onRefresh={softRefresh}
               onShowSpecParser={() => setShowSpecParser(true)}
               onShowPOUploader={() => setShowPOUploader(true)}
               onShowEmailDraft={() => setShowEmailDraft(true)}
@@ -751,7 +762,7 @@ function App() {
           )}
 
           {currentView === 'INVOICES' && (
-            <InvoicesView onRefresh={loadData} />
+            <InvoicesView onRefresh={softRefresh} />
           )}
 
           {currentView === 'JOB_BOARD' && (
@@ -763,12 +774,12 @@ function App() {
               onEditJob={(job) => {
                 setEditingJob(job);
               }}
-              onRefresh={loadData}
+              onRefresh={softRefresh}
             />
           )}
 
           {currentView === 'PRODUCTION_BOARD' && (
-            <ProductionBoard onRefresh={loadData} />
+            <ProductionBoard onRefresh={softRefresh} />
           )}
 
           {currentView === 'CUSTOMERS' && (
@@ -779,7 +790,7 @@ function App() {
               onCreateEntity={handleCreateEntity}
               onEditEntity={handleEditEntity}
               onDeleteEntity={handleDeleteEntity}
-              onRefresh={loadData}
+              onRefresh={softRefresh}
               onJobClick={(job) => {
                 setSelectedJob(job);
                 setCurrentView('JOBS');
@@ -795,7 +806,7 @@ function App() {
               onCreateEntity={handleCreateEntity}
               onEditEntity={handleEditEntity}
               onDeleteEntity={handleDeleteEntity}
-              onRefresh={loadData}
+              onRefresh={softRefresh}
               onJobClick={(job) => {
                 setSelectedJob(job);
                 setCurrentView('JOBS');
@@ -810,7 +821,7 @@ function App() {
               customers={customers}
               vendors={vendors}
               onUpdateStatus={handleUpdateJobStatus}
-              onRefresh={loadData}
+              onRefresh={softRefresh}
               onShowEmailDraft={(job) => {
                 setSelectedJob(job);
                 setShowEmailDraft(true);

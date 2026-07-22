@@ -51,3 +51,5 @@ server/prisma/migrations/
 
 # Test coverage
 coverage/
+.last-deploy
+.last-deploy

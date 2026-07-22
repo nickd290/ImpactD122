@@ -1150,10 +1150,36 @@ export function JobDetailModal({
     }
   };
 
-  /** Soft refresh after child panels save (keep modal open) */
-  const handlePanelSaved = () => {
-    if (jobProp?.id) {
-      jobsApi.getById(jobProp.id).then((j) => setFullJob(j)).catch(() => {});
+  /**
+   * Soft refresh after child panels save.
+   * Keeps modal open — parent onRefresh must be silent (no full-app loading skeleton).
+   * Optional patch merges optimistically so paper/pay toggles feel instant.
+   */
+  const handlePanelSaved = (patch?: Record<string, unknown>) => {
+    if (patch && Object.keys(patch).length > 0) {
+      setFullJob((prev: any) =>
+        prev
+          ? {
+              ...prev,
+              ...patch,
+              number: (patch as any).number || (patch as any).jobNo || prev.number || prev.jobNo,
+              jobNo: (patch as any).jobNo || (patch as any).number || prev.jobNo || prev.number,
+            }
+          : prev
+      );
+    }
+    const id = jobProp?.id || fullJob?.id;
+    if (id) {
+      jobsApi
+        .getById(id)
+        .then((data) => {
+          setFullJob({
+            ...data,
+            number: data.number || data.jobNo,
+            jobNo: data.jobNo || data.number,
+          });
+        })
+        .catch(() => {});
     }
     onRefresh?.();
   };
@@ -1342,6 +1368,9 @@ export function JobDetailModal({
         jdPaid={!!(job.jdPaymentPaid || job.jdPaymentDate)}
         jdPaidDate={job.jdPaymentDate}
         invoiceGeneratedAt={job.invoiceGeneratedAt}
+        customerInvoiceNumber={(job as any).customerInvoiceNumber || (job as any).invoiceNumber || null}
+        paymentTermsDays={(job as any).paymentTermsDays ?? (job as any).customer?.paymentTermsDays}
+        customer={(job as any).customer}
         onSaved={handlePanelSaved}
       />
 
@@ -1448,8 +1477,12 @@ export function JobDetailModal({
           <tr className="bg-card">
             <td className="px-4 py-2.5 text-muted-foreground section-header">Customer PO</td>
             <td className="px-4 py-2.5 text-foreground font-mono">{job.customerPONumber || '—'}</td>
-            <td className="px-4 py-2.5 text-muted-foreground section-header">Due Date</td>
-            <td className="px-4 py-2.5 text-foreground font-mono">{job.dueDate ? new Date(job.dueDate).toLocaleDateString() : '—'}</td>
+            <td className="px-4 py-2.5 text-muted-foreground section-header">Delivery date</td>
+            <td className="px-4 py-2.5 text-foreground font-mono" title="Production delivery / mail — not invoice or payment due">
+              {job.dueDate || (job as any).deliveryDate
+                ? new Date(job.dueDate || (job as any).deliveryDate).toLocaleDateString()
+                : '—'}
+            </td>
           </tr>
           <tr className="bg-muted/30">
             <td className="px-4 py-2.5 text-muted-foreground section-header">Product</td>

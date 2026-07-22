@@ -16,6 +16,13 @@ import {
   PAPER_MARKUP_RATE,
   THIRD_PARTY_CALCULATOR_URL,
 } from '../../utils/thirdPartyCalc';
+import {
+  getPaymentDueDate,
+  isPaymentOverdue,
+  getDaysPaymentOverdue,
+  paymentTermsLabel,
+  getPaymentTermsDays,
+} from '../../lib/jobPipeline';
 
 type PaperSourceKey = 'BRADFORD' | 'VENDOR' | 'CUSTOMER';
 
@@ -46,7 +53,12 @@ interface JobMoneyBoardProps {
   jdPaidDate?: string | null;
   /** When set, show note that PDF must be re-downloaded after price edits */
   invoiceGeneratedAt?: string | null;
-  onSaved?: () => void;
+  /** Customer invoice # from old or new system */
+  customerInvoiceNumber?: string | null;
+  paymentTermsDays?: number | null;
+  customer?: { paymentTermsDays?: number | null } | null;
+  /** Soft parent refresh; optional patch for instant UI (e.g. paperSource) */
+  onSaved?: (patch?: Record<string, unknown>) => void;
 }
 
 function money(n: number) {
@@ -90,8 +102,30 @@ export function JobMoneyBoard({
   jdPaid = false,
   jdPaidDate,
   invoiceGeneratedAt = null,
+  customerInvoiceNumber = null,
+  paymentTermsDays = null,
+  customer = null,
   onSaved,
 }: JobMoneyBoardProps) {
+  const arJob = {
+    invoiceGeneratedAt,
+    customerInvoiceNumber,
+    paymentTermsDays,
+    customer,
+    customerPaymentDate: customerPaidDate,
+    status: customerPaid ? 'PAID' : 'ACTIVE',
+  };
+  const payDue = getPaymentDueDate(arJob);
+  const payOverdue = isPaymentOverdue(arJob);
+  const daysOver = getDaysPaymentOverdue(arJob);
+  const termsLbl = paymentTermsLabel(getPaymentTermsDays(arJob));
+  const [invNo, setInvNo] = useState(customerInvoiceNumber || '');
+  const [invDate, setInvDate] = useState(() =>
+    invoiceGeneratedAt
+      ? new Date(invoiceGeneratedAt).toISOString().slice(0, 10)
+      : new Date().toISOString().slice(0, 10)
+  );
+  const [savingInv, setSavingInv] = useState(false);
   const [sell, setSell] = useState(String(sellProp || ''));
   const [qty, setQty] = useState(String(qtyProp || ''));
   const [cpm, setCpm] = useState(() => {
@@ -137,6 +171,61 @@ export function JobMoneyBoard({
       setPaper((paperProp as PaperSourceKey) || 'BRADFORD');
     }
   }, [sellProp, qtyProp, sizeProp, paperProp, dirtyHeader]);
+
+  useEffect(() => {
+    setInvNo(customerInvoiceNumber || '');
+    if (invoiceGeneratedAt) {
+      setInvDate(new Date(invoiceGeneratedAt).toISOString().slice(0, 10));
+    }
+  }, [customerInvoiceNumber, invoiceGeneratedAt]);
+
+  const saveInvoiced = async () => {
+    const no = invNo.trim();
+    if (!no) {
+      toast.error('Invoice number required');
+      return;
+    }
+    setSavingInv(true);
+    try {
+      await jobsApi.markInvoiced(jobId, {
+        invoiceNumber: no,
+        invoicedAt: invDate || undefined,
+      });
+      toast.success(`Invoiced ${no} — unpaid until client paid`);
+      onSaved?.({
+        customerInvoiceNumber: no,
+        invoiceNumber: no,
+        invoiceGeneratedAt: invDate
+          ? new Date(invDate).toISOString()
+          : new Date().toISOString(),
+        workflowStatus: 'INVOICED',
+        workflowStatusOverride: 'INVOICED',
+      });
+    } catch (e: any) {
+      toast.error(e?.message || e?.error || 'Failed to mark invoiced');
+    } finally {
+      setSavingInv(false);
+    }
+  };
+
+  const clearInvoiced = async () => {
+    setSavingInv(true);
+    try {
+      await jobsApi.markInvoiced(jobId, { status: 'clear' });
+      setInvNo('');
+      toast.success('Invoice cleared');
+      onSaved?.({
+        customerInvoiceNumber: null,
+        invoiceGeneratedAt: null,
+        workflowStatus: 'COMPLETED',
+        workflowStatusOverride: 'COMPLETED',
+      });
+    } catch (e: any) {
+      toast.error(e?.message || e?.error || 'Failed to clear invoice');
+    } finally {
+      setSavingInv(false);
+    }
+  };
 
   const calc = useMemo(
     () =>
@@ -239,8 +328,14 @@ export function JobMoneyBoard({
         throw new Error(err.error || err.message || 'Save failed');
       }
       setDirtyHeader(false);
+      // Instant UI + keep popup open (parent soft-refresh only)
+      onSaved?.({
+        sellPrice: sellN,
+        quantity: qtyN,
+        sizeName: size || null,
+        paperSource: (extra.paperSource as string) || paper,
+      });
       toast.success('Saved');
-      onSaved?.();
     } catch (e: any) {
       toast.error(e?.message || 'Failed to save');
     } finally {
@@ -339,17 +434,31 @@ export function JobMoneyBoard({
       if (who === 'customer') {
         await jobsApi.markCustomerPaid(jobId, { status });
         toast.success(currently ? 'Customer → unpaid' : 'Customer paid');
+        onSaved?.(
+          currently
+            ? { customerPaymentDate: null, status: 'ACTIVE' }
+            : { customerPaymentDate: new Date().toISOString(), status: 'PAID' }
+        );
       } else if (who === 'bradford') {
         await jobsApi.markBradfordPaid(jobId, {
           status,
           sendInvoice: !jdPaper && !currently,
         });
         toast.success(currently ? 'Bradford → unpaid' : 'Bradford paid');
+        onSaved?.(
+          currently
+            ? { bradfordPaymentDate: null, bradfordPaymentPaid: false }
+            : { bradfordPaymentDate: new Date().toISOString(), bradfordPaymentPaid: true }
+        );
       } else {
         await jobsApi.markJDPaid(jobId, { status });
         toast.success(currently ? 'JD → unpaid' : 'JD paid');
+        onSaved?.(
+          currently
+            ? { jdPaymentDate: null, jdPaymentPaid: false }
+            : { jdPaymentDate: new Date().toISOString(), jdPaymentPaid: true }
+        );
       }
-      onSaved?.();
     } catch (e: any) {
       toast.error(e?.message || e?.error || 'Payment update failed');
     } finally {
@@ -635,6 +744,69 @@ export function JobMoneyBoard({
           <span className="text-[10px] text-zinc-400">
             Paper mk {Math.round(PAPER_MARKUP_RATE * 100)}% in table rates
           </span>
+        </div>
+      </div>
+
+      {/* 2.5 Customer invoice (legacy # + date → INVOICED, still unpaid) */}
+      <div className="p-4 border-b border-zinc-100 bg-zinc-50/60">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+            Customer invoice
+          </span>
+          {(customerInvoiceNumber || invoiceGeneratedAt) && (
+            <span className="text-[10px] font-bold uppercase text-blue-700 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded">
+              Invoiced · unpaid until client paid
+            </span>
+          )}
+        </div>
+        <p className="text-[11px] text-zinc-500 mb-2">
+          Invoice date + customer terms ({termsLbl}) = payment due. Not delivery date.
+          {payDue && (
+            <span className={payOverdue ? ' text-red-600 font-semibold' : ' text-zinc-700'}>
+              {' '}Pay due {fmtDate(payDue.toISOString())}
+              {payOverdue && daysOver != null ? ` · ${daysOver}d overdue` : ''}
+            </span>
+          )}
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-end">
+          <label className="block sm:col-span-1">
+            <span className="text-[10px] font-semibold uppercase text-zinc-500">Invoice #</span>
+            <input
+              value={invNo}
+              onChange={(e) => setInvNo(e.target.value)}
+              placeholder="Old system #"
+              className="mt-0.5 w-full px-2 py-1.5 text-sm border border-zinc-200 rounded-lg bg-white"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[10px] font-semibold uppercase text-zinc-500">Invoiced date</span>
+            <input
+              type="date"
+              value={invDate}
+              onChange={(e) => setInvDate(e.target.value)}
+              className="mt-0.5 w-full px-2 py-1.5 text-sm border border-zinc-200 rounded-lg bg-white"
+            />
+          </label>
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              disabled={savingInv}
+              onClick={saveInvoiced}
+              className="flex-1 px-2 py-1.5 text-xs font-semibold text-white bg-[#2B3A4A] rounded-lg hover:bg-[#1f2a36] disabled:opacity-50"
+            >
+              {savingInv ? '…' : customerInvoiceNumber || invoiceGeneratedAt ? 'Update' : 'Mark invoiced'}
+            </button>
+            {(customerInvoiceNumber || invoiceGeneratedAt) && (
+              <button
+                type="button"
+                disabled={savingInv}
+                onClick={clearInvoiced}
+                className="px-2 py-1.5 text-xs font-semibold text-zinc-600 border border-zinc-200 rounded-lg hover:bg-white disabled:opacity-50"
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

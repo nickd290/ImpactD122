@@ -18,6 +18,8 @@ export interface UpdateEntityData {
   address: string;
   notes: string;
   isPartner?: boolean;
+  /** Customer AR terms (days from invoice). 0 = due on receipt. */
+  paymentTermsDays?: number;
   contacts?: { name: string; email: string; title?: string; isPrimary?: boolean }[];
 }
 
@@ -35,7 +37,8 @@ export default function EntityEditModal({
     phone: '',
     address: '',
     notes: '',
-    isPartner: false
+    isPartner: false,
+    paymentTermsDays: 30,
   });
 
   const [contacts, setContacts] = useState<{ name: string; email: string; title?: string; isPrimary?: boolean }[]>([]);
@@ -50,7 +53,11 @@ export default function EntityEditModal({
         phone: entity.phone,
         address: entity.address || '',
         notes: entity.notes || '',
-        isPartner: entity.isPartner || false
+        isPartner: entity.isPartner || false,
+        paymentTermsDays:
+          (entity as any).paymentTermsDays != null
+            ? Number((entity as any).paymentTermsDays)
+            : 30,
       });
       // Initialize contacts for vendors
       if (entity.type === EntityType.VENDOR && entity.contacts) {
@@ -262,6 +269,33 @@ export default function EntityEditModal({
                 disabled={isSaving}
               />
             </div>
+
+            {/* Payment terms (Customers only) — AR overdue = invoice date + terms */}
+            {entity.type === EntityType.CUSTOMER && (
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Payment terms
+                </label>
+                <p className="text-xs text-gray-500 mb-2">
+                  Overdue is calculated from <strong>invoice date + terms</strong>, not delivery date.
+                </p>
+                <select
+                  value={formData.paymentTermsDays ?? 30}
+                  onChange={(e) =>
+                    setFormData({ ...formData, paymentTermsDays: parseInt(e.target.value, 10) })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                  disabled={isSaving}
+                >
+                  <option value={0}>Due on receipt</option>
+                  <option value={15}>Net 15</option>
+                  <option value={30}>Net 30</option>
+                  <option value={45}>Net 45</option>
+                  <option value={60}>Net 60</option>
+                  <option value={90}>Net 90</option>
+                </select>
+              </div>
+            )}
 
             {/* Partner Toggle (Vendors Only) */}
             {entity.type === EntityType.VENDOR && (

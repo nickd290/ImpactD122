@@ -318,6 +318,29 @@ export function transformJob(job: any) {
     invoiceEmailedAt: job.invoiceEmailedAt,
     invoiceEmailedTo: job.invoiceEmailedTo || null,
     invoiceEmailedCount: job.invoiceEmailedCount || 0,
+    // Customer invoice # (legacy system or generated)
+    customerInvoiceNumber: job.customerInvoiceNumber || null,
+    invoiceNumber: job.customerInvoiceNumber || job.jobNo || null,
+    completedAt: job.completedAt || null,
+
+    // AR: payment due = invoice date + customer terms (not deliveryDate)
+    paymentTermsDays:
+      job.Company?.paymentTermsDays != null
+        ? Number(job.Company.paymentTermsDays)
+        : 30,
+    paymentDueDate: (() => {
+      if (!job.invoiceGeneratedAt) return null;
+      const inv = new Date(job.invoiceGeneratedAt);
+      if (Number.isNaN(inv.getTime())) return null;
+      const terms =
+        job.Company?.paymentTermsDays != null
+          ? Number(job.Company.paymentTermsDays)
+          : 30;
+      const due = new Date(inv);
+      due.setHours(0, 0, 0, 0);
+      due.setDate(due.getDate() + Math.max(0, terms));
+      return due;
+    })(),
 
     // Simplified profit object (from ProfitSplit model or calculated)
     profit,
@@ -346,6 +369,10 @@ export function transformJob(job: any) {
       email: job.Company.email || '',
       phone: job.Company.phone || '',
       address: job.Company.address || '',
+      paymentTermsDays:
+        job.Company.paymentTermsDays != null
+          ? Number(job.Company.paymentTermsDays)
+          : 30,
     } : {
       id: '',
       name: 'Unknown Customer',
@@ -353,6 +380,7 @@ export function transformJob(job: any) {
       email: '',
       phone: '',
       address: '',
+      paymentTermsDays: 30,
     },
     // Transform vendor to Entity-like structure
     vendor: job.Vendor ? {

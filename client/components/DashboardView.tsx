@@ -8,6 +8,7 @@ import { Button } from './ui';
 import { JobDetailModal } from './JobDetailModal';
 import { pdfApi, jobsApi, financialsApi, dashboardApi } from '../lib/api';
 import { cn } from '../lib/utils';
+import { isPaymentOverdue, isProductionLate } from '../lib/jobPipeline';
 
 type AppView = 'DASHBOARD' | 'ACTION_ITEMS' | 'JOBS' | 'JOB_BOARD' | 'PRODUCTION_BOARD' | 'CUSTOMERS' | 'VENDORS' | 'FINANCIALS' | 'PARTNER_STATS' | 'PAPER_INVENTORY' | 'ACCOUNTING' | 'COMMUNICATIONS' | 'VENDOR_RFQS';
 
@@ -230,11 +231,11 @@ export function DashboardView({
   const jobs = localJobs.length ? localJobs : propJobs || [];
 
   const overdueJobs = useMemo(() => {
-    const now = new Date();
+    // Payment overdue (invoice + terms) OR production late on floor
+    // Never treat raw deliveryDate alone as AR overdue (migration put invoice dates there)
     return jobs.filter((j) => {
-      if (j.status !== 'ACTIVE') return false;
-      const d = j.dueDate || j.deliveryDate || j.mailDate;
-      return d && new Date(d) < now;
+      if (j.status === 'CANCELLED') return false;
+      return isPaymentOverdue(j as any) || isProductionLate(j as any);
     });
   }, [jobs]);
 

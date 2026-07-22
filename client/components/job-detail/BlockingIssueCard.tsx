@@ -1,9 +1,17 @@
 import React from 'react';
 import { AlertCircle, Upload, Send, User, FileX, Clock, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import {
+  isPaymentOverdue,
+  getDaysPaymentOverdue,
+  isProductionLate,
+  getDaysProductionLate,
+  paymentTermsLabel,
+  getPaymentTermsDays,
+} from '../../lib/jobPipeline';
 
 interface BlockingIssue {
-  type: 'no_vendor' | 'no_artwork' | 'awaiting_proof' | 'awaiting_approval' | 'no_data' | 'overdue';
+  type: 'no_vendor' | 'no_artwork' | 'awaiting_proof' | 'awaiting_approval' | 'no_data' | 'overdue' | 'production_late';
   message: string;
   priority: number;
   action?: {
@@ -20,12 +28,21 @@ interface BlockingIssue {
 interface BlockingIssueCardProps {
   job: {
     vendor?: { id: string; name: string } | null;
-    customer?: { id: string; name: string } | null;
+    customer?: { id: string; name: string; paymentTermsDays?: number | null } | null;
     artOverride?: boolean;
     qcArtwork?: string;
     qcDataFiles?: string;
     workflowStatus?: string;
+    workflowStatusOverride?: string;
+    status?: string;
     dueDate?: string;
+    deliveryDate?: string;
+    mailDate?: string;
+    invoiceGeneratedAt?: string | null;
+    customerInvoiceNumber?: string | null;
+    customerPaymentDate?: string | null;
+    paymentTermsDays?: number | null;
+    paymentDueDate?: string | null;
   };
   hasArtwork: boolean;
   hasProof: boolean;
@@ -99,18 +116,23 @@ export function BlockingIssueCard({
     });
   }
 
-  // Check for overdue
-  if (job.dueDate) {
-    const dueDate = new Date(job.dueDate);
-    const now = new Date();
-    if (dueDate < now) {
-      const daysOverdue = Math.floor((now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
-      issues.push({
-        type: 'overdue',
-        message: `${daysOverdue} days overdue`,
-        priority: 0, // Highest priority
-      });
-    }
+  // Payment overdue = invoice date + customer terms (NOT delivery / mislabeled invoice date)
+  if (isPaymentOverdue(job)) {
+    const days = getDaysPaymentOverdue(job) || 0;
+    const terms = paymentTermsLabel(getPaymentTermsDays(job));
+    issues.push({
+      type: 'overdue',
+      message: `${days}d past payment due (${terms})`,
+      priority: 0,
+    });
+  } else if (isProductionLate(job)) {
+    // Floor only — delivery/mail late, not AR
+    const days = getDaysProductionLate(job) || 0;
+    issues.push({
+      type: 'production_late',
+      message: `${days}d past delivery date`,
+      priority: 1,
+    });
   }
 
   // Sort by priority
@@ -127,6 +149,12 @@ export function BlockingIssueCard({
       bg: 'bg-status-danger-bg',
       border: 'border-status-danger-border',
       text: 'text-status-danger',
+      icon: <Clock className="w-5 h-5" />,
+    },
+    production_late: {
+      bg: 'bg-status-warning-bg',
+      border: 'border-status-warning-border',
+      text: 'text-status-warning',
       icon: <Clock className="w-5 h-5" />,
     },
     no_vendor: {
@@ -177,7 +205,11 @@ export function BlockingIssueCard({
         </div>
         <div className="flex-1 min-w-0">
           <p className={cn('text-sm font-semibold', style.text)}>
-            {primaryIssue.type === 'overdue' ? 'OVERDUE' : 'BLOCKING'}
+            {primaryIssue.type === 'overdue'
+              ? 'PAYMENT OVERDUE'
+              : primaryIssue.type === 'production_late'
+                ? 'LATE DELIVERY'
+                : 'BLOCKING'}
           </p>
           <p className="text-sm text-foreground font-medium">
             {primaryIssue.message}

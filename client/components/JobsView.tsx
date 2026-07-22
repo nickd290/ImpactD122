@@ -15,11 +15,20 @@ import {
   getOpsStage,
   opsStageLabel,
   isClientPaid,
+  isInvoiced,
   needsVendorPay,
   impactProductionPayee,
   moneyStatusLabel,
   getMoneyStage,
   effectiveWorkflow,
+  isPaymentOverdue,
+  getDaysPaymentOverdue,
+  isProductionLate,
+  getDaysProductionLate,
+  getPaymentDueDate,
+  getDeliveryDate,
+  paymentTermsLabel,
+  getPaymentTermsDays,
 } from '../lib/jobPipeline';
 
 interface Job {
@@ -48,6 +57,11 @@ interface Job {
   poGeneratedCount?: number;
   invoiceGeneratedAt?: string;
   invoiceGeneratedCount?: number;
+  customerInvoiceNumber?: string;
+  invoiceNumber?: string;
+  paymentTermsDays?: number;
+  paymentDueDate?: string;
+  deliveryDate?: string;
   // Invoice/payment tracking
   hasPaidInvoice?: boolean;
   invoices?: { id: string; amount: number | null; paidAt: string | null }[];
@@ -203,6 +217,11 @@ export function JobsView({
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   const actionMenuRef = useRef<HTMLDivElement>(null);
   const [statementCustomerId, setStatementCustomerId] = useState('');
+  /** Mark invoiced (legacy / migration) modal */
+  const [invoiceModalJob, setInvoiceModalJob] = useState<Job | null>(null);
+  const [invoiceModalNo, setInvoiceModalNo] = useState('');
+  const [invoiceModalDate, setInvoiceModalDate] = useState('');
+  const [invoiceModalSaving, setInvoiceModalSaving] = useState(false);
 
   // Load jobs on mount and when refresh is triggered
   const loadLocalJobs = async () => {
@@ -304,23 +323,31 @@ export function JobsView({
     return createdDate > yesterday;
   };
 
-  // Helper to calculate days until due
-  const getDaysUntilDue = (job: Job): number | null => {
-    if (!job.dueDate) return null;
+  /** Days until payment due (AR) or delivery (floor). null if n/a */
+  const getDaysUntilRelevant = (job: Job): number | null => {
+    const ops = getOpsStage(job);
+    const target =
+      ops === 'complete' || isInvoiced(job)
+        ? getPaymentDueDate(job)
+        : getDeliveryDate(job);
+    if (!target) return null;
     const now = new Date();
-    const due = new Date(job.dueDate);
-    return Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    now.setHours(0, 0, 0, 0);
+    const d = new Date(target);
+    d.setHours(0, 0, 0, 0);
+    return Math.ceil((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
   };
 
-  // Due-date filter counts (within current tab)
+  // Overdue = payment overdue (terms) OR production late (floor only)
   const filterCounts = useMemo(() => {
-    const now = new Date();
     return {
-      overdue: tabFilteredJobs.filter((j) => j.dueDate && new Date(j.dueDate) < now).length,
+      overdue: tabFilteredJobs.filter(
+        (j) => isPaymentOverdue(j) || isProductionLate(j)
+      ).length,
       'due-soon': tabFilteredJobs.filter((j) => {
-        if (!j.dueDate) return false;
-        const days = Math.ceil((new Date(j.dueDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-        return days >= 0 && days <= 7;
+        if (isPaymentOverdue(j) || isProductionLate(j) || isClientPaid(j)) return false;
+        const days = getDaysUntilRelevant(j);
+        return days !== null && days >= 0 && days <= 7;
       }).length,
     };
   }, [tabFilteredJobs]);
@@ -344,18 +371,17 @@ export function JobsView({
     );
   });
 
-  // Apply due-date quick filter
+  // Apply overdue / due-soon filter (payment terms for AR; delivery for floor)
   const quickFilteredJobs = useMemo(() => {
-    const now = new Date();
     return searchFilteredJobs.filter((job) => {
       if (quickFilter === 'all') return true;
       if (quickFilter === 'overdue') {
-        return !!(job.dueDate && new Date(job.dueDate) < now);
+        return isPaymentOverdue(job) || isProductionLate(job);
       }
       if (quickFilter === 'due-soon') {
-        if (!job.dueDate) return false;
-        const days = Math.ceil((new Date(job.dueDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-        return days >= 0 && days <= 7;
+        if (isPaymentOverdue(job) || isProductionLate(job) || isClientPaid(job)) return false;
+        const days = getDaysUntilRelevant(job);
+        return days !== null && days >= 0 && days <= 7;
       }
       return true;
     });
@@ -372,10 +398,12 @@ export function JobsView({
       });
     } else if (sortBy === 'due') {
       sorted.sort((a, b) => {
-        if (!a.dueDate && !b.dueDate) return 0;
-        if (!a.dueDate) return 1; // No due date goes to end
-        if (!b.dueDate) return -1;
-        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(); // Soonest first
+        const da = getPaymentDueDate(a) || getDeliveryDate(a);
+        const db = getPaymentDueDate(b) || getDeliveryDate(b);
+        if (!da && !db) return 0;
+        if (!da) return 1;
+        if (!db) return -1;
+        return da.getTime() - db.getTime();
       });
     } else if (sortBy === 'alpha') {
       sorted.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
@@ -630,11 +658,63 @@ export function JobsView({
             : j
         )
       );
-      toast.success('Complete — next: invoice / collect / pay BGE or JD');
+      toast.success('Complete — next: mark invoiced (old #) / collect / pay BGE or JD');
       onRefresh();
     } catch (error) {
       console.error('Failed to mark complete:', error);
       toast.error('Failed to mark complete');
+    }
+  };
+
+  const openInvoiceModal = (job: Job, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setOpenActionMenuId(null);
+    setInvoiceModalJob(job);
+    setInvoiceModalNo(job.customerInvoiceNumber || job.invoiceNumber || '');
+    setInvoiceModalDate(
+      job.invoiceGeneratedAt
+        ? new Date(job.invoiceGeneratedAt).toISOString().slice(0, 10)
+        : new Date().toISOString().slice(0, 10)
+    );
+  };
+
+  const handleSaveInvoiced = async () => {
+    if (!invoiceModalJob) return;
+    const invNo = invoiceModalNo.trim();
+    if (!invNo) {
+      toast.error('Invoice number required');
+      return;
+    }
+    setInvoiceModalSaving(true);
+    try {
+      await jobsApi.markInvoiced(invoiceModalJob.id, {
+        invoiceNumber: invNo,
+        invoicedAt: invoiceModalDate || undefined,
+      });
+      setLocalJobs((prev) =>
+        prev.map((j) =>
+          j.id === invoiceModalJob.id
+            ? {
+                ...j,
+                customerInvoiceNumber: invNo,
+                invoiceNumber: invNo,
+                invoiceGeneratedAt: invoiceModalDate
+                  ? new Date(invoiceModalDate).toISOString()
+                  : new Date().toISOString(),
+                workflowStatus: 'INVOICED',
+                workflowStatusOverride: 'INVOICED',
+                status: isClientPaid(j) ? j.status : 'ACTIVE',
+              }
+            : j
+        )
+      );
+      toast.success(`Invoiced ${invNo} — unpaid until mark paid`);
+      setInvoiceModalJob(null);
+      onRefresh();
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to mark invoiced');
+    } finally {
+      setInvoiceModalSaving(false);
     }
   };
 
@@ -941,7 +1021,7 @@ export function JobsView({
               onChange={(e) => setQuickFilter(e.target.value as typeof quickFilter)}
               className="text-sm border border-zinc-200 rounded-lg px-2.5 py-1.5 bg-white text-zinc-700 focus:ring-1 focus:ring-[#2B3A4A]/20 ml-auto"
             >
-              <option value="all">Due date…</option>
+              <option value="all">Date filter…</option>
               {filterCounts.overdue > 0 && (
                 <option value="overdue">Overdue ({filterCounts.overdue})</option>
               )}
@@ -1039,17 +1119,32 @@ export function JobsView({
                 <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Cust PO</th>
                 <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">BGE PO</th>
                 <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Status</th>
-                <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Due</th>
+                <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]" title="Delivery (floor) or payment due (invoiced)">
+                  Date
+                </th>
                 <th className="px-3 py-2.5 text-right text-[10px] font-semibold text-white/70 uppercase tracking-[0.1em]">Amount</th>
                 <th className="px-3 py-2.5 w-12"></th>
               </tr>
             </thead>
             <tbody>
               {filteredJobs.map((job) => {
-                const daysUntil = getDaysUntilDue(job);
-                const isOverdue = daysUntil !== null && daysUntil < 0;
-                const isDueSoon = daysUntil !== null && daysUntil >= 0 && daysUntil <= 3;
+                const payOverdue = isPaymentOverdue(job);
+                const prodLate = isProductionLate(job);
+                const isOverdue = payOverdue || prodLate;
+                const daysUntil = getDaysUntilRelevant(job);
+                const isDueSoon = !isOverdue && daysUntil !== null && daysUntil >= 0 && daysUntil <= 3;
                 const done = isJobDone(job);
+                const showPayDue = done || isInvoiced(job);
+                const displayDate = showPayDue ? getPaymentDueDate(job) : getDeliveryDate(job);
+                const dateHint = showPayDue
+                  ? payOverdue
+                    ? `${getDaysPaymentOverdue(job)}d past pay due · ${paymentTermsLabel(getPaymentTermsDays(job))}`
+                    : displayDate
+                      ? `Pay due · ${paymentTermsLabel(getPaymentTermsDays(job))}`
+                      : 'Not invoiced yet'
+                  : prodLate
+                    ? `${getDaysProductionLate(job)}d past delivery`
+                    : 'Delivery / mail';
                 const { label: moneyLabel, className: moneyClass } = moneyStatusLabel(job);
                 const stageLabel = opsStageLabel(job);
                 return (
@@ -1130,17 +1225,28 @@ export function JobsView({
                       </div>
                     </td>
                     <td className="px-3 py-3">
-                      {job.dueDate ? (
-                        <span className={cn(
-                          "text-sm tabular-nums",
-                          isOverdue && "text-red-600 font-medium",
-                          isDueSoon && !isOverdue && "text-amber-600",
-                          !isOverdue && !isDueSoon && "text-zinc-500"
-                        )}>
-                          {new Date(job.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                      {displayDate ? (
+                        <span
+                          className={cn(
+                            "text-sm tabular-nums",
+                            isOverdue && "text-red-600 font-medium",
+                            isDueSoon && !isOverdue && "text-amber-600",
+                            !isOverdue && !isDueSoon && "text-zinc-500"
+                          )}
+                          title={dateHint}
+                        >
+                          {displayDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                          {showPayDue && (
+                            <span className="block text-[10px] font-normal text-zinc-400">
+                              {payOverdue ? 'pay overdue' : 'pay due'}
+                            </span>
+                          )}
+                          {!showPayDue && prodLate && (
+                            <span className="block text-[10px] font-normal text-amber-700">late deliv</span>
+                          )}
                         </span>
                       ) : (
-                        <span className="text-sm text-zinc-300">—</span>
+                        <span className="text-sm text-zinc-300" title={dateHint}>—</span>
                       )}
                     </td>
                     <td className="px-3 py-3 text-sm text-right font-medium text-zinc-800 tabular-nums">
@@ -1179,7 +1285,25 @@ export function JobsView({
                                 Reopen
                               </button>
                             )}
-                            {job.status !== 'PAID' && (
+                            {!isInvoiced(job) && (
+                              <button
+                                type="button"
+                                onClick={(e) => openInvoiceModal(job, e)}
+                                className="w-full px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50"
+                              >
+                                Mark invoiced…
+                              </button>
+                            )}
+                            {isInvoiced(job) && !isClientPaid(job) && (
+                              <button
+                                type="button"
+                                onClick={(e) => openInvoiceModal(job, e)}
+                                className="w-full px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50"
+                              >
+                                Edit invoice #
+                              </button>
+                            )}
+                            {job.status !== 'PAID' && !isClientPaid(job) && (
                               <button
                                 type="button"
                                 onClick={(e) => { handleMarkPaid(job.id, e); setOpenActionMenuId(null); }}
@@ -1372,7 +1496,7 @@ export function JobsView({
                   <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Vendor</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Status</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">PO #</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Due</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500" title="Production delivery — not invoice/payment due">Delivery</th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Qty</th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Spread</th>
                   <th className="px-4 py-3 w-20"></th>
@@ -1439,9 +1563,9 @@ export function JobsView({
                     <td className="px-4 py-3">
                       <InlineEditableCell value={job.customerPONumber} onSave={(v) => handleInlineUpdate(job.id, 'customerPONumber', v)} placeholder="—" className="text-sm text-zinc-600" />
                     </td>
-                    {/* Due */}
+                    {/* Delivery (production) — not invoice/payment due */}
                     <td className="px-4 py-3">
-                      <InlineEditableCell value={job.dueDate} onSave={(v) => handleInlineUpdate(job.id, 'dueDate', v)} type="date" className="text-sm text-zinc-600" />
+                      <InlineEditableCell value={job.dueDate} onSave={(v) => handleInlineUpdate(job.id, 'dueDate', v)} type="date" className="text-sm text-zinc-600" placeholder="Delivery" />
                     </td>
                     {/* Qty */}
                     <td className="px-4 py-3 text-right">
@@ -1590,6 +1714,66 @@ export function JobsView({
         onDownloadQuote={() => selectedJob && pdfApi.generateQuote(selectedJob.id)}
         onRefresh={handleRefresh}
       />
+
+      {/* Mark invoiced — old system # + date; stays unpaid until Mark client paid */}
+      {invoiceModalJob && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/40"
+          onClick={() => !invoiceModalSaving && setInvoiceModalJob(null)}
+        >
+          <div
+            className="w-full max-w-sm bg-white rounded-xl shadow-xl border border-zinc-200 p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-semibold text-[#2B3A4A]">Mark invoiced</h3>
+            <p className="text-xs text-zinc-500 mt-1">
+              Job {invoiceModalJob.number} — enter old-system invoice # + date. Leaves job{' '}
+              <strong>unpaid</strong> until you mark client paid.
+            </p>
+            <label className="block mt-4">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                Invoice number
+              </span>
+              <input
+                autoFocus
+                value={invoiceModalNo}
+                onChange={(e) => setInvoiceModalNo(e.target.value)}
+                placeholder="e.g. 4521 or INV-2024-088"
+                className="mt-1 w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C0512A]/25"
+              />
+            </label>
+            <label className="block mt-3">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                Invoice date
+              </span>
+              <input
+                type="date"
+                value={invoiceModalDate}
+                onChange={(e) => setInvoiceModalDate(e.target.value)}
+                className="mt-1 w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C0512A]/25"
+              />
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={invoiceModalSaving}
+                onClick={() => setInvoiceModalJob(null)}
+                className="px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={invoiceModalSaving}
+                onClick={handleSaveInvoiced}
+                className="px-3 py-1.5 text-sm font-semibold text-white bg-[#2B3A4A] hover:bg-[#1f2a36] rounded-lg disabled:opacity-50"
+              >
+                {invoiceModalSaving ? 'Saving…' : 'Save invoiced'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

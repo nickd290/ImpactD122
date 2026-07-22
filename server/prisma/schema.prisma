@@ -91,6 +91,8 @@ model Company {
   email                                                String?
   phone                                                String?
   address                                              String?
+  /// Customer AR terms in days from invoice date (0 = due on receipt, 30 = Net 30, etc.)
+  paymentTermsDays                                     Int                 @default(30)
   createdAt                                            DateTime            @default(now())
   updatedAt                                            DateTime
   Campaign                                             Campaign[]
@@ -261,6 +263,8 @@ model Job {
   invoiceEmailedTo                   String?
   invoiceGeneratedAt                 DateTime?
   invoiceGeneratedCount              Int                       @default(0)
+  /// Customer-facing invoice # (old system or new). Used for migration + AR.
+  customerInvoiceNumber              String?
   isReadyForProduction               Boolean                   @default(false)
   jdInvoiceEmailedAt                 DateTime?
   jdInvoiceEmailedTo                 String?

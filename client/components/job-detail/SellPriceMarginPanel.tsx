@@ -42,7 +42,7 @@ interface SellPriceMarginPanelProps {
   sizeName?: string | null;
   paperSource?: string | null;
   purchaseOrders?: any[];
-  onSaved?: () => void;
+  onSaved?: (patch?: Record<string, unknown>) => void;
   className?: string;
 }
 
@@ -108,8 +108,9 @@ export function SellPriceMarginPanel({
         throw new Error(err.error || err.message || 'Save failed');
       }
       setDirty(false);
+      // Instant parent update + silent list refresh (keeps popup open)
+      onSaved?.(fields);
       toast.success('Saved');
-      onSaved?.();
     } catch (e: any) {
       toast.error(e?.message || 'Failed to save');
       throw e;

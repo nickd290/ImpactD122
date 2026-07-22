@@ -1654,6 +1654,7 @@ export const updateWorkflowStatus = async (req: Request, res: Response) => {
       const terminal = ['COMPLETED', 'INVOICED', 'PAID', 'CANCELLED', 'IN_PRODUCTION', 'NEW_JOB'];
       if (terminal.includes(status)) {
         updateData.workflowStatus = status;
+        updateData.workflowUpdatedAt = now;
       }
       // Production complete is not the same as money PAID — keep JobStatus ACTIVE
       // unless explicitly cancelled or paid.
@@ -1665,6 +1666,13 @@ export const updateWorkflowStatus = async (req: Request, res: Response) => {
         // Re-open / still-working jobs must be ACTIVE for Active tab
         if (existingJob && (status === 'NEW_JOB' || status === 'IN_PRODUCTION')) {
           updateData.status = 'ACTIVE';
+        }
+        if (status === 'COMPLETED' || status === 'INVOICED') {
+          // Stamp completedAt once (production done)
+          updateData.completedAt = now;
+        }
+        if (status === 'IN_PRODUCTION' || status === 'NEW_JOB') {
+          updateData.completedAt = null;
         }
       }
     }

@@ -59,6 +59,7 @@ export const getAllEntities = async (req: Request, res: Response) => {
         contactPerson: c.Employee.find(e => e.isPrimary)?.name || c.Employee[0]?.name || '',
         isPartner: false,
         notes: '',
+        paymentTermsDays: (c as any).paymentTermsDays != null ? Number((c as any).paymentTermsDays) : 30,
         contacts: c.Employee.map(e => ({
           id: e.id,
           name: e.name,
@@ -97,6 +98,7 @@ export const getAllEntities = async (req: Request, res: Response) => {
         phone: c.phone || '',
         address: c.address || '',
         contactPerson: c.Employee.find(e => e.isPrimary)?.name || c.Employee[0]?.name || '',
+        paymentTermsDays: (c as any).paymentTermsDays != null ? Number((c as any).paymentTermsDays) : 30,
         isPartner: false,
         notes: '',
         contacts: c.Employee.map(e => ({
@@ -269,6 +271,12 @@ export const createEntity = async (req: Request, res: Response) => {
       });
     } else {
       // Create company (customer)
+      const createTermsRaw = (req.body as any).paymentTermsDays;
+      const createTerms =
+        createTermsRaw === undefined || createTermsRaw === null || createTermsRaw === ''
+          ? 30
+          : Math.max(0, Math.min(365, parseInt(String(createTermsRaw), 10) || 30));
+
       const company = await prisma.company.create({
         data: {
           id: crypto.randomUUID(),
@@ -277,6 +285,7 @@ export const createEntity = async (req: Request, res: Response) => {
           email: email || null,
           phone: phone || null,
           address: address || null,
+          paymentTermsDays: createTerms,
           updatedAt: new Date(),
           Employee: contacts?.length ? {
             create: contacts.map((c: any) => ({
@@ -302,6 +311,7 @@ export const createEntity = async (req: Request, res: Response) => {
         contactPerson: company.Employee.find(e => e.isPrimary)?.name || company.Employee[0]?.name || '',
         isPartner: false,
         notes: '',
+        paymentTermsDays: (company as any).paymentTermsDays != null ? Number((company as any).paymentTermsDays) : createTerms,
         contacts: company.Employee.map(e => ({
           id: e.id,
           name: e.name,
@@ -387,7 +397,13 @@ export const updateEntity = async (req: Request, res: Response) => {
       });
     }
 
-    // Update company
+    // Update company (customers)
+    const paymentTermsDaysRaw = (rest as any).paymentTermsDays;
+    const paymentTermsDays =
+      paymentTermsDaysRaw === undefined || paymentTermsDaysRaw === null || paymentTermsDaysRaw === ''
+        ? undefined
+        : Math.max(0, Math.min(365, parseInt(String(paymentTermsDaysRaw), 10) || 30));
+
     const company = await prisma.company.update({
       where: { id },
       data: {
@@ -395,6 +411,7 @@ export const updateEntity = async (req: Request, res: Response) => {
         email: email || null,
         phone: phone || null,
         address: address || null,
+        ...(paymentTermsDays !== undefined ? { paymentTermsDays } : {}),
         updatedAt: new Date(),
       },
       include: { Employee: true },
@@ -435,6 +452,10 @@ export const updateEntity = async (req: Request, res: Response) => {
       contactPerson: updatedCompany!.Employee.find(e => e.isPrimary)?.name || updatedCompany!.Employee[0]?.name || '',
       isPartner: false,
       notes: '',
+      paymentTermsDays:
+        (updatedCompany as any)!.paymentTermsDays != null
+          ? Number((updatedCompany as any)!.paymentTermsDays)
+          : 30,
       contacts: updatedCompany!.Employee.map(e => ({
         id: e.id,
         name: e.name,

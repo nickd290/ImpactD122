@@ -86,6 +86,9 @@ export function EntitiesView({
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Contact</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Email</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Phone</th>
+                {type === 'CUSTOMER' && (
+                  <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Terms</th>
+                )}
                 <th className="px-4 py-3 text-center text-xs font-medium text-zinc-500">Jobs</th>
                 <th className="px-4 py-3 w-20"></th>
               </tr>
@@ -115,6 +118,15 @@ export function EntitiesView({
                     <td onClick={() => handleRowClick(entity)} className="px-4 py-3 text-sm text-zinc-600">
                       {entity.phone || '—'}
                     </td>
+                    {type === 'CUSTOMER' && (
+                      <td onClick={() => handleRowClick(entity)} className="px-4 py-3 text-sm text-zinc-600">
+                        {(() => {
+                          const d = entity.paymentTermsDays != null ? Number(entity.paymentTermsDays) : 30;
+                          if (d === 0) return 'Due on receipt';
+                          return `Net ${d}`;
+                        })()}
+                      </td>
+                    )}
                     <td onClick={() => handleRowClick(entity)} className="px-4 py-3 text-center">
                       <span className={`text-sm tabular-nums ${jobCount > 0 ? 'font-medium text-zinc-900' : 'text-zinc-400'}`}>
                         {jobCount}

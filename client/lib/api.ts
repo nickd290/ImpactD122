@@ -105,6 +105,15 @@ export const jobsApi = {
     method: 'PATCH',
     body: JSON.stringify(data),
   }),
+  /** Record customer invoice (old-system # + date). Does not mark paid. */
+  markInvoiced: (
+    id: string,
+    data: { invoiceNumber: string; invoicedAt?: string; status?: 'invoiced' | 'clear' } | { status: 'clear' }
+  ) =>
+    apiFetch(`/jobs/${id}/mark-invoiced`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
   markCustomerPaid: (id: string, data?: { date?: string; status?: string }) => apiFetch(`/jobs/${id}/customer-paid`, {
     method: 'PATCH',
     body: JSON.stringify(data || {}),
