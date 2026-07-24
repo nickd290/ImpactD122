@@ -84,9 +84,6 @@ interface Job {
  */
 type BoardTab =
   | 'active'
-  | 'new'
-  | 'proofing'
-  | 'production'
   | 'complete'
   | 'await_client'
   | 'pay_vendors'
@@ -115,14 +112,9 @@ function jobMatchesTab(
     : getMoneyStage(job);
 
   switch (tab) {
+    // "In production" — New / Proofing / Production are NOT split out
     case 'active':
       return ops === 'new' || ops === 'proofing' || ops === 'production';
-    case 'new':
-      return ops === 'new';
-    case 'proofing':
-      return ops === 'proofing';
-    case 'production':
-      return ops === 'production';
     case 'complete':
       return ops === 'complete';
     case 'await_client':
@@ -255,9 +247,6 @@ export function JobsView({
   const tabCounts = useMemo(() => {
     const counts: Record<BoardTab, number> = {
       active: 0,
-      new: 0,
-      proofing: 0,
-      production: 0,
       complete: 0,
       await_client: 0,
       pay_vendors: 0,
@@ -265,7 +254,7 @@ export function JobsView({
       all: localJobs.length,
     };
     for (const job of localJobs) {
-      (['active', 'new', 'proofing', 'production', 'complete', 'await_client', 'pay_vendors', 'settled'] as BoardTab[]).forEach(
+      (['active', 'complete', 'await_client', 'pay_vendors', 'settled'] as BoardTab[]).forEach(
         (t) => {
           if (jobMatchesTab(job, t, optimisticallyPaidIds)) counts[t]++;
         }
@@ -275,10 +264,7 @@ export function JobsView({
   }, [localJobs, optimisticallyPaidIds]);
 
   const floorTabs: { id: BoardTab; label: string; count: number; title: string }[] = [
-    { id: 'active', label: 'Active', count: tabCounts.active, title: 'New + Proofing + Production' },
-    { id: 'new', label: 'New', count: tabCounts.new, title: 'Just entered' },
-    { id: 'proofing', label: 'Proofing', count: tabCounts.proofing, title: 'Proof cycle' },
-    { id: 'production', label: 'Production', count: tabCounts.production, title: 'Approved / on press' },
+    { id: 'active', label: 'In production', count: tabCounts.active, title: 'Every job on the floor — new, proofing, on press' },
     { id: 'complete', label: 'Complete', count: tabCounts.complete, title: 'Produced — money next' },
   ];
 
@@ -837,7 +823,7 @@ export function JobsView({
           <p className="text-[10px] uppercase tracking-[0.14em] text-[#C0512A] font-semibold mb-1">Jobs board</p>
           <h1 className="text-2xl font-semibold text-[#2B3A4A] tracking-tight">Jobs</h1>
           <p className="text-sm text-zinc-500 mt-1">
-            New → Proof → Production → Complete
+            In production → Complete
             <span className="mx-1.5 text-zinc-300">·</span>
             then client pays → pay BGE or JD
           </p>

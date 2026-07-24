@@ -35,6 +35,9 @@ const dashboardJobSelect = {
   qcDataFiles: true,
   qcSuppliedMaterials: true,
   invoiceEmailedAt: true,
+  invoiceGeneratedAt: true,
+  customerInvoiceNumber: true,
+  workflowStatusOverride: true,
   customerPaymentDate: true,
   poEmailedAt: true,
   createdAt: true,
@@ -107,14 +110,15 @@ export const getWhatsNext = async (req: Request, res: Response) => {
     });
 
     // 6. Ready to Invoice - completed but not invoiced
+    //    invoiceEmailedAt is unset on every row in this DB — use isInvoiced()
     const readyToInvoice = activeJobs.filter(job =>
       (job.workflowStatus === 'COMPLETED' || job.workflowStatus === 'INVOICED') &&
-      !job.invoiceEmailedAt
+      !isInvoiced(job)
     );
 
     // 7. Unpaid Invoices - invoiced but not paid
     const unpaidInvoices = activeJobs.filter(job =>
-      job.invoiceEmailedAt && !job.customerPaymentDate
+      isInvoiced(job) && !job.customerPaymentDate && job.status !== 'PAID'
     );
 
     // 8. Due This Week - delivery date within 7 days
@@ -158,6 +162,180 @@ export const getWhatsNext = async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch dashboard data',
+    });
+  }
+};
+
+/**
+ * Money Snapshot — the four things the landing dashboard shows.
+ *
+ * 1. unpaidInvoices     — invoiced, client has not paid Impact
+ * 2. recentlyPaid       — client cash in, last 30 days
+ * 3. needsProductionPay — client paid, Impact still owes its ONE production payee
+ *                         (paperSource BRADFORD → BGE, VENDOR/CUSTOMER → JD)
+ * 4. missingBgePO       — Bradford-paper jobs with no partnerPONumber (BGE PO)
+ * plus inProductionCount (ops stage new|proofing|production — New is NOT split out).
+ */
+const moneyJobSelect = {
+  id: true,
+  jobNo: true,
+  title: true,
+  status: true,
+  workflowStatus: true,
+  workflowStatusOverride: true,
+  sellPrice: true,
+  deliveryDate: true,
+  invoiceEmailedAt: true,
+  invoiceGeneratedAt: true,
+  customerInvoiceNumber: true,
+  customerPONumber: true,
+  partnerPONumber: true,
+  paperSource: true,
+  customerPaymentDate: true,
+  customerPaymentAmount: true,
+  bradfordPaymentDate: true,
+  bradfordPaymentPaid: true,
+  jdPaymentDate: true,
+  jdPaymentPaid: true,
+  Company: { select: { id: true, name: true } },
+};
+
+type MoneyJob = {
+  id: string;
+  status: string | null;
+  workflowStatus: string | null;
+  workflowStatusOverride: string | null;
+  sellPrice: any;
+  invoiceEmailedAt: Date | null;
+  invoiceGeneratedAt: Date | null;
+  customerInvoiceNumber: string | null;
+  partnerPONumber: string | null;
+  paperSource: string | null;
+  customerPaymentDate: Date | null;
+  customerPaymentAmount: any;
+  bradfordPaymentDate: Date | null;
+  bradfordPaymentPaid: boolean | null;
+  jdPaymentDate: Date | null;
+  jdPaymentPaid: boolean | null;
+};
+
+// Mirrors client/lib/jobPipeline.ts getOpsStage
+const PROOFING_STATUSES = new Set([
+  'AWAITING_PROOF_FROM_VENDOR',
+  'PROOF_RECEIVED',
+  'PROOF_SENT_TO_CUSTOMER',
+  'AWAITING_CUSTOMER_RESPONSE',
+]);
+const PRODUCTION_STATUSES = new Set(['APPROVED_PENDING_VENDOR', 'IN_PRODUCTION']);
+const COMPLETE_STATUSES = new Set(['COMPLETED', 'INVOICED', 'PAID']);
+
+function isComplete(job: MoneyJob): boolean {
+  if (job.status === 'CANCELLED') return true;
+  const wf = job.workflowStatusOverride || job.workflowStatus || 'NEW_JOB';
+  return COMPLETE_STATUSES.has(wf) || job.status === 'PAID';
+}
+
+/** New + Proofing + Production collapsed into one "in production" bucket */
+function isInProduction(job: MoneyJob): boolean {
+  return !isComplete(job);
+}
+
+function isClientPaid(job: MoneyJob): boolean {
+  return !!(job.customerPaymentDate || job.status === 'PAID');
+}
+
+/**
+ * Customer invoice on file. Mirrors client/lib/jobPipeline.ts isInvoiced().
+ * invoiceEmailedAt alone is NOT enough — it is unset on every row in this DB;
+ * the real signals are invoiceGeneratedAt / customerInvoiceNumber / wf INVOICED.
+ */
+function isInvoiced(job: {
+  invoiceGeneratedAt?: Date | null;
+  invoiceEmailedAt?: Date | null;
+  customerInvoiceNumber?: string | null;
+  workflowStatus?: string | null;
+  workflowStatusOverride?: string | null;
+}): boolean {
+  if (job.invoiceGeneratedAt || job.invoiceEmailedAt || job.customerInvoiceNumber) return true;
+  const wf = job.workflowStatusOverride || job.workflowStatus || '';
+  return wf === 'INVOICED' || wf === 'PAID';
+}
+
+function productionPayee(job: MoneyJob): 'BGE' | 'JD' {
+  const src = String(job.paperSource || 'BRADFORD').toUpperCase();
+  return src === 'VENDOR' || src === 'CUSTOMER' ? 'JD' : 'BGE';
+}
+
+function num(value: any): number {
+  return Number(value) || 0;
+}
+
+function bucket(jobs: any[], dollarsOf: (job: any) => number) {
+  return {
+    count: jobs.length,
+    dollars: jobs.reduce((sum, j) => sum + dollarsOf(j), 0),
+    jobs,
+  };
+}
+
+export const getMoneySnapshot = async (_req: Request, res: Response) => {
+  try {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    const jobs = (await prisma.job.findMany({
+      where: {
+        deletedAt: null,
+        status: { not: 'CANCELLED' },
+      },
+      select: moneyJobSelect,
+      orderBy: { createdAt: 'desc' },
+    })) as unknown as MoneyJob[];
+
+    const unpaid = jobs.filter((j) => isInvoiced(j) && !isClientPaid(j));
+
+    const recentlyPaid = jobs
+      .filter((j) => j.customerPaymentDate && new Date(j.customerPaymentDate) >= thirtyDaysAgo)
+      .sort(
+        (a, b) =>
+          new Date(b.customerPaymentDate as Date).getTime() -
+          new Date(a.customerPaymentDate as Date).getTime()
+      );
+
+    const needsProductionPay = jobs
+      .filter((j) => {
+        if (!isClientPaid(j)) return false;
+        return productionPayee(j) === 'JD'
+          ? !(j.jdPaymentDate || j.jdPaymentPaid)
+          : !(j.bradfordPaymentDate || j.bradfordPaymentPaid);
+      })
+      .map((j) => ({ ...j, payee: productionPayee(j) }));
+
+    // Blank string counts as missing (migrated rows)
+    const missingBgePO = jobs.filter(
+      (j) =>
+        productionPayee(j) === 'BGE' &&
+        !String(j.partnerPONumber || '').trim() &&
+        !isComplete(j)
+    );
+
+    res.json({
+      success: true,
+      data: {
+        unpaidInvoices: bucket(unpaid, (j) => num(j.sellPrice)),
+        recentlyPaid: bucket(
+          recentlyPaid,
+          (j) => num(j.customerPaymentAmount) || num(j.sellPrice)
+        ),
+        needsProductionPay: bucket(needsProductionPay, (j) => num(j.sellPrice)),
+        missingBgePO: bucket(missingBgePO, (j) => num(j.sellPrice)),
+        inProductionCount: jobs.filter(isInProduction).length,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching money snapshot:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch money snapshot',
     });
   }
 };

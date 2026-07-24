@@ -380,10 +380,21 @@ export const financialsApi = {
 // Dashboard / What's Next
 export const dashboardApi = {
   getWhatsNext: () => apiFetch('/dashboard/whats-next'),
+  getMoney: () => apiFetch('/dashboard/money'),
   setProofUrgency: (jobId: string, urgency: string | null, note?: string) =>
     apiFetch(`/dashboard/jobs/${jobId}/proof-urgency`, {
       method: 'PUT',
       body: JSON.stringify({ urgency, note }),
+    }),
+};
+
+// Bradford / BGE
+export const bradfordApi = {
+  getStats: () => apiFetch('/bradford/stats'),
+  updatePO: (jobId: string, poNumber: string) =>
+    apiFetch(`/bradford/jobs/${jobId}/po`, {
+      method: 'PUT',
+      body: JSON.stringify({ poNumber }),
     }),
 };
 
