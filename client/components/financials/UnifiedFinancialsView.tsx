@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Users, DollarSign, Package, TrendingUp, FileText } from 'lucide-react';
+import { Users, DollarSign, Package, TrendingUp, FileText, Receipt } from 'lucide-react';
+import { PaymentsLedgerView } from './PaymentsLedgerView';
 
 // Import existing views as tab content (temporary - will be refactored to lean tabs)
 import { BradfordStatsView } from '../BradfordStatsView';
@@ -19,10 +20,11 @@ interface UnifiedFinancialsViewProps {
   onShowEmailDraft: (job: any) => void;
 }
 
-type FinancialsTab = 'invoices' | 'partner' | 'cashflow' | 'inventory' | 'analysis' | 'jd';
+type FinancialsTab = 'invoices' | 'payments' | 'partner' | 'cashflow' | 'inventory' | 'analysis' | 'jd';
 
 const tabs: { id: FinancialsTab; label: string; icon: React.ReactNode }[] = [
   { id: 'invoices', label: 'Customer Invoices', icon: <FileText className="w-4 h-4" /> },
+  { id: 'payments', label: 'Payments', icon: <Receipt className="w-4 h-4" /> },
   { id: 'partner', label: 'Partner', icon: <Users className="w-4 h-4" /> },
   { id: 'cashflow', label: 'Cash Flow', icon: <DollarSign className="w-4 h-4" /> },
   { id: 'inventory', label: 'Inventory', icon: <Package className="w-4 h-4" /> },
@@ -75,6 +77,10 @@ export function UnifiedFinancialsView({
           <div className="p-6">
             <InvoicesView onRefresh={onRefresh} />
           </div>
+        )}
+
+        {activeTab === 'payments' && (
+          <PaymentsLedgerView jobs={allJobs} />
         )}
 
         {activeTab === 'partner' && (
