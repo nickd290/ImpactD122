@@ -421,17 +421,26 @@ export function JobsView({
   // Handle inline field updates — optimistic local list + API
   const handleInlineUpdate = async (jobId: string, field: string, value: string) => {
     const next = value.trim() || null;
+    // BGE PO maps to partnerPONumber; keep bradfordRefNumber alias in sync for UI
+    const localPatch =
+      field === 'partnerPONumber'
+        ? { partnerPONumber: next, bradfordRefNumber: next || '' }
+        : { [field]: next };
     setLocalJobs((prev) =>
-      prev.map((j) => (j.id === jobId ? { ...j, [field]: next } : j))
+      prev.map((j) => (j.id === jobId ? { ...j, ...localPatch } : j))
     );
     try {
-      if (onUpdateJob) {
+      // Dedicated Bradford-ref path — never blocked by negative-margin job pricing guards
+      if (field === 'partnerPONumber' || field === 'bradfordRefNumber') {
+        await jobsApi.updateBradfordRef(jobId, next || '');
+      } else if (onUpdateJob) {
         await onUpdateJob(jobId, { [field]: next });
       } else {
         await jobsApi.update(jobId, { [field]: next });
       }
     } catch (e) {
-      toast.error(`Failed to save ${field}`);
+      const msg = e instanceof Error ? e.message : `Failed to save ${field}`;
+      toast.error(msg);
       await loadLocalJobs();
       throw e;
     }

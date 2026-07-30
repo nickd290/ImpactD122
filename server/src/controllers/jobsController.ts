@@ -1102,30 +1102,39 @@ export const updateJob = async (req: Request, res: Response) => {
       }
     }
 
-    // Guard: Backend pricing validation - reject negative margin without override
-    const finalSellPrice = updateData.sellPrice ?? existingJob.sellPrice;
-    if (finalSellPrice !== undefined && req.body.allowNegativeMargin !== true) {
-      // Calculate total cost from Impact-origin POs
-      const impactPOs = (existingJob.PurchaseOrder || []).filter(
-        (po: any) => po.originCompanyId === 'impact-direct'
-      );
-      const totalCost = impactPOs.reduce((sum: number, po: any) => sum + (Number(po.buyCost) || 0), 0);
+    // Guard: pricing validation ONLY when pricing fields change.
+    // Non-pricing edits (BGE PO, customer PO, notes, status, dates) must not
+    // be blocked by pre-existing negative-margin jobs.
+    const pricingFieldsChanging =
+      inputSellPrice !== undefined ||
+      lineItems !== undefined ||
+      (financials && financials.impactCustomerTotal !== undefined) ||
+      updateData.sellPrice !== undefined;
 
-      if (Number(finalSellPrice) < 0) {
-        return res.status(400).json({
-          error: 'Sell price cannot be negative',
-          sellPrice: finalSellPrice
-        });
-      }
+    if (pricingFieldsChanging && req.body.allowNegativeMargin !== true) {
+      const finalSellPrice = updateData.sellPrice ?? existingJob.sellPrice;
+      if (finalSellPrice !== undefined) {
+        const impactPOs = (existingJob.PurchaseOrder || []).filter(
+          (po: any) => po.originCompanyId === 'impact-direct'
+        );
+        const totalCost = impactPOs.reduce((sum: number, po: any) => sum + (Number(po.buyCost) || 0), 0);
 
-      if (totalCost > 0 && Number(finalSellPrice) < totalCost) {
-        return res.status(400).json({
-          error: `Negative margin: sellPrice ($${Number(finalSellPrice).toFixed(2)}) < totalCost ($${totalCost.toFixed(2)})`,
-          sellPrice: finalSellPrice,
-          totalCost: totalCost,
-          margin: Number(finalSellPrice) - totalCost,
-          hint: 'Set allowNegativeMargin=true to override'
-        });
+        if (Number(finalSellPrice) < 0) {
+          return res.status(400).json({
+            error: 'Sell price cannot be negative',
+            sellPrice: finalSellPrice
+          });
+        }
+
+        if (totalCost > 0 && Number(finalSellPrice) < totalCost) {
+          return res.status(400).json({
+            error: `Negative margin: sellPrice ($${Number(finalSellPrice).toFixed(2)}) < totalCost ($${totalCost.toFixed(2)})`,
+            sellPrice: finalSellPrice,
+            totalCost: totalCost,
+            margin: Number(finalSellPrice) - totalCost,
+            hint: 'Set allowNegativeMargin=true to override'
+          });
+        }
       }
     }
 
